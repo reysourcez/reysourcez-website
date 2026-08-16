@@ -1,0 +1,293 @@
+/* ==========================================================
+   Riverstone Studio — shared stylesheet
+   Every page (index.html, about.html, services.html,
+   contact.html) links to this one file. Change a color here
+   once and it updates everywhere — that's the whole point of
+   keeping CSS in its own file instead of repeating it on
+   every page.
+   ========================================================== */
+
+/* ---- 1. Design tokens ----
+   These custom properties are the site's whole "look" in one
+   place. Try changing --accent below to any hex code and
+   reload a page — everything that uses it updates at once. */
+:root {
+  --ink: #16261F;          /* headings, nav text, footer background */
+  --text: #1C2B24;         /* body copy */
+  --muted: #5C6D64;        /* secondary / quieter text */
+  --paper: #EEF0EA;        /* page background */
+  --surface: #FFFFFF;      /* card backgrounds */
+  --accent: #1F6F5C;       /* signature teal — links, buttons, icons */
+  --accent-dark: #195A4A;  /* accent, darkened for hover states */
+  --accent-soft: #DCEAE4;  /* pale tint of accent, for soft blocks */
+  --line: #D8DCD3;         /* hairline borders/dividers */
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --max-width: 1080px;
+}
+
+/* ---- 2. Reset-ish basics ---- */
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; display: block; }
+a { color: var(--accent); }
+h1, h2, h3 {
+  font-family: var(--font-display);
+  color: var(--ink);
+  line-height: 1.15;
+  margin: 0 0 0.5em;
+}
+p { margin: 0 0 1em; }
+
+/* keyboard users need to see where focus is */
+a:focus-visible, button:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* respect people who've asked their OS for less motion */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--ink);
+  color: #fff;
+  padding: 12px 20px;
+  z-index: 100;
+  text-decoration: none;
+}
+.skip-link:focus { left: 12px; top: 12px; }
+
+.wrap {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.mark { color: var(--accent); } /* SVG icons use stroke="currentColor", so this one line colors all of them */
+
+/* ---- 3. Header / nav ---- */
+.site-header {
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 24px;
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+.nav-links {
+  display: flex;
+  gap: 28px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex-wrap: wrap;
+}
+.nav-links a {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding-bottom: 4px;
+  border-bottom: 2px solid transparent;
+}
+.nav-links a:hover,
+.nav-links a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+}
+
+/* ---- 4. Buttons ---- */
+.btn {
+  display: inline-block;
+  padding: 13px 26px;
+  border-radius: 4px;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: 2px solid transparent;
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+.btn-secondary { border-color: var(--ink); color: var(--ink); }
+.btn-secondary:hover { background: var(--ink); color: #fff; }
+
+/* ---- 5. Hero (homepage top section) ---- */
+.hero { padding: 88px 0 0; }
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 48px;
+  align-items: center;
+}
+.eyebrow {
+  display: inline-block;
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.hero h1 { font-size: clamp(2.2rem, 5vw, 3.4rem); max-width: 14ch; }
+.hero .lead { font-size: 1.15rem; color: var(--muted); max-width: 48ch; margin-bottom: 28px; }
+.hero-actions { display: flex; gap: 14px; flex-wrap: wrap; }
+.hero-mark { display: flex; align-items: center; justify-content: center; }
+
+/* value props row under the hero */
+.values {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding: 48px 0 80px;
+  border-top: 1px solid var(--line);
+  margin-top: 48px;
+}
+.value .mark { width: 36px; height: 36px; margin-bottom: 14px; }
+.value h3 { font-size: 1.05rem; margin-bottom: 6px; }
+.value p { color: var(--muted); font-size: 0.95rem; margin: 0; }
+
+/* ---- 6. Generic content sections (reused on every page) ---- */
+.section { padding: 72px 0; }
+.section-head { max-width: 60ch; margin-bottom: 44px; }
+.section-head h2 { font-size: clamp(1.8rem, 3.4vw, 2.4rem); }
+.section-head p { color: var(--muted); font-size: 1.05rem; }
+.section-alt { background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+
+.about-teaser { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+.about-teaser p { color: var(--muted); font-size: 1.05rem; }
+
+/* the soft rounded block that stands in for a photo until you add one */
+.portrait {
+  aspect-ratio: 4 / 5;
+  border-radius: 8px;
+  background: linear-gradient(150deg, var(--accent-soft), var(--paper) 65%);
+  border: 1px solid var(--line);
+  position: relative;
+  overflow: hidden;
+}
+.portrait::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.15;
+}
+.portrait-wide { aspect-ratio: 16 / 10; }
+
+/* ---- 7. Cards / services grid ---- */
+.card-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 30px; }
+.card .mark { width: 34px; height: 34px; margin-bottom: 16px; }
+.card h3 { font-size: 1.2rem; margin-bottom: 8px; }
+.card p { color: var(--muted); margin-bottom: 14px; }
+.card .price { font-size: 0.85rem; color: var(--accent); font-weight: 600; }
+
+/* ---- 8. About page ---- */
+.about-grid { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 48px; align-items: start; }
+.about-grid figure { margin: 0; }
+.about-grid h2 { font-size: 1.3rem; margin-top: 28px; }
+.about-grid figcaption { margin-top: 12px; font-size: 0.9rem; color: var(--muted); }
+.values-list { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 14px; }
+.values-list li { padding-left: 24px; position: relative; color: var(--muted); }
+.values-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ---- 9. Contact page ---- */
+.contact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.contact-item { display: flex; gap: 16px; align-items: flex-start; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.contact-item .mark { width: 24px; height: 24px; flex-shrink: 0; margin-top: 2px; }
+.contact-item h3 {
+  font-size: 0.8rem;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-family: var(--font-body);
+}
+.contact-item p, .contact-item a { font-size: 1.05rem; color: var(--ink); text-decoration: none; margin: 0; }
+.contact-item a:hover { color: var(--accent); }
+.contact-note { background: var(--accent-soft); border-radius: 8px; padding: 28px; }
+.contact-note h3 { margin-bottom: 10px; }
+.contact-note p { color: var(--ink); }
+
+/* ---- 10. Bottom call-to-action band ---- */
+.cta-band { background: var(--ink); color: #fff; padding: 64px 0; text-align: center; }
+.cta-band h2 { color: #fff; font-size: clamp(1.6rem, 3vw, 2.2rem); }
+.cta-band p { color: #C9D2CC; max-width: 50ch; margin: 0 auto 28px; }
+
+/* ---- 11. Footer ---- */
+.site-footer { background: var(--ink); color: #C9D2CC; padding: 56px 0 32px; }
+.footer-grid {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 32px;
+  padding-bottom: 32px;
+  border-bottom: 1px solid #2C3B34;
+}
+.footer-brand { font-family: var(--font-display); color: #fff; font-size: 1.2rem; font-weight: 700; }
+.footer-tagline { max-width: 32ch; font-size: 0.92rem; margin-top: 8px; }
+.footer-links { display: flex; gap: 40px; flex-wrap: wrap; }
+.footer-col h4 { color: #fff; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.footer-col ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.footer-col a { color: #C9D2CC; text-decoration: none; font-size: 0.92rem; }
+.footer-col a:hover { color: #fff; }
+.footer-bottom { padding-top: 24px; font-size: 0.85rem; color: #8B978F; }
+
+/* ---- 12. Small screens ----
+   Below 800px we stack the two-column layouts into one
+   column and center the nav links so nothing overlaps. */
+@media (max-width: 800px) {
+  .hero-grid, .about-grid, .contact-grid, .about-teaser { grid-template-columns: 1fr; }
+  .hero-mark { order: -1; max-width: 220px; margin: 0 auto; }
+  .card-grid { grid-template-columns: 1fr; }
+  .values { grid-template-columns: 1fr; gap: 32px; }
+  .nav { justify-content: center; text-align: center; }
+  .nav-links { justify-content: center; width: 100%; }
+}
