@@ -84,6 +84,44 @@
       </div>
     </section>
 
+    <!-- ============ MENU PORTION CREATOR ============ -->
+    <section class="menu-builder">
+      <div class="wrap">
+        <h2>Menu Portion Creator</h2>
+        <p class="menu-builder-intro">Combine ingredients from the table above into one dish, and see what a single portion actually costs you. Uncheck a row to leave it out of the total without deleting it.</p>
+
+        <input type="text" id="menu-name" class="menu-name-input" value="Untitled Menu Item" aria-label="Menu item name">
+
+        <div class="table-scroll">
+          <table id="menu-table">
+            <caption class="sr-only">Menu portion builder — combine ingredients from the table above into one dish</caption>
+            <thead>
+              <tr>
+                <th scope="col"><span class="sr-only">Include in total</span></th>
+                <th scope="col">Type</th>
+                <th scope="col">Item</th>
+                <th scope="col">Amount</th>
+                <th scope="col" class="auto-col">Price</th>
+                <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody id="menu-rows"></tbody>
+            <tfoot>
+              <tr class="menu-total-row">
+                <td colspan="4"><strong>Total</strong></td>
+                <td class="calc" id="menu-total">RM0.00</td>
+                <td class="no-print"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="calc-actions no-print">
+          <button type="button" id="add-menu-row" class="btn btn-primary">+ Add item to menu</button>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <footer class="site-footer no-print">

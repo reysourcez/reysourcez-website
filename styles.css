@@ -388,3 +388,90 @@ a:focus-visible, button:focus-visible {
     background: transparent;
   }
 }
+
+/* ---- 14. Menu portion creator ----
+   Reads live from the ingredient table above via each row's
+   data-row-id / data-true-cost / data-base-unit attributes —
+   nothing here is a second source of truth for cost data. */
+
+.menu-builder { padding: 40px 0 72px; border-top: 1px solid var(--line); }
+.menu-builder h2 { font-size: clamp(1.5rem, 3vw, 2rem); margin: 0 0 8px; }
+.menu-builder-intro { color: var(--muted); max-width: 65ch; margin: 0 0 24px; }
+
+.menu-name-input {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 2.6vw, 1.7rem);
+  font-weight: 600;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  border-bottom: 2px dashed var(--line);
+  padding: 6px 2px;
+  width: 100%;
+  max-width: 480px;
+  margin-bottom: 20px;
+}
+.menu-name-input:hover, .menu-name-input:focus-visible {
+  border-bottom-color: var(--accent);
+  outline: none;
+}
+
+#menu-table { border-collapse: collapse; width: 100%; min-width: 680px; }
+#menu-table th, #menu-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+#menu-table thead th {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--paper);
+  white-space: nowrap;
+}
+#menu-table th.auto-col, #menu-table td.calc {
+  background: var(--accent-soft);
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+#menu-table td.calc { font-weight: 600; color: var(--accent-dark); }
+
+#menu-table td select, #menu-table td input[type="number"] {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+}
+#menu-table td select { min-width: 130px; }
+#menu-table td input[type="number"] { width: 90px; }
+#menu-table input:focus-visible, #menu-table select:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.amount-cell { display: flex; align-items: center; gap: 7px; }
+.m-unit-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.m-include { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+
+#menu-table tbody tr.excluded { opacity: 0.5; }
+#menu-table tbody tr.excluded .m-price { text-decoration: line-through; }
+
+.menu-total-row td { border-bottom: none; border-top: 2px solid var(--ink); font-size: 1rem; }
+.menu-total-row strong { font-family: var(--font-display); }
+
+@media print {
+  .menu-name-input { border-bottom: none; padding: 0; }
+}
