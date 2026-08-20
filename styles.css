@@ -255,7 +255,6 @@ a:focus-visible, button:focus-visible {
 .contact-note { background: var(--accent-soft); border-radius: 8px; padding: 28px; }
 .contact-note h3 { margin-bottom: 10px; }
 .contact-note p { color: var(--ink); }
-.note-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 
 /* ---- 10. Bottom call-to-action band ---- */
 .cta-band { background: var(--ink); color: #fff; padding: 64px 0; text-align: center; }
@@ -291,4 +290,101 @@ a:focus-visible, button:focus-visible {
   .values { grid-template-columns: 1fr; gap: 32px; }
   .nav { justify-content: center; text-align: center; }
   .nav-links { justify-content: center; width: 100%; }
+}
+
+/* ---- 13. Menu calculator ----
+   New page, so these are new rules — everything above this
+   point is untouched. Calculated (read-only) columns use
+   --accent-soft as a background so it's obvious at a glance
+   which cells you type into and which update on their own. */
+
+.calc-intro { padding: 56px 0 32px; }
+.calc-intro h1 { font-size: clamp(1.8rem, 3.6vw, 2.6rem); max-width: 20ch; }
+.calc-intro .lead { font-size: 1.1rem; color: var(--muted); max-width: 65ch; margin: 0; }
+
+.calc-panel { padding: 8px 0 16px; }
+
+.table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+#calc-table { border-collapse: collapse; width: 100%; min-width: 860px; }
+#calc-table th, #calc-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+#calc-table thead th {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--paper);
+  white-space: nowrap;
+}
+#calc-table th.auto-col, #calc-table td.calc {
+  background: var(--accent-soft);
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+}
+#calc-table td.calc { font-weight: 600; color: var(--accent-dark); }
+
+#calc-table td input, #calc-table td select {
+  width: 100%;
+  min-width: 84px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+}
+#calc-table td input[type="text"] { font-family: var(--font-body); min-width: 150px; }
+#calc-table input:focus-visible, #calc-table select:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.delete-row {
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--accent-dark);
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.delete-row:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+.delete-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+.calc-actions { display: flex; gap: 14px; padding: 18px 0 8px; flex-wrap: wrap; }
+.calc-actions .btn { border: 2px solid transparent; cursor: pointer; font-family: var(--font-body); }
+.calc-actions .btn-secondary { background: transparent; }
+
+.calc-note { padding: 32px 0 72px; }
+.calc-note p { color: var(--muted); font-size: 0.95rem; max-width: 75ch; margin: 0; }
+.calc-note strong { color: var(--ink); }
+
+@media (max-width: 800px) {
+  .calc-intro .lead { max-width: none; }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .table-scroll { border: none; }
+  #calc-table { min-width: 0; }
+  #calc-table th.auto-col, #calc-table td.calc { background: #f2f2f2; }
+  #calc-table td input, #calc-table td select {
+    border: none;
+    padding: 2px 4px;
+    background: transparent;
+  }
 }
