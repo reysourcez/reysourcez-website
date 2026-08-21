@@ -47,22 +47,24 @@
       </div>
     </section>
 
-    <!-- ============ CALCULATOR TABLE ============ -->
+    <!-- ============ INGREDIENT COSTING ============ -->
     <section class="calc-panel">
       <div class="wrap">
+        <h2>Ingredient Costing</h2>
         <div class="table-scroll">
           <table id="calc-table">
-            <caption class="sr-only">Menu item cost calculator — enter purchase details per row to see cost per unit</caption>
+            <caption class="sr-only">Ingredient costing — enter purchase details per row to see true cost per base unit</caption>
             <thead>
               <tr>
-                <th scope="col">Item</th>
-                <th scope="col">Price (RM)</th>
-                <th scope="col">Qty</th>
+                <th scope="col" class="sortable" data-sort="item">Item <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="price">Price (RM) <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="qty">Qty <span class="sort-indicator"></span></th>
                 <th scope="col">Purchase Unit</th>
-                <th scope="col" class="auto-col">Price / Base Unit</th>
-                <th scope="col">Wastage %</th>
-                <th scope="col" class="auto-col">Yield %</th>
-                <th scope="col" class="auto-col">True Cost / Base Unit</th>
+                <th scope="col" class="sortable auto-col" data-sort="priceperunit">Price / Base Unit <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="yield">Yield % <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="wastage">Wastage % <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="inflation">Inflation % <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable auto-col" data-sort="truecost">True Cost / Base Unit <span class="sort-indicator"></span></th>
                 <th scope="col" class="no-print"><span class="sr-only">Remove row</span></th>
               </tr>
             </thead>
@@ -80,7 +82,8 @@
     <!-- ============ HOW IT WORKS ============ -->
     <section class="calc-note no-print">
       <div class="wrap">
-        <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit (gram, mL, or each). Yield % is 100% minus Wastage %. True Cost divides price-per-unit by yield, so you see what each <em>usable</em> gram, millilitre, or piece actually costs — after trim, spoilage, or prep loss.</p>
+        <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit. <strong>Yield %</strong> is the usable share you can actually measure or predict — under 100% for trim loss, over 100% for something that gains weight when cooked (dry noodles or rice absorbing water). <strong>Wastage %</strong> is a buffer on top for what you can't predict — shrinkage, moisture loss. <strong>Inflation %</strong> is a forward buffer for supplier price rises. True Cost applies all three to the price per base unit.</p>
+        <p>For a purchase that's pre-divided rather than sold by weight — a pack of noodles that makes 8 portions, a whole chicken cut into 8 pieces — pick the <strong>portion</strong> or <strong>piece</strong> unit, and set Qty to the portion/piece count rather than a weight.</p>
       </div>
     </section>
 
@@ -88,37 +91,13 @@
     <section class="menu-builder">
       <div class="wrap">
         <h2>Menu Portion Creator</h2>
-        <p class="menu-builder-intro">Combine ingredients from the table above into one dish, and see what a single portion actually costs you. Uncheck a row to leave it out of the total without deleting it.</p>
-
-        <input type="text" id="menu-name" class="menu-name-input" value="Untitled Menu Item" aria-label="Menu item name">
-
-        <div class="table-scroll">
-          <table id="menu-table">
-            <caption class="sr-only">Menu portion builder — combine ingredients from the table above into one dish</caption>
-            <thead>
-              <tr>
-                <th scope="col"><span class="sr-only">Include in total</span></th>
-                <th scope="col">Type</th>
-                <th scope="col">Item</th>
-                <th scope="col">Amount</th>
-                <th scope="col" class="auto-col">Price</th>
-                <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
-              </tr>
-            </thead>
-            <tbody id="menu-rows"></tbody>
-            <tfoot>
-              <tr class="menu-total-row">
-                <td colspan="4"><strong>Total</strong></td>
-                <td class="calc" id="menu-total">RM0.00</td>
-                <td class="no-print"></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+        <p class="menu-builder-intro">Combine ingredients from the table above into one dish, and see what a single portion actually costs you — plus a target selling price, and what's left after delivery-app commission or SST, if either applies. Uncheck a row to leave it out of a total without deleting it. Click a column heading to sort.</p>
 
         <div class="calc-actions no-print">
-          <button type="button" id="add-menu-row" class="btn btn-primary">+ Add item to menu</button>
+          <button type="button" id="add-menu-block" class="btn btn-primary">+ Add Menu</button>
         </div>
+
+        <div id="menu-blocks"></div>
       </div>
     </section>
 
