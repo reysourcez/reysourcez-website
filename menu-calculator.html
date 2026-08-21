@@ -51,6 +51,13 @@
     <section class="calc-panel">
       <div class="wrap">
         <h2>Ingredient Costing</h2>
+
+        <div class="inflation-control">
+          <label for="global-inflation">Inflation Buffer %</label>
+          <input type="number" id="global-inflation" inputmode="decimal" min="0" step="0.1" value="0">
+          <span class="toggle-hint">one rate, applied to every item's True Cost below</span>
+        </div>
+
         <div class="table-scroll">
           <table id="calc-table">
             <caption class="sr-only">Ingredient costing — enter purchase details per row to see true cost per base unit</caption>
@@ -63,7 +70,6 @@
                 <th scope="col" class="sortable auto-col" data-sort="priceperunit">Price / Base Unit <span class="sort-indicator"></span></th>
                 <th scope="col" class="sortable" data-sort="yield">Yield % <span class="sort-indicator"></span></th>
                 <th scope="col" class="sortable" data-sort="wastage">Wastage % <span class="sort-indicator"></span></th>
-                <th scope="col" class="sortable" data-sort="inflation">Inflation % <span class="sort-indicator"></span></th>
                 <th scope="col" class="sortable auto-col" data-sort="truecost">True Cost / Base Unit <span class="sort-indicator"></span></th>
                 <th scope="col" class="no-print"><span class="sr-only">Remove row</span></th>
               </tr>
@@ -82,7 +88,7 @@
     <!-- ============ HOW IT WORKS ============ -->
     <section class="calc-note no-print">
       <div class="wrap">
-        <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit. <strong>Yield %</strong> is the usable share you can actually measure or predict — under 100% for trim loss, over 100% for something that gains weight when cooked (dry noodles or rice absorbing water). <strong>Wastage %</strong> is a buffer on top for what you can't predict — shrinkage, moisture loss. <strong>Inflation %</strong> is a forward buffer for supplier price rises. True Cost applies all three to the price per base unit.</p>
+        <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit. <strong>Yield %</strong> is the usable share you can actually measure or predict — under 100% for trim loss, over 100% for something that gains weight when cooked (dry noodles or rice absorbing water). <strong>Wastage %</strong> is a buffer on top for what you can't predict — shrinkage, moisture loss. Both are set per item. <strong>Inflation</strong> is set once, above the table, and applies as a single blanket rate to every item's True Cost — it's a forward buffer for supplier price rises, not something that varies item to item.</p>
         <p>For a purchase that's pre-divided rather than sold by weight — a pack of noodles that makes 8 portions, a whole chicken cut into 8 pieces — pick the <strong>portion</strong> or <strong>piece</strong> unit, and set Qty to the portion/piece count rather than a weight.</p>
       </div>
     </section>

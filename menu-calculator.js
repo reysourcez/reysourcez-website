@@ -106,10 +106,22 @@ function ingredientSortValue(tr, key) {
     case 'priceperunit': return parseFloat(tr.dataset.pricePerUnit) || 0;
     case 'yield': return parseFloat(tr.querySelector('.f-yield').value) || 0;
     case 'wastage': return parseFloat(tr.querySelector('.f-wastage').value) || 0;
-    case 'inflation': return parseFloat(tr.querySelector('.f-inflation').value) || 0;
     case 'truecost': return parseFloat(tr.dataset.trueCost) || 0;
     default: return '';
   }
+}
+
+// Inflation is a single blanket rate (set once, above the table),
+// not a per-item value — unlike Yield/Wastage, which genuinely vary
+// item by item, inflation is a macro assumption that should apply
+// uniformly everywhere.
+function getGlobalInflation() {
+  const el = document.getElementById('global-inflation');
+  return el ? parsePercent(el, 0, 0) : 0;
+}
+
+function refreshAllIngredientRows() {
+  document.querySelectorAll('#rows > tr').forEach((tr) => updateIngredientRow(tr));
 }
 
 function updateIngredientRow(tr) {
@@ -124,8 +136,9 @@ function updateIngredientRow(tr) {
   // Wastage: an unaccountable buffer layered on top — shrinkage,
   // moisture loss, things you can't measure in advance.
   const wastagePct = parsePercent(tr.querySelector('.f-wastage'), 0, 0);
-  // Inflation: a forward-looking buffer for supplier price rises.
-  const inflationPct = parsePercent(tr.querySelector('.f-inflation'), 0, 0);
+  // Inflation: one blanket forward-looking buffer, read from the
+  // single control above the table — see getGlobalInflation().
+  const inflationPct = getGlobalInflation();
 
   const unit = UNITS[unitKey];
   const totalBaseQty = qty * unit.factor;
@@ -168,7 +181,6 @@ function createIngredientRow() {
     <td class="calc r-price-per-unit">RM0.00/g</td>
     <td><input type="number" class="f-yield" inputmode="decimal" min="0.01" step="0.1" value="100"></td>
     <td><input type="number" class="f-wastage" inputmode="decimal" min="0" step="0.1" value="0"></td>
-    <td><input type="number" class="f-inflation" inputmode="decimal" min="0" step="0.1" value="0"></td>
     <td class="calc r-true-cost">RM0.00/g</td>
     <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this item">&times;</button></td>
   `;
@@ -444,10 +456,17 @@ function createMenuBlock() {
 
 /* ================= INIT ================= */
 
+// Bump this string whenever this file changes — if something looks
+// broken, checking this in the browser console (F12) instantly
+// confirms whether the deployed JS actually matches the deployed
+// HTML, rather than guessing from symptoms.
+console.info('[Menu Calculator] script build: 2026-08-21-global-inflation');
+
 function init() {
   document.getElementById('add-row').addEventListener('click', createIngredientRow);
   document.getElementById('save-pdf').addEventListener('click', () => window.print());
   document.getElementById('add-menu-block').addEventListener('click', createMenuBlock);
+  document.getElementById('global-inflation').addEventListener('input', refreshAllIngredientRows);
 
   makeSortable(
     document.querySelector('#calc-table thead'),
