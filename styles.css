@@ -752,13 +752,19 @@ th.sortable:hover { color: var(--accent-dark); }
 .slider-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
 .slider-row label { flex: 0 0 auto; font-size: 0.88rem; color: var(--muted); min-width: 150px; }
 .slider-row input[type="range"] { flex: 1; accent-color: var(--accent); }
-.slider-val {
+.slider-num {
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.88rem;
-  color: var(--accent-dark);
-  min-width: 36px;
+  color: var(--text);
+  min-width: 56px;
+  width: 56px;
   text-align: right;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
 }
+.slider-num:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 
 .preset-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin: 14px 0; }
 .preset-buttons .btn { font-size: 0.85rem; padding: 8px 14px; }
@@ -796,8 +802,8 @@ th.sortable:hover { color: var(--accent-dark); }
 .chart-axis-label { font-size: 10px; fill: var(--muted); font-family: "IBM Plex Mono", monospace; }
 .chart-axis-title { font-size: 11px; fill: var(--muted); font-family: var(--font-body); }
 .chart-line { fill: none; stroke-width: 2.5; }
-.chart-line-revenue { stroke: var(--accent); }
-.chart-line-cost { stroke: var(--accent-dark); }
+.chart-line-revenue { stroke: #2C5F8A; }
+.chart-line-cost { stroke: var(--accent); }
 .chart-line-fixed { stroke: var(--muted); stroke-dasharray: 5 4; }
 .chart-be-line, .chart-current-line { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 3; }
 .chart-point-be { fill: #b8562f; stroke: #fff; stroke-width: 1.5; }
@@ -814,32 +820,87 @@ th.sortable:hover { color: var(--accent-dark); }
 }
 .chart-legend span { display: flex; align-items: center; gap: 6px; }
 .legend-swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-.legend-revenue { background: var(--accent); }
-.legend-cost { background: var(--accent-dark); }
+.legend-revenue { background: #2C5F8A; }
+.legend-cost { background: var(--accent); }
 .legend-fixed { background: var(--muted); }
 .legend-be { background: #b8562f; border-radius: 50%; width: 8px; height: 8px; }
 .legend-current { background: var(--ink); border-radius: 50%; width: 8px; height: 8px; }
 
 /* Cost structure comparison */
-.ica-structure h3 { font-size: 1.1rem; margin: 0 0 4px; }
-.structure-key { font-size: 0.82rem; color: var(--muted); margin: 0 0 16px; }
+.ica-structure { margin-top: 8px; }
+.structure-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.ica-structure h3 { font-size: 1.1rem; margin: 0; }
+.guide-select-label { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.guide-select-label select {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+}
+.guide-select-label select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+.structure-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 8px 0 4px;
+}
+.structure-key span { display: flex; align-items: center; gap: 6px; }
+.structure-key .legend-swatch { width: 12px; height: 12px; border-radius: 3px; }
+.legend-ingredients { background: var(--accent); }
+.legend-overhead { background: #2C5F8A; }
+.legend-manpower { background: #CBA135; }
+.legend-margin { background: var(--ink); }
+
+.structure-note { font-size: 0.82rem; color: var(--muted); margin: 0 0 18px; max-width: 65ch; }
+
 .structure-row { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
 .structure-label { flex: 0 0 150px; font-size: 0.88rem; font-weight: 600; color: var(--text); }
-.loss-flag { color: var(--accent); font-weight: 700; font-size: 0.78rem; text-transform: uppercase; margin-left: 4px; }
+.loss-flag { color: #C0392B; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; margin-left: 4px; }
 .structure-bar {
   flex: 1;
   display: flex;
-  height: 22px;
+  height: 26px;
   border-radius: 5px;
   overflow: hidden;
   background: var(--paper);
   min-width: 120px;
 }
-.seg { display: block; height: 100%; }
+.seg { display: flex; align-items: center; justify-content: center; height: 100%; overflow: hidden; }
 .seg-ingredients { background: var(--accent); }
-.seg-overhead { background: var(--accent-dark); }
-.seg-manpower { background: #cba135; }
+.seg-overhead { background: #2C5F8A; }
+.seg-manpower { background: #CBA135; }
 .seg-margin { background: var(--ink); }
+
+/* Hollow/outlined labels so text stays legible on any segment
+   color — white halo, transparent fill, works without needing to
+   pick a different text color per background. */
+.seg-label {
+  color: transparent;
+  text-shadow:
+    -1px -1px 0 #fff, 1px -1px 0 #fff,
+    -1px  1px 0 #fff, 1px  1px 0 #fff,
+    0 -1px 0 #fff, 0 1px 0 #fff,
+    -1px 0 0 #fff, 1px 0 0 #fff;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 0 4px;
+}
+
 .structure-values {
   flex: 0 0 auto;
   font-family: "IBM Plex Mono", monospace;

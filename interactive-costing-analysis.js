@@ -141,6 +141,7 @@ function editAnswers() {
 function applyWizardDefaults() {
   document.getElementById('utilities-row').hidden = wizardAnswers.hasUtilities !== 'true';
   document.getElementById('permits-row').hidden = wizardAnswers.hasPermits !== 'true';
+  document.getElementById('guide-venue-select').value = wizardAnswers.venue;
 
   document.querySelector('#manpower-label .label-text').textContent = wizardAnswers.manpower === 'solo'
     ? "Manpower (include your own wage, even if it's just you)"
@@ -166,9 +167,9 @@ function renderTip() {
 /* ================= VOLUME PRESETS ================= */
 
 function applyPreset(kind) {
-  const el = document.getElementById('daily-volume');
-  el.value = kind === 'pessimistic' ? 100 : 300;
-  document.getElementById('daily-volume-val').textContent = el.value;
+  const value = kind === 'pessimistic' ? 100 : 300;
+  document.getElementById('daily-volume').value = value;
+  document.getElementById('daily-volume-num').value = value;
   recalculate();
 }
 
@@ -185,8 +186,11 @@ function getInputs() {
     manpower: num(document.getElementById('manpower-cost')),
     utilities: utilitiesHidden ? 0 : num(document.getElementById('utilities-cost')),
     permits: permitsHidden ? 0 : num(document.getElementById('permits-cost')),
-    operatingDays: num(document.getElementById('operating-days'), 26),
-    dailyVolume: num(document.getElementById('daily-volume'), 0),
+    // Number boxes are authoritative (typing is more precise than a
+    // slider); the sliders are just a quick-adjust convenience that
+    // stays in sync with them — see wireSliderPair().
+    operatingDays: num(document.getElementById('operating-days-num'), 26),
+    dailyVolume: num(document.getElementById('daily-volume-num'), 0),
   };
 }
 
@@ -302,45 +306,61 @@ function renderChart(inputs, r) {
     <circle cx="${curX.toFixed(1)}" cy="${curRevenueY.toFixed(1)}" r="4" class="chart-point chart-point-current"/>
     <circle cx="${curX.toFixed(1)}" cy="${curCostY.toFixed(1)}" r="4" class="chart-point chart-point-current"/>
     <text x="${(W / 2).toFixed(1)}" y="${H - 4}" class="chart-axis-title" text-anchor="middle">Sales Volume (portions / month)</text>
+    <text x="16" y="${(M.top + plotH / 2).toFixed(1)}" class="chart-axis-title" text-anchor="middle" transform="rotate(-90 16 ${(M.top + plotH / 2).toFixed(1)})">Amount (RM)</text>
   `;
 }
 
 /* ================= COST STRUCTURE COMPARISON ================= */
 
-function clampPct(v) {
-  return isFinite(v) ? Math.max(0, v) : 0;
+// Ingredients/Overhead/Manpower are never negative; Margin is
+// selling price minus those three, so it CAN go negative — and by
+// construction these four always sum to exactly 100%, which is what
+// lets "your numbers" and the guide compare on the same scale.
+function structureMix(ingredientsPerPortion, overheadPerPortion, manpowerPerPortion, marginPerPortion, sellingPrice) {
+  const sp = sellingPrice > 0 ? sellingPrice : 1;
+  return {
+    ingredients: (ingredientsPerPortion / sp) * 100,
+    overhead: (overheadPerPortion / sp) * 100,
+    manpower: (manpowerPerPortion / sp) * 100,
+    margin: (marginPerPortion / sp) * 100,
+  };
 }
 
 function renderStructure(inputs, r) {
-  const guide = GUIDE_RATIOS[wizardAnswers.venue] || GUIDE_RATIOS.stall;
-  const sp = inputs.sellingPrice > 0 ? inputs.sellingPrice : 1;
-  const yours = {
-    ingredients: clampPct((r.ingredientsPerPortion / sp) * 100),
-    overhead: clampPct((r.overheadPerPortion / sp) * 100),
-    manpower: clampPct((r.manpowerPerPortion / sp) * 100),
-    margin: clampPct((r.marginPerPortion / sp) * 100),
-  };
+  const guideVenue = document.getElementById('guide-venue-select').value;
+  const guide = GUIDE_RATIOS[guideVenue] || GUIDE_RATIOS.stall;
+  const yours = structureMix(r.ingredientsPerPortion, r.overheadPerPortion, r.manpowerPerPortion, r.marginPerPortion, inputs.sellingPrice);
 
   const container = document.getElementById('structure-bars');
   container.innerHTML =
-    renderStructureBar('Your numbers', yours, r.marginPerPortion < 0) +
-    renderStructureBar(`Guide: ${wizardAnswers.venue}`, guide, false);
+    renderStructureBar('Your numbers', yours, yours.margin < 0) +
+    renderStructureBar(`Guide: ${guideVenue}`, { ingredients: guide.ingredients, overhead: guide.overhead, manpower: guide.manpower, margin: guide.margin }, false);
 }
 
-function structureBarSegments(mix) {
-  return `
-    <span class="seg seg-ingredients" style="width:${mix.ingredients}%" title="Ingredients ${mix.ingredients.toFixed(0)}%"></span>
-    <span class="seg seg-overhead" style="width:${mix.overhead}%" title="Overhead ${mix.overhead.toFixed(0)}%"></span>
-    <span class="seg seg-manpower" style="width:${mix.manpower}%" title="Manpower ${mix.manpower.toFixed(0)}%"></span>
-    <span class="seg seg-margin" style="width:${mix.margin}%" title="Margin ${mix.margin.toFixed(0)}%"></span>
-  `;
-}
-
+// Bar segment widths use the TRUE percentages (ingredients/overhead/
+// manpower are always >=0; margin is clamped to 0 only for drawing,
+// since a negative width isn't renderable). If margin is deeply
+// negative, the other three segments legitimately sum past 100% and
+// the bar's overflow:hidden clips them — that visual overflow IS the
+// signal that costs no longer fit inside the selling price.
 function renderStructureBar(label, mix, isLosing) {
+  const segs = [
+    { key: 'ingredients', name: 'Ingredients', pct: mix.ingredients },
+    { key: 'overhead', name: 'Overhead', pct: mix.overhead },
+    { key: 'manpower', name: 'Manpower', pct: mix.manpower },
+    { key: 'margin', name: 'Margin', pct: Math.max(0, mix.margin) },
+  ];
+  const segmentsHTML = segs.map((s) => {
+    let inner = '';
+    if (s.pct >= 15) inner = `${Math.round(s.pct)}% ${s.name}`;
+    else if (s.pct >= 6) inner = `${Math.round(s.pct)}%`;
+    return `<span class="seg seg-${s.key}" style="width:${Math.max(0, s.pct)}%" title="${s.name} ${s.pct.toFixed(0)}%">${inner ? `<span class="seg-label">${inner}</span>` : ''}</span>`;
+  }).join('');
+
   return `
     <div class="structure-row">
-      <span class="structure-label">${label}${isLosing ? ' <span class="loss-flag">losing money</span>' : ''}</span>
-      <div class="structure-bar">${structureBarSegments(mix)}</div>
+      <span class="structure-label">${label}${isLosing ? ' <span class="loss-flag">LOSING MONEY</span>' : ''}</span>
+      <div class="structure-bar">${segmentsHTML}</div>
       <span class="structure-values">${mix.ingredients.toFixed(0)}% / ${mix.overhead.toFixed(0)}% / ${mix.manpower.toFixed(0)}% / ${mix.margin.toFixed(0)}%</span>
     </div>
   `;
@@ -348,23 +368,40 @@ function renderStructureBar(label, mix, isLosing) {
 
 /* ================= INIT ================= */
 
+// Keeps a <input type="range"> and its paired <input type="number">
+// in sync either direction. The number box is authoritative for
+// calculations (see getInputs()) — the slider just follows it,
+// clamped to its own min/max, since a slider can't represent a value
+// outside its own range but the number box can.
+function wireSliderPair(rangeId, numberId) {
+  const range = document.getElementById(rangeId);
+  const numberInput = document.getElementById(numberId);
+
+  range.addEventListener('input', () => {
+    numberInput.value = range.value;
+    recalculate();
+  });
+  numberInput.addEventListener('input', () => {
+    const v = parseFloat(numberInput.value);
+    if (isFinite(v)) {
+      range.value = Math.max(parseFloat(range.min), Math.min(parseFloat(range.max), v));
+    }
+    recalculate();
+  });
+}
+
 function init() {
   renderWizardStep();
   document.getElementById('wizard-back').addEventListener('click', goBack);
   document.getElementById('ica-edit-answers').addEventListener('click', editAnswers);
   document.getElementById('save-pdf-ica').addEventListener('click', () => window.print());
+  document.getElementById('guide-venue-select').addEventListener('change', recalculate);
 
   ['ing-cost', 'pkg-cost', 'sell-price', 'rent-cost', 'manpower-cost', 'utilities-cost', 'permits-cost'].forEach((id) => {
     document.getElementById(id).addEventListener('input', recalculate);
   });
-  document.getElementById('operating-days').addEventListener('input', (e) => {
-    document.getElementById('operating-days-val').textContent = e.target.value;
-    recalculate();
-  });
-  document.getElementById('daily-volume').addEventListener('input', (e) => {
-    document.getElementById('daily-volume-val').textContent = e.target.value;
-    recalculate();
-  });
+  wireSliderPair('operating-days', 'operating-days-num');
+  wireSliderPair('daily-volume', 'daily-volume-num');
   document.querySelectorAll('[data-preset]').forEach((btn) => {
     btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
   });

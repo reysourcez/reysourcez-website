@@ -78,12 +78,12 @@
             <div class="slider-row">
               <label for="operating-days">Operating days / month</label>
               <input type="range" id="operating-days" min="1" max="31" value="26">
-              <span class="slider-val" id="operating-days-val">26</span>
+              <input type="number" class="slider-num" id="operating-days-num" min="1" max="31" value="26">
             </div>
             <div class="slider-row">
               <label for="daily-volume">Sales volume <span class="toggle-hint">(portions/day)</span></label>
               <input type="range" id="daily-volume" min="0" max="500" value="100">
-              <span class="slider-val" id="daily-volume-val">100</span>
+              <input type="number" class="slider-num" id="daily-volume-num" min="0" step="1" value="100">
             </div>
             <div class="preset-buttons">
               <button type="button" class="btn btn-secondary" data-preset="pessimistic">Pessimistic (100/day)</button>
@@ -101,16 +101,16 @@
               <span class="result-value" id="res-margin">RM0.00/portion</span>
             </div>
             <div class="result-card">
-              <span class="result-label">Break-even (month)</span>
+              <span class="result-label">Break-even / Target Volume (month)</span>
               <span class="result-value" id="res-be-month">0 portions</span>
             </div>
-            <div class="result-card">
-              <span class="result-label">Break-even (day)</span>
-              <span class="result-value" id="res-be-day">0 portions</span>
-            </div>
             <div class="result-card" id="res-profit-card">
-              <span class="result-label">At current volume</span>
+              <span class="result-label">At Current Volume Profit</span>
               <span class="result-value" id="res-profit">RM0.00 profit</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Break-even / Target Volume (day)</span>
+              <span class="result-value" id="res-be-day">0 portions</span>
             </div>
           </div>
         </div>
@@ -127,8 +127,24 @@
         </div>
 
         <div class="ica-structure">
-          <h3>Cost Structure: Your Numbers vs. Guide</h3>
-          <p class="structure-key">Ingredients / Overhead / Manpower / Margin</p>
+          <div class="structure-head">
+            <h3>Cost Structure: Your Numbers vs. Guide</h3>
+            <label class="guide-select-label">Guide for
+              <select id="guide-venue-select">
+                <option value="home">Home-based</option>
+                <option value="stall">Stall / hawker</option>
+                <option value="truck">Food truck</option>
+                <option value="store">Store / restaurant</option>
+              </select>
+            </label>
+          </div>
+          <p class="structure-key">
+            <span><i class="legend-swatch legend-ingredients"></i>Ingredients</span>
+            <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
+            <span><i class="legend-swatch legend-manpower"></i>Manpower</span>
+            <span><i class="legend-swatch legend-margin"></i>Margin</span>
+          </p>
+          <p class="structure-note">Reflects your cost structure <em>at the current sales volume above</em> — fixed costs spread over fewer portions cost more per portion, so this shifts as you move the slider.</p>
           <div class="structure-bars" id="structure-bars"><!-- populated by JS --></div>
         </div>
       </div>
