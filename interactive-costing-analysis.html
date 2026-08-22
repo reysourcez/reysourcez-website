@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Riverstone Studio — Interactive Costing Analysis</title>
+  <meta name="description" content="A guided break-even calculator for F&B sellers — answer a few questions, enter your real costs, and see your break-even point and cost structure instantly.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <ellipse cx="20" cy="30" rx="16" ry="7" fill="#1F6F5C" opacity="0.9"/>
+          <ellipse cx="21" cy="19" rx="12" ry="5.5" fill="#1F6F5C" opacity="0.65"/>
+          <ellipse cx="19" cy="10" rx="8" ry="4" fill="#1F6F5C" opacity="0.4"/>
+        </svg>
+        Riverstone Studio
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="menu-calculator.html">Menu Calculator</a></li>
+        <li><a href="interactive-costing-analysis.html" aria-current="page">Costing Analysis</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; nothing is saved</span>
+        <h1>Interactive Costing Analysis</h1>
+        <p class="lead">Answer a few quick questions, enter your real numbers, and see your break-even point, your monthly profit at different sales volumes, and how your cost structure compares to a typical guide for your setup.</p>
+      </div>
+    </section>
+
+    <!-- ============ WIZARD ============ -->
+    <section class="ica-panel" id="wizard">
+      <div class="wrap">
+        <div class="wizard-card" id="wizard-question"><!-- populated by JS --></div>
+        <button type="button" id="wizard-back" class="btn btn-secondary" hidden>Back</button>
+      </div>
+    </section>
+
+    <!-- ============ ANALYSIS ============ -->
+    <section class="ica-panel" id="ica-analysis" hidden>
+      <div class="wrap">
+        <div class="ica-tip" id="ica-tip"></div>
+        <button type="button" id="ica-edit-answers" class="link-btn no-print">&larr; Edit answers</button>
+
+        <div class="ica-grid">
+          <div class="ica-inputs">
+            <h3>Variable Costs <span class="toggle-hint">(per portion)</span></h3>
+            <label>Ingredient cost <input type="number" id="ing-cost" inputmode="decimal" min="0" step="0.01" value="3.50"></label>
+            <label>Packaging cost <input type="number" id="pkg-cost" inputmode="decimal" min="0" step="0.01" value="0.50"></label>
+            <label>Selling price <input type="number" id="sell-price" inputmode="decimal" min="0" step="0.01" value="12.00"></label>
+
+            <h3>Fixed Costs <span class="toggle-hint">(monthly)</span></h3>
+            <label id="rent-label"><span class="label-text">Rent / space cost</span> <input type="number" id="rent-cost" inputmode="decimal" min="0" step="10" value="3000"></label>
+            <label id="manpower-label"><span class="label-text">Manpower</span> <input type="number" id="manpower-cost" inputmode="decimal" min="0" step="10" value="4500"></label>
+            <label id="utilities-row" hidden>Utilities <input type="number" id="utilities-cost" inputmode="decimal" min="0" step="10" value="1000"></label>
+            <label id="permits-row" hidden>Permits &amp; licenses <span class="toggle-hint">(monthly)</span> <input type="number" id="permits-cost" inputmode="decimal" min="0" step="10" value="0"></label>
+
+            <h3>Volume</h3>
+            <div class="slider-row">
+              <label for="operating-days">Operating days / month</label>
+              <input type="range" id="operating-days" min="1" max="31" value="26">
+              <span class="slider-val" id="operating-days-val">26</span>
+            </div>
+            <div class="slider-row">
+              <label for="daily-volume">Sales volume <span class="toggle-hint">(portions/day)</span></label>
+              <input type="range" id="daily-volume" min="0" max="500" value="100">
+              <span class="slider-val" id="daily-volume-val">100</span>
+            </div>
+            <div class="preset-buttons">
+              <button type="button" class="btn btn-secondary" data-preset="pessimistic">Pessimistic (100/day)</button>
+              <button type="button" class="btn btn-secondary" data-preset="optimistic">Optimistic (300/day)</button>
+            </div>
+
+            <div class="calc-actions no-print">
+              <button type="button" id="save-pdf-ica" class="btn btn-secondary">Save as PDF</button>
+            </div>
+          </div>
+
+          <div class="ica-results">
+            <div class="result-card">
+              <span class="result-label">Contribution Margin</span>
+              <span class="result-value" id="res-margin">RM0.00/portion</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Break-even (month)</span>
+              <span class="result-value" id="res-be-month">0 portions</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Break-even (day)</span>
+              <span class="result-value" id="res-be-day">0 portions</span>
+            </div>
+            <div class="result-card" id="res-profit-card">
+              <span class="result-label">At current volume</span>
+              <span class="result-value" id="res-profit">RM0.00 profit</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="ica-chart-wrap">
+          <svg id="ica-chart" viewBox="0 0 640 380" role="img" aria-label="Break-even chart showing revenue, total cost, and fixed cost against sales volume"></svg>
+          <div class="chart-legend">
+            <span><i class="legend-swatch legend-revenue"></i>Total Revenue</span>
+            <span><i class="legend-swatch legend-cost"></i>Total Cost</span>
+            <span><i class="legend-swatch legend-fixed"></i>Fixed Cost</span>
+            <span><i class="legend-swatch legend-be"></i>Break-even</span>
+            <span><i class="legend-swatch legend-current"></i>Current Volume</span>
+          </div>
+        </div>
+
+        <div class="ica-structure">
+          <h3>Cost Structure: Your Numbers vs. Guide</h3>
+          <p class="structure-key">Ingredients / Overhead / Manpower / Margin</p>
+          <div class="structure-bars" id="structure-bars"><!-- populated by JS --></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">Riverstone Studio</div>
+          <p class="footer-tagline">[One line about what you do and who you help.]</p>
+        </div>
+        <div class="footer-links">
+          <div class="footer-col">
+            <h4>Site</h4>
+            <ul>
+              <li><a href="index.html">Home</a></li>
+              <li><a href="about.html">About</a></li>
+              <li><a href="services.html">Services</a></li>
+              <li><a href="menu-calculator.html">Menu Calculator</a></li>
+              <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+              <li><a href="contact.html">Contact</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Contact</h4>
+            <ul>
+              <li><a href="mailto:you@example.com">[you@example.com]</a></li>
+              <li><a href="tel:+60123456789">[+60 12-345 6789]</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">&copy; 2026 Riverstone Studio. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <script src="interactive-costing-analysis.js" defer></script>
+</body>
+</html>

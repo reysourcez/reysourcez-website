@@ -174,13 +174,13 @@ function createIngredientRow() {
   const tr = document.createElement('tr');
   tr.dataset.rowId = 'ing-' + ingredientIdCounter;
   tr.innerHTML = `
-    <td><input type="text" class="f-item" placeholder="e.g. Chicken breast"></td>
-    <td><input type="number" class="f-price" inputmode="decimal" min="0" step="0.01" value="0.00"></td>
-    <td><input type="number" class="f-qty" inputmode="decimal" min="0.01" step="0.01" value="1"></td>
-    <td><select class="f-unit">${unitOptionsHTML()}</select></td>
+    <td><input type="text" class="f-item" name="item" placeholder="e.g. Chicken breast"></td>
+    <td><input type="number" class="f-price" name="price" inputmode="decimal" min="0" step="0.01" value="0.00"></td>
+    <td><input type="number" class="f-qty" name="qty" inputmode="decimal" min="0.01" step="0.01" value="1"></td>
+    <td><select class="f-unit" name="unit">${unitOptionsHTML()}</select></td>
     <td class="calc r-price-per-unit">RM0.00/g</td>
-    <td><input type="number" class="f-yield" inputmode="decimal" min="0.01" step="0.1" value="100"></td>
-    <td><input type="number" class="f-wastage" inputmode="decimal" min="0" step="0.1" value="0"></td>
+    <td><input type="number" class="f-yield" name="yield" inputmode="decimal" min="0.01" step="0.1" value="100"></td>
+    <td><input type="number" class="f-wastage" name="wastage" inputmode="decimal" min="0" step="0.1" value="0"></td>
     <td class="calc r-true-cost">RM0.00/g</td>
     <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this item">&times;</button></td>
   `;
@@ -277,12 +277,12 @@ function createMenuRow(block) {
   const tr = document.createElement('tr');
   tr.dataset.menuRowId = 'menurow-' + menuRowIdCounter;
   tr.innerHTML = `
-    <td><input type="checkbox" class="m-include" checked aria-label="Include in total"></td>
-    <td><select class="m-type">${menuTypeOptionsHTML()}</select></td>
-    <td><select class="m-item">${menuItemOptionsHTML(null)}</select></td>
+    <td><input type="checkbox" class="m-include" name="include" checked aria-label="Include in total"></td>
+    <td><select class="m-type" name="menu-type">${menuTypeOptionsHTML()}</select></td>
+    <td><select class="m-item" name="menu-item">${menuItemOptionsHTML(null)}</select></td>
     <td>
       <div class="amount-cell">
-        <input type="number" class="m-amount" inputmode="decimal" min="0" step="0.01" value="0">
+        <input type="number" class="m-amount" name="amount" inputmode="decimal" min="0" step="0.01" value="0">
         <span class="m-unit-label">\u2014</span>
       </div>
     </td>
@@ -360,7 +360,7 @@ function createMenuBlock() {
   block.dataset.blockId = 'menublock-' + n;
   block.innerHTML = `
     <div class="menu-block-header">
-      <input type="text" class="menu-name-input" value="Untitled Menu Item" aria-label="Menu item name">
+      <input type="text" class="menu-name-input" name="menu-name" value="Untitled Menu Item" aria-label="Menu item name">
       <button type="button" class="remove-block-btn no-print" aria-label="Remove this menu">Remove menu</button>
     </div>
 
@@ -395,26 +395,26 @@ function createMenuBlock() {
     <div class="pricing-panel">
       <div class="pricing-row">
         <label for="tfc-${n}">Target Food Cost %</label>
-        <input type="number" id="tfc-${n}" class="target-food-cost" inputmode="decimal" min="1" max="100" step="0.1" value="30">
+        <input type="number" id="tfc-${n}" class="target-food-cost" name="target-food-cost" inputmode="decimal" min="1" max="100" step="0.1" value="30">
         <span class="pricing-result">Target Selling Price <strong class="target-selling-price">RM0.00</strong></span>
       </div>
 
       <div class="platform-panel">
         <label class="toggle-row">
-          <input type="checkbox" class="use-delivery-toggle">
+          <input type="checkbox" class="use-delivery-toggle" name="use-delivery">
           Sold via delivery app <span class="toggle-hint">(commission + tax on commission)</span>
         </label>
         <div class="platform-fields" hidden>
-          <label>Commission % <input type="number" class="commission-pct" inputmode="decimal" min="0" max="100" step="0.1" value="30"></label>
-          <label>Tax on commission % <input type="number" class="commission-tax-pct" inputmode="decimal" min="0" max="100" step="0.1" value="8"></label>
+          <label>Commission % <input type="number" class="commission-pct" name="commission-pct" inputmode="decimal" min="0" max="100" step="0.1" value="30"></label>
+          <label>Tax on commission % <input type="number" class="commission-tax-pct" name="commission-tax-pct" inputmode="decimal" min="0" max="100" step="0.1" value="8"></label>
         </div>
 
         <label class="toggle-row">
-          <input type="checkbox" class="use-sst-toggle">
+          <input type="checkbox" class="use-sst-toggle" name="use-sst">
           SST registered <span class="toggle-hint">(tax on food)</span>
         </label>
         <div class="sst-fields" hidden>
-          <label>SST on food % <input type="number" class="sst-pct" inputmode="decimal" min="0" max="100" step="0.1" value="6"></label>
+          <label>SST on food % <input type="number" class="sst-pct" name="sst-pct" inputmode="decimal" min="0" max="100" step="0.1" value="6"></label>
         </div>
 
         <div class="net-summary">
@@ -460,7 +460,7 @@ function createMenuBlock() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-08-21-global-inflation');
+console.info('[Menu Calculator] script build: 2026-08-21-named-fields');
 
 function init() {
   document.getElementById('add-row').addEventListener('click', createIngredientRow);
