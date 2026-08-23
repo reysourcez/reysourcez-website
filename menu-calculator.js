@@ -247,6 +247,7 @@ function menuSortValue(tr, key) {
     }
     case 'amount': return parseFloat(tr.querySelector('.m-amount').value) || 0;
     case 'price': return parseFloat(tr.dataset.price) || 0;
+    case 'targetprice': return parseFloat(tr.dataset.targetPrice) || 0;
     default: return '';
   }
 }
@@ -265,9 +266,14 @@ function updateMenuRow(tr) {
   tr.querySelector('.m-price').textContent = formatRM(price);
   tr.dataset.price = price;
 
+  const block = tr.closest('.menu-block');
+  const targetFoodCostPct = block ? parsePercent(block.querySelector('.target-food-cost'), 30, 0.1) : 30;
+  const targetPrice = price / (targetFoodCostPct / 100);
+  tr.querySelector('.m-target-price').textContent = formatRM(targetPrice);
+  tr.dataset.targetPrice = targetPrice;
+
   tr.classList.toggle('excluded', !included);
 
-  const block = tr.closest('.menu-block');
   if (block) updateMenuBlockSummary(block);
 }
 
@@ -287,6 +293,7 @@ function createMenuRow(block) {
       </div>
     </td>
     <td class="calc m-price">RM0.00</td>
+    <td class="calc m-target-price">RM0.00</td>
     <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this menu item">&times;</button></td>
   `;
   tbody.appendChild(tr);
@@ -302,21 +309,23 @@ function createMenuRow(block) {
   updateMenuRow(tr);
 }
 
-// Total -> Target Selling Price (cost-plus, from the target food-cost
-// %) -> what's actually left after an optional delivery-platform cut
-// and optional SST. Every rate is editable; the defaults below are
-// just starting points, not fixed facts — commission varies by
-// platform/tier, and SST eligibility depends on registration status.
+// Total (cost) and Total Target Selling Price both sum only the
+// checked rows. Delivery commission/SST mark UP the target price
+// rather than being deducted from it — these fees are the platform's
+// and the tax authority's cut on top of what you list, not something
+// that should come out of your own target. Gross up the listed price
+// so that after fees are taken out, you still net your full target.
 function updateMenuBlockSummary(block) {
   let total = 0;
+  let totalTargetPrice = 0;
   block.querySelectorAll('.menu-rows > tr').forEach((tr) => {
-    if (tr.querySelector('.m-include').checked) total += parseFloat(tr.dataset.price) || 0;
+    if (tr.querySelector('.m-include').checked) {
+      total += parseFloat(tr.dataset.price) || 0;
+      totalTargetPrice += parseFloat(tr.dataset.targetPrice) || 0;
+    }
   });
   block.querySelector('.menu-total').textContent = formatRM(total);
-
-  const targetFoodCostPct = parsePercent(block.querySelector('.target-food-cost'), 30, 0.1);
-  const targetSellingPrice = total / (targetFoodCostPct / 100);
-  block.querySelector('.target-selling-price').textContent = formatRM(targetSellingPrice);
+  block.querySelector('.menu-total-target-price').textContent = formatRM(totalTargetPrice);
 
   const useDelivery = block.querySelector('.use-delivery-toggle').checked;
   const useSST = block.querySelector('.use-sst-toggle').checked;
@@ -324,11 +333,32 @@ function updateMenuBlockSummary(block) {
   const commissionTaxPct = parsePercent(block.querySelector('.commission-tax-pct'), 8, 0);
   const sstPct = parsePercent(block.querySelector('.sst-pct'), 6, 0);
 
-  const commissionAmount = useDelivery ? targetSellingPrice * (commissionPct / 100) : 0;
-  const commissionTaxAmount = useDelivery ? commissionAmount * (commissionTaxPct / 100) : 0;
-  const sstAmount = useSST ? targetSellingPrice * (sstPct / 100) : 0;
-  const netAmount = targetSellingPrice - commissionAmount - commissionTaxAmount - sstAmount;
+  // Commission is charged on the LISTED price, and its own tax is
+  // charged on the commission amount — so as a share of the listed
+  // price, the commission side alone costs commissionPct * (1 + tax).
+  const commissionShare = useDelivery ? (commissionPct / 100) * (1 + commissionTaxPct / 100) : 0;
+  const sstShare = useSST ? sstPct / 100 : 0;
+  const combinedShare = commissionShare + sstShare;
 
+  const warningEl = block.querySelector('.fee-warning');
+  let listedPrice;
+  if (combinedShare >= 1) {
+    // Fees alone would consume the entire listed price (or more) —
+    // there's no price that recovers the target, so don't pretend
+    // there is one.
+    listedPrice = NaN;
+    warningEl.hidden = false;
+  } else {
+    listedPrice = totalTargetPrice / (1 - combinedShare);
+    warningEl.hidden = true;
+  }
+
+  const commissionAmount = useDelivery && isFinite(listedPrice) ? listedPrice * (commissionPct / 100) : 0;
+  const commissionTaxAmount = useDelivery && isFinite(listedPrice) ? commissionAmount * (commissionTaxPct / 100) : 0;
+  const sstAmount = useSST && isFinite(listedPrice) ? listedPrice * (sstPct / 100) : 0;
+  const netAmount = isFinite(listedPrice) ? listedPrice - commissionAmount - commissionTaxAmount - sstAmount : 0;
+
+  block.querySelector('.listed-price').textContent = isFinite(listedPrice) ? formatRM(listedPrice) : '\u2014';
   block.querySelector('.commission-amount').textContent = formatRM(commissionAmount);
   block.querySelector('.commission-tax-amount').textContent = formatRM(commissionTaxAmount);
   block.querySelector('.sst-amount').textContent = formatRM(sstAmount);
@@ -344,6 +374,12 @@ function refreshMenuBlockDropdowns(block) {
     select.innerHTML = menuItemOptionsHTML(currentValue);
     updateMenuRow(tr);
   });
+}
+
+// Target Food Cost % feeds every row's Target Selling Price column,
+// so a change there has to re-run every row, not just the totals.
+function refreshMenuBlockRows(block) {
+  block.querySelectorAll('.menu-rows > tr').forEach((tr) => updateMenuRow(tr));
 }
 
 // Called whenever the ingredient table changes (add/edit/delete/sort).
@@ -374,15 +410,16 @@ function createMenuBlock() {
             <th scope="col" class="sortable" data-sort="item">Item <span class="sort-indicator"></span></th>
             <th scope="col" class="sortable" data-sort="amount">Amount <span class="sort-indicator"></span></th>
             <th scope="col" class="sortable auto-col" data-sort="price">Price <span class="sort-indicator"></span></th>
+            <th scope="col" class="sortable auto-col" data-sort="targetprice">Target Selling Price <span class="sort-indicator"></span></th>
             <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
           </tr>
         </thead>
         <tbody class="menu-rows"></tbody>
         <tfoot>
           <tr class="menu-total-row">
-            <td colspan="4"><strong>Total</strong></td>
+            <td colspan="4"><strong>Total</strong> <span class="toggle-hint">(cost)</span></td>
             <td class="calc menu-total">RM0.00</td>
-            <td class="no-print"></td>
+            <td class="calc menu-total-target-price" colspan="2"><strong>Total Target Selling Price</strong><br>RM0.00</td>
           </tr>
         </tfoot>
       </table>
@@ -396,7 +433,7 @@ function createMenuBlock() {
       <div class="pricing-row">
         <label for="tfc-${n}">Target Food Cost %</label>
         <input type="number" id="tfc-${n}" class="target-food-cost" name="target-food-cost" inputmode="decimal" min="1" max="100" step="0.1" value="30">
-        <span class="pricing-result">Target Selling Price <strong class="target-selling-price">RM0.00</strong></span>
+        <span class="toggle-hint">drives the Target Selling Price column above</span>
       </div>
 
       <div class="platform-panel">
@@ -417,11 +454,14 @@ function createMenuBlock() {
           <label>SST on food % <input type="number" class="sst-pct" name="sst-pct" inputmode="decimal" min="0" max="100" step="0.1" value="6"></label>
         </div>
 
+        <p class="fee-warning" hidden>These rates add up to 100% or more of the listed price — there's no price that recovers your target. Lower the commission, tax, or SST rate.</p>
+
         <div class="net-summary">
-          <div>Commission <span class="commission-amount">RM0.00</span></div>
-          <div>Tax on commission <span class="commission-tax-amount">RM0.00</span></div>
-          <div>SST <span class="sst-amount">RM0.00</span></div>
-          <div class="net-received">Net received <strong class="net-amount">RM0.00</strong></div>
+          <div>Price to list <span class="listed-price">RM0.00</span></div>
+          <div>&minus; Commission <span class="commission-amount">RM0.00</span></div>
+          <div>&minus; Tax on commission <span class="commission-tax-amount">RM0.00</span></div>
+          <div>&minus; SST <span class="sst-amount">RM0.00</span></div>
+          <div class="net-received">= You keep <strong class="net-amount">RM0.00</strong></div>
         </div>
       </div>
     </div>
@@ -430,7 +470,7 @@ function createMenuBlock() {
 
   block.querySelector('.add-menu-row-btn').addEventListener('click', () => createMenuRow(block));
   block.querySelector('.remove-block-btn').addEventListener('click', () => block.remove());
-  block.querySelector('.target-food-cost').addEventListener('input', () => updateMenuBlockSummary(block));
+  block.querySelector('.target-food-cost').addEventListener('input', () => refreshMenuBlockRows(block));
   block.querySelector('.commission-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.commission-tax-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.sst-pct').addEventListener('input', () => updateMenuBlockSummary(block));
@@ -460,7 +500,7 @@ function createMenuBlock() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-08-21-named-fields');
+console.info('[Menu Calculator] script build: 2026-08-23-fee-markup-fix');
 
 function init() {
   document.getElementById('add-row').addEventListener('click', createIngredientRow);
