@@ -895,12 +895,10 @@ th.sortable:hover { color: var(--accent-dark); }
 .seg-manpower { background: #D4A017; }
 .seg-margin { background: #C2588A; }
 
-/* Hollow/outlined labels so text stays legible on any segment
-   color — white halo, transparent fill, works without needing to
-   pick a different text color per background. */
+/* Solid white label — simpler than the outline trick, works fine
+   since all four segment colors are dark/saturated enough. */
 .seg-label {
   color: #FFFFFF;
-  text-shadow: none;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   font-weight: 700;
@@ -988,6 +986,7 @@ th.sortable:hover { color: var(--accent-dark); }
 
 .oh-amortize-cell { white-space: nowrap; font-size: 0.85rem; color: var(--muted); }
 .oh-amortize-cell input { width: 56px; margin: 0 4px; }
+.oh-amortize-empty, .mp-statutory-empty { color: var(--muted); font-family: var(--font-body); font-weight: 400; }
 
 .mp-statutory-cells { font-size: 0.78rem; line-height: 1.6; }
 .mp-statutory-cells div { display: flex; justify-content: space-between; gap: 10px; white-space: nowrap; }

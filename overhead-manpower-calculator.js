@@ -20,7 +20,7 @@
    the calc step in that row's update function.
    ============================================================ */
 
-console.info('[Overhead & Manpower Calculator] script build: 2026-08-23-v1');
+console.info('[Overhead & Manpower Calculator] script build: 2026-08-23-column-fix');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -57,11 +57,12 @@ function overheadCategoryOptionsHTML() {
 function updateOverheadRow(tr) {
   const cost = parseNum(tr.querySelector('.oh-cost'));
   const freq = tr.querySelector('.oh-frequency').value;
-  const amortizeRow = tr.querySelector('.oh-amortize-cell');
-  amortizeRow.hidden = freq !== 'onetime';
+  const isOnetime = freq === 'onetime';
+  tr.querySelector('.oh-amortize-fields').hidden = !isOnetime;
+  tr.querySelector('.oh-amortize-empty').hidden = isOnetime;
 
   let monthlyEquivalent;
-  if (freq === 'onetime') {
+  if (isOnetime) {
     const months = Math.max(1, parseNum(tr.querySelector('.oh-amortize'), 12));
     monthlyEquivalent = cost / months;
   } else {
@@ -91,7 +92,10 @@ function createOverheadRow() {
         <option value="onetime">One-time</option>
       </select>
     </td>
-    <td class="oh-amortize-cell" hidden>Over <input type="number" class="oh-amortize" name="amortize-months" min="1" step="1" value="12"> months</td>
+    <td class="oh-amortize-cell">
+      <span class="oh-amortize-fields" hidden>Over <input type="number" class="oh-amortize" name="amortize-months" min="1" step="1" value="12"> months</span>
+      <span class="oh-amortize-empty">&mdash;</span>
+    </td>
     <td class="calc oh-monthly">RM0.00</td>
     <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this overhead item">&times;</button></td>
   `;
@@ -157,12 +161,14 @@ function computeStatutory(salary) {
 function updateManpowerRow(tr) {
   const type = tr.querySelector('.mp-type').value;
   const salary = parseNum(tr.querySelector('.mp-salary'));
-  const statutoryCells = tr.querySelector('.mp-statutory-cells');
+  const statutoryFields = tr.querySelector('.mp-statutory-fields');
+  const statutoryEmpty = tr.querySelector('.mp-statutory-empty');
   const warningEl = tr.querySelector('.mp-wage-warning');
 
   let employerCost;
   if (type === 'permanent') {
-    statutoryCells.hidden = false;
+    statutoryFields.hidden = false;
+    statutoryEmpty.hidden = true;
     const s = computeStatutory(salary);
     tr.querySelector('.mp-epf').textContent = formatRM(s.epfEmployer);
     tr.querySelector('.mp-socso').textContent = formatRM(s.socsoEmployer);
@@ -170,7 +176,8 @@ function updateManpowerRow(tr) {
     employerCost = s.employerCost;
     warningEl.hidden = salary >= MIN_WAGE || salary === 0;
   } else {
-    statutoryCells.hidden = true;
+    statutoryFields.hidden = true;
+    statutoryEmpty.hidden = false;
     employerCost = salary; // freelance/casual: paid in bulk, no statutory contributions
     warningEl.hidden = true;
   }
@@ -199,9 +206,12 @@ function createManpowerRow() {
       <div class="mp-wage-warning" hidden>Below RM1,700 national minimum wage</div>
     </td>
     <td class="mp-statutory-cells calc">
-      <div>EPF <span class="mp-epf">RM0.00</span></div>
-      <div>SOCSO <span class="mp-socso">RM0.00</span></div>
-      <div>EIS <span class="mp-eis">RM0.00</span></div>
+      <div class="mp-statutory-fields" hidden>
+        <div>EPF <span class="mp-epf">RM0.00</span></div>
+        <div>SOCSO <span class="mp-socso">RM0.00</span></div>
+        <div>EIS <span class="mp-eis">RM0.00</span></div>
+      </div>
+      <span class="mp-statutory-empty">&mdash; not applicable &mdash;</span>
     </td>
     <td class="calc mp-cost">RM0.00</td>
     <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this staff member">&times;</button></td>
