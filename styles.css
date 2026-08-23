@@ -899,7 +899,7 @@ th.sortable:hover { color: var(--accent-dark); }
    color — white halo, transparent fill, works without needing to
    pick a different text color per background. */
 .seg-label {
-  color: transparent;
+  color: FFFFFF;
   text-shadow: none;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
