@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — Overhead &amp; Manpower Calculator</title>
+  <meta name="description" content="Free overhead and manpower cost calculator for Malaysian F&B businesses — rent, utilities, licenses, and staff costs including EPF/SOCSO/EIS, calculated instantly in your browser.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=4">
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="menu-calculator.html">Menu Calculator</a></li>
+        <li><a href="overhead-manpower-calculator.html" aria-current="page">Overhead &amp; Manpower</a></li>
+        <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; nothing is saved</span>
+        <h1>Overhead &amp; Manpower Calculator</h1>
+        <p class="lead">Work out your true monthly overhead and staffing cost — rent, utilities, licenses, food-handler compliance, and staff pay including EPF/SOCSO/EIS — calculated instantly in your browser.</p>
+      </div>
+    </section>
+
+    <section class="calc-note no-print">
+      <div class="wrap">
+        <p><strong>About the numbers:</strong> EPF, SOCSO, and EIS rates below are the standard federal percentages (they apply the same way in Sarawak as anywhere else in Malaysia — these aren't state-specific). EPF uses the flat percentage rather than the official Third Schedule table, so figures are a close working estimate, not a payslip-exact one, and no income tax (PCB/MTD) is included. Good enough to price a menu with; verify exact figures with KWSP/PERKESO before relying on this for actual payroll.</p>
+      </div>
+    </section>
+
+    <!-- ============ OVERHEAD ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <h2>Overhead</h2>
+        <p class="menu-builder-intro">Add every recurring or periodic cost of running the business. Pick how often you pay it — a one-time cost like a food handling course can be spread over however many months you choose.</p>
+
+        <div class="table-scroll">
+          <table id="overhead-table">
+            <caption class="sr-only">Overhead costs — add each cost, its frequency, and see the monthly equivalent</caption>
+            <thead>
+              <tr>
+                <th scope="col">Item</th>
+                <th scope="col">Category</th>
+                <th scope="col">Cost (RM)</th>
+                <th scope="col">Frequency</th>
+                <th scope="col">Amortize</th>
+                <th scope="col" class="auto-col">Monthly Equivalent</th>
+                <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody id="overhead-rows"></tbody>
+            <tfoot>
+              <tr class="menu-total-row">
+                <td colspan="5"><strong>Total Monthly Overhead</strong></td>
+                <td class="calc" id="overhead-total">RM0.00</td>
+                <td class="no-print"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="calc-actions no-print">
+          <button type="button" id="add-overhead-row" class="btn btn-primary">+ Add overhead item</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MANPOWER ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <h2>Manpower</h2>
+        <p class="menu-builder-intro">Add each staff member. <strong>Permanent</strong> staff get EPF, SOCSO, and EIS calculated automatically. <strong>Freelance / casual</strong> staff are paid a flat sum with no statutory contributions.</p>
+
+        <div class="table-scroll">
+          <table id="manpower-table">
+            <caption class="sr-only">Manpower costs — add each staff member and see the true employer cost including statutory contributions</caption>
+            <thead>
+              <tr>
+                <th scope="col">Role / Name</th>
+                <th scope="col">Staff Type</th>
+                <th scope="col">Monthly Salary / Payment</th>
+                <th scope="col" class="auto-col">Statutory (Employer)</th>
+                <th scope="col" class="auto-col">Employer Cost</th>
+                <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody id="manpower-rows"></tbody>
+            <tfoot>
+              <tr class="menu-total-row">
+                <td colspan="4"><strong>Total Monthly Manpower</strong></td>
+                <td class="calc" id="manpower-total">RM0.00</td>
+                <td class="no-print"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="calc-actions no-print">
+          <button type="button" id="add-manpower-row" class="btn btn-primary">+ Add staff member</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ GRAND TOTAL ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <div class="grand-total-card">
+          <span class="result-label">Total Monthly Overhead + Manpower</span>
+          <span class="result-value" id="grand-total">RM0.00</span>
+        </div>
+        <div class="calc-actions no-print">
+          <button type="button" id="save-pdf-om" class="btn btn-secondary">Save as PDF</button>
+        </div>
+        <p class="structure-note">This total feeds the Overhead and Manpower figures elsewhere in the costing tools — for now, copy it across by hand; a direct connection between the calculators is planned for an upcoming update.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">Reysourcez Enterprise</div>
+          <p class="footer-tagline">We focus on providing catered solutions to your dilemmas.</p>
+        </div>
+        <div class="footer-links">
+          <div class="footer-col">
+            <h4>Site</h4>
+            <ul>
+              <li><a href="index.html">Home</a></li>
+              <li><a href="about.html">About</a></li>
+              <li><a href="services.html">Services</a></li>
+              <li><a href="menu-calculator.html">Menu Calculator</a></li>
+              <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+              <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+              <li><a href="contact.html">Contact</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Contact</h4>
+            <ul>
+              <li><a href="mailto:reysourcez.ent@gmail.com">reysourcez.ent@gmail.com</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <script src="overhead-manpower-calculator.js?v=1" defer></script>
+</body>
+</html>

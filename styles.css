@@ -936,3 +936,87 @@ th.sortable:hover { color: var(--accent-dark); }
   .ica-inputs input[type="range"] { display: none; }
   #ica-chart { border: none; }
 }
+
+/* ---- 16. Overhead & Manpower Calculator ----
+   Reuses the existing #calc-table / .table-scroll / .calc /
+   .menu-total-row conventions from the ingredient and menu-portion
+   tables — new tables, same visual language. */
+
+#overhead-table, #manpower-table { border-collapse: collapse; width: 100%; min-width: 760px; }
+#overhead-table th, #overhead-table td,
+#manpower-table th, #manpower-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.92rem;
+  vertical-align: middle;
+}
+#overhead-table thead th, #manpower-table thead th {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--paper);
+  white-space: nowrap;
+}
+#overhead-table th.auto-col, #overhead-table td.calc,
+#manpower-table th.auto-col, #manpower-table td.calc {
+  background: var(--accent-soft);
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-weight: 600;
+  color: var(--accent-dark);
+}
+
+#overhead-table td input, #overhead-table td select,
+#manpower-table td input, #manpower-table td select {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: "IBM Plex Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+}
+#overhead-table td input[type="text"], #manpower-table td input[type="text"] {
+  font-family: var(--font-body);
+  min-width: 140px;
+}
+#overhead-table select, #manpower-table select { min-width: 120px; }
+#overhead-table input:focus-visible, #overhead-table select:focus-visible,
+#manpower-table input:focus-visible, #manpower-table select:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.oh-amortize-cell { white-space: nowrap; font-size: 0.85rem; color: var(--muted); }
+.oh-amortize-cell input { width: 56px; margin: 0 4px; }
+
+.mp-statutory-cells { font-size: 0.78rem; line-height: 1.6; }
+.mp-statutory-cells div { display: flex; justify-content: space-between; gap: 10px; white-space: nowrap; }
+.mp-wage-warning {
+  font-size: 0.75rem;
+  color: #C0392B;
+  font-weight: 600;
+  margin-top: 4px;
+  white-space: nowrap;
+}
+
+.grand-total-card {
+  background: var(--paper);
+  border-radius: 10px;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.grand-total-card .result-label { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+.grand-total-card .result-value { font-family: "IBM Plex Mono", monospace; font-size: 1.6rem; font-weight: 700; color: var(--accent-dark); }
+
+@media (max-width: 800px) {
+  .grand-total-card { flex-direction: column; align-items: flex-start; }
+}
