@@ -813,12 +813,12 @@ th.sortable:hover { color: var(--accent-dark); }
 .chart-axis-label { font-size: 10px; fill: var(--muted); font-family: "IBM Plex Mono", monospace; }
 .chart-axis-title { font-size: 11px; fill: var(--muted); font-family: var(--font-body); }
 .chart-line { fill: none; stroke-width: 2.5; }
-.chart-line-revenue { stroke: #2E5FA3; }
+.chart-line-revenue { stroke: #5388CF; }
 .chart-line-cost { stroke: var(--accent); }
 .chart-line-fixed { stroke: #D4A017; stroke-dasharray: 5 4; }
 .chart-be-line, .chart-current-line { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 3 3; }
 .chart-point-be { fill: #C0392B; stroke: #fff; stroke-width: 1.5; }
-.chart-point-current { fill: #6C4A8C; stroke: #fff; stroke-width: 1.5; }
+.chart-point-current { fill: #D68ABA; stroke: #fff; stroke-width: 1.5; }
 .chart-point-label { font-size: 10px; fill: var(--ink); font-weight: 600; font-family: var(--font-body); }
 
 .chart-legend {
@@ -831,11 +831,11 @@ th.sortable:hover { color: var(--accent-dark); }
 }
 .chart-legend span { display: flex; align-items: center; gap: 6px; }
 .legend-swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
-.legend-revenue { background: #2E5FA3; }
+.legend-revenue { background: #5388CF; }
 .legend-cost { background: var(--accent); }
 .legend-fixed { background: #D4A017; }
 .legend-be { background: #C0392B; border-radius: 50%; width: 8px; height: 8px; }
-.legend-current { background: #6C4A8C; border-radius: 50%; width: 8px; height: 8px; }
+.legend-current { background: #D68ABA; border-radius: 50%; width: 8px; height: 8px; }
 
 /* Cost structure comparison */
 .ica-structure { margin-top: 8px; }
@@ -900,11 +900,7 @@ th.sortable:hover { color: var(--accent-dark); }
    pick a different text color per background. */
 .seg-label {
   color: transparent;
-  text-shadow:
-    -1px -1px 0 #fff, 1px -1px 0 #fff,
-    -1px  1px 0 #fff, 1px  1px 0 #fff,
-    0 -1px 0 #fff, 0 1px 0 #fff,
-    -1px 0 0 #fff, 1px 0 0 #fff;
+  text-shadow: none;
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.72rem;
   font-weight: 700;
