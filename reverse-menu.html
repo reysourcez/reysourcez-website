@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reverse Menu Engineering</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <a href="index.html" class="back-link">&larr; Back to Tools</a>
+        
+        <header style="margin-bottom: 2rem;">
+            <h1>Reverse Menu Engineering</h1>
+            <p>Diagnose margin leaks and cost creeps.</p>
+        </header>
+
+        <div class="card">
+            <div class="app-layout">
+                
+                <!-- Left Column: Inputs -->
+                <div class="input-section">
+                    <h2>Input Variables</h2>
+                    
+                    <div class="form-group">
+                        <label for="sellingPrice">Current Selling Price ($)</label>
+                        <input type="number" id="sellingPrice" value="25.00" step="0.50" min="0">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="actualCost">Actual Kitchen Cost per Plate ($)</label>
+                        <input type="number" id="actualCost" value="9.50" step="0.10" min="0">
+                        <span class="help-text">Based on recent inventory depletion & supplier invoices.</span>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="slider-header">
+                            <label for="targetMargin" style="margin-bottom: 0;">Target Gross Margin</label>
+                            <span class="slider-value-badge"><span id="marginLabel">70</span>%</span>
+                        </div>
+                        <input type="range" id="targetMargin" min="10" max="90" value="70">
+                    </div>
+                </div>
+
+                <!-- Right Column: Outputs -->
+                <div class="output-section">
+                    <h2>Analysis</h2>
+                    
+                    <div class="metrics-grid" style="margin-top: 0;">
+                        <div class="metric-card">
+                            <div class="metric-label">Target Food Cost</div>
+                            <div class="metric-value" id="outTargetCost">$0.00</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-label">Current Gross Profit</div>
+                            <div class="metric-value" id="outCurrentProfit">$0.00</div>
+                        </div>
+                    </div>
+
+                    <div class="metric-card" style="margin-bottom: 1.5rem; background: #f8fafc; border: 1px solid #e2e8f0;">
+                        <div class="metric-label">Cost Variance (Creep)</div>
+                        <div class="metric-value" id="outVariance">$0.00</div>
+                    </div>
+
+                    <div id="feedbackBox" class="alert alert-success">
+                        <div class="alert-title">Initializing...</div>
+                        <div class="alert-body">System Ready</div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // MVC Architecture for maintainability
+        
+        const Model = {
+            data: { sellingPrice: 25, actualCost: 9.5, targetMarginPct: 70 },
+            
+            updateData(price, cost, margin) {
+                this.data.sellingPrice = parseFloat(price) || 0;
+                this.data.actualCost = parseFloat(cost) || 0;
+                this.data.targetMarginPct = parseFloat(margin) || 0;
+            },
+            
+            getCalculations() {
+                let sp = this.data.sellingPrice;
+                let ac = this.data.actualCost;
+                let marginDec = this.data.targetMarginPct / 100;
+                
+                let targetCost = sp * (1 - marginDec);
+                let currentProfit = sp - ac;
+                let variance = targetCost - ac;
+                
+                return { targetCost, currentProfit, variance };
+            }
+        };
+
+        const View = {
+            render(calculations) {
+                document.getElementById('outTargetCost').innerText = "$" + calculations.targetCost.toFixed(2);
+                document.getElementById('outCurrentProfit').innerText = "$" + calculations.currentProfit.toFixed(2);
+                
+                let varEl = document.getElementById('outVariance');
+                let feedEl = document.getElementById('feedbackBox');
+                
+                let varianceValue = calculations.variance;
+                
+                if (varianceValue < -0.01) { 
+                    // Negative variance (Cost is higher than target) - Used -0.01 to handle floating point rounding
+                    varEl.innerText = "-$" + Math.abs(varianceValue).toFixed(2);
+                    varEl.className = "metric-value text-danger";
+                    
+                    feedEl.className = "alert alert-danger";
+                    feedEl.innerHTML = `
+                        <div class="alert-title">🚨 Cost Creep Detected</div>
+                        <div class="alert-body">
+                            You are overspending per plate. Check the following loopholes:
+                            <ul>
+                                <li>Supplier price hikes on key ingredients.</li>
+                                <li>Kitchen staff over-portioning.</li>
+                                <li>Physical waste, spoilage, or theft.</li>
+                            </ul>
+                        </div>
+                    `;
+                } else if (Math.abs(varianceValue) <= 0.01) {
+                    // Exact match
+                    varEl.innerText = "$0.00";
+                    varEl.className = "metric-value text-warning";
+                    
+                    feedEl.className = "alert alert-warning";
+                    feedEl.innerHTML = `
+                        <div class="alert-title">⚖️ On Target</div>
+                        <div class="alert-body">Costs match your target margin perfectly. Monitor closely to ensure they don't creep up.</div>
+                    `;
+                } else {
+                    // Positive variance (Cost is lower than target)
+                    varEl.innerText = "+$" + varianceValue.toFixed(2);
+                    varEl.className = "metric-value text-success";
+                    
+                    feedEl.className = "alert alert-success";
+                    feedEl.innerHTML = `
+                        <div class="alert-title">✅ Margin Secured</div>
+                        <div class="alert-body">Costs are below your target. Great job! Just ensure food quality and portion sizes aren't being compromised.</div>
+                    `;
+                }
+            },
+            
+            updateSliderLabel(val) {
+                document.getElementById('marginLabel').innerText = val;
+            }
+        };
+
+        const Controller = {
+            init() {
+                this.priceInput = document.getElementById('sellingPrice');
+                this.costInput = document.getElementById('actualCost');
+                this.marginInput = document.getElementById('targetMargin');
+                
+                this.priceInput.addEventListener('input', () => this.process());
+                this.costInput.addEventListener('input', () => this.process());
+                this.marginInput.addEventListener('input', (e) => {
+                    View.updateSliderLabel(e.target.value);
+                    this.process();
+                });
+                
+                this.process();
+            },
+            
+            process() {
+                let p = this.priceInput.value;
+                let c = this.costInput.value;
+                let m = this.marginInput.value;
+                
+                Model.updateData(p, c, m);
+                let results = Model.getCalculations();
+                
+                View.render(results);
+            }
+        };
+
+        // Initialize application when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            Controller.init();
+        });
+    </script>
+</body>
+</html>
