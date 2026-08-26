@@ -392,6 +392,10 @@ function initSync() {
     if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
       document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
       markSynced('#ing-cost-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+      if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
+        document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
+        markSynced('#sell-price-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+      }
       recalculate();
     }
     if (data.source === 'overhead-manpower-calculator') {

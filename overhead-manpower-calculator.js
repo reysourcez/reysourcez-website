@@ -94,7 +94,7 @@ function createOverheadRow() {
       </select>
     </td>
     <td class="oh-amortize-cell">
-      <span class="oh-amortize-fields" hidden>Over <input type="number" class="oh-amortize" name="amortize-months" min="1" step="1" value="12"> months</span>
+      <span class="oh-amortize-fields" hidden>Over <input type="number" class="oh-amortize" name="amortize-months" min="1" step="1" value="12"> months <span class="tooltip-icon" data-tooltip="Spread this one-time cost across how many months to get a monthly figure">?</span></span>
       <span class="oh-amortize-empty">&mdash;</span>
     </td>
     <td class="calc oh-monthly">RM0.00</td>

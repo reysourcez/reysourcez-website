@@ -58,8 +58,11 @@
     <!-- ============ ANALYSIS ============ -->
     <section class="ica-panel" id="ica-analysis" hidden>
       <div class="wrap">
+        <div class="analysis-top-bar no-print">
+          <button type="button" id="ica-edit-answers" class="link-btn">&larr; Edit answers</button>
+          <button type="button" id="save-pdf-ica" class="btn btn-secondary">Save as PDF</button>
+        </div>
         <div class="ica-tip" id="ica-tip"></div>
-        <button type="button" id="ica-edit-answers" class="link-btn no-print">&larr; Edit answers</button>
 
         <div class="connector-panel no-print">
           <p class="connector-intro">Pull numbers in live from the other tools instead of retyping them — opens in a new tab, stays linked while both are open, nothing is saved either way.</p>
@@ -73,7 +76,7 @@
           <div class="ica-inputs">
             <h3>Variable Costs <span class="toggle-hint">(per portion)</span></h3>
             <label id="ing-cost-label"><span class="label-text">Ingredients &amp; packaging</span> <input type="number" id="ing-cost" inputmode="decimal" min="0" step="0.01" value="4.00"></label>
-            <label>Selling price <input type="number" id="sell-price" inputmode="decimal" min="0" step="0.01" value="12.00"></label>
+            <label id="sell-price-label"><span class="label-text">Selling price</span> <input type="number" id="sell-price" inputmode="decimal" min="0" step="0.01" value="12.00"></label>
 
             <h3>Fixed Costs <span class="toggle-hint">(monthly)</span></h3>
             <label id="overhead-cost-label"><span class="label-text">Overhead</span> <input type="number" id="overhead-cost" inputmode="decimal" min="0" step="10" value="4000"></label>
@@ -91,12 +94,8 @@
               <input type="number" class="slider-num" id="daily-volume-num" min="0" step="1" value="100">
             </div>
             <div class="preset-buttons">
-              <button type="button" class="btn btn-secondary" data-preset="pessimistic">Pessimistic (100/day)</button>
+              <button type="button" class="btn btn-secondary" data-preset="pessimistic">Pessimistic (50/day)</button>
               <button type="button" class="btn btn-secondary" data-preset="optimistic">Optimistic (300/day)</button>
-            </div>
-
-            <div class="calc-actions no-print">
-              <button type="button" id="save-pdf-ica" class="btn btn-secondary">Save as PDF</button>
             </div>
           </div>
 

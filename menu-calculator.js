@@ -370,7 +370,7 @@ function updateMenuBlockSummary(block) {
   // will feed in.
   if (typeof rzBroadcast === 'function' && block === document.querySelector('.menu-block')) {
     const name = block.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item';
-    rzBroadcast({ costPerPortion: total, dishName: name });
+    rzBroadcast({ costPerPortion: total, sellingPrice: isFinite(listedPrice) ? listedPrice : undefined, dishName: name });
   }
 }
 
@@ -435,12 +435,12 @@ function createMenuBlock() {
     </div>
 
     <div class="calc-actions no-print">
-      <button type="button" class="add-menu-row-btn btn btn-secondary">+ Add item to menu</button>
+      <button type="button" class="add-menu-row-btn btn btn-primary">+ Add item to menu</button>
     </div>
 
     <div class="pricing-panel">
       <div class="pricing-row">
-        <label for="tfc-${n}">Target Food Cost %</label>
+        <label for="tfc-${n}">Target Food Cost %<span class="tooltip-icon" data-tooltip="As % of selling price — lower % means higher margin">?</span></label>
         <input type="number" id="tfc-${n}" class="target-food-cost" name="target-food-cost" inputmode="decimal" min="1" max="100" step="0.1" value="30">
         <span class="toggle-hint">drives the Target Selling Price column above</span>
       </div>
@@ -448,7 +448,7 @@ function createMenuBlock() {
       <div class="platform-panel">
         <label class="toggle-row">
           <input type="checkbox" class="use-delivery-toggle" name="use-delivery">
-          Sold via delivery app <span class="toggle-hint">(commission + tax on commission)</span>
+          Sold via delivery app <span class="tooltip-icon" data-tooltip="Platform takes commission; you also pay tax on that commission">?</span>
         </label>
         <div class="platform-fields" hidden>
           <label>Commission % <input type="number" class="commission-pct" name="commission-pct" inputmode="decimal" min="0" max="100" step="0.1" value="30"></label>
@@ -457,7 +457,7 @@ function createMenuBlock() {
 
         <label class="toggle-row">
           <input type="checkbox" class="use-sst-toggle" name="use-sst">
-          SST registered <span class="toggle-hint">(tax on food)</span>
+          SST registered <span class="tooltip-icon" data-tooltip="Sales & Service Tax on the selling price">?</span>
         </label>
         <div class="sst-fields" hidden>
           <label>SST on food % <input type="number" class="sst-pct" name="sst-pct" inputmode="decimal" min="0" max="100" step="0.1" value="6"></label>

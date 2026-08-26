@@ -40,16 +40,13 @@
   <main id="main">
 
     <section class="calc-intro">
-      <div class="wrap">
-        <span class="eyebrow">Free tool &middot; nothing is saved</span>
-        <h1>Overhead &amp; Manpower Calculator</h1>
-        <p class="lead">Work out your true monthly overhead and staffing cost — rent, utilities, licenses, food-handler compliance, and staff pay including EPF/SOCSO/EIS — calculated instantly in your browser.</p>
-      </div>
-    </section>
-
-    <section class="calc-note no-print">
-      <div class="wrap">
-        <p><strong>About the numbers:</strong> EPF, SOCSO, and EIS are federal (they apply the same way in Sarawak as anywhere else in Malaysia). SOCSO and EIS now use PERKESO's actual published wage-band tables (Act 4 / Act 800, Category 1, under 60), not a percentage approximation. EPF applies the official Third Schedule rounding rule — the percentage, rounded up to the next ringgit — rather than a bare percentage. This still assumes a Malaysian/PR employee under 60; contribution rates differ for non-citizen staff and staff aged 60+, and PCB/MTD income tax isn't included. Verify with KWSP/PERKESO for anything outside that.</p>
+      <div class="wrap calc-intro-header">
+        <div>
+          <span class="eyebrow">Free tool &middot; nothing is saved</span>
+          <h1>Overhead &amp; Manpower Calculator</h1>
+          <p class="lead">Work out your true monthly overhead and staffing cost — rent, utilities, licenses, food-handler compliance, and staff pay including EPF/SOCSO/EIS — calculated instantly in your browser.</p>
+        </div>
+        <button type="button" id="save-pdf-om" class="btn btn-secondary no-print">Save as PDF</button>
       </div>
     </section>
 
@@ -135,10 +132,14 @@
           <span class="result-label">Total Monthly Overhead + Manpower</span>
           <span class="result-value" id="grand-total">RM0.00</span>
         </div>
-        <div class="calc-actions no-print">
-          <button type="button" id="save-pdf-om" class="btn btn-secondary">Save as PDF</button>
-        </div>
         <p class="structure-note">This total feeds the Overhead and Manpower figures elsewhere in the costing tools — for now, copy it across by hand; a direct connection between the calculators is planned for an upcoming update.</p>
+      </div>
+    </section>
+
+    <!-- ============ ABOUT THE NUMBERS ============ -->
+    <section class="calc-note no-print">
+      <div class="wrap">
+        <p><strong>About the numbers:</strong> EPF, SOCSO, and EIS are federal (they apply the same way in Sarawak as anywhere else in Malaysia). SOCSO and EIS now use PERKESO's actual published wage-band tables (Act 4 / Act 800, Category 1, under 60), not a percentage approximation. EPF applies the official Third Schedule rounding rule — the percentage, rounded up to the next ringgit — rather than a bare percentage. This still assumes a Malaysian/PR employee under 60; contribution rates differ for non-citizen staff and staff aged 60+, and PCB/MTD income tax isn't included. Verify with KWSP/PERKESO for anything outside that.</p>
       </div>
     </section>
 
