@@ -20,7 +20,7 @@
    the calc step in that row's update function.
    ============================================================ */
 
-console.info('[Overhead & Manpower Calculator] script build: 2026-08-23-official-tables');
+console.info('[Overhead & Manpower Calculator] script build: 2026-08-24-cross-tab-sync');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -36,7 +36,7 @@ function parseNum(el, fallback) {
 /* ================= 1. OVERHEAD ================= */
 
 const OVERHEAD_CATEGORIES = [
-  'Rent', 'Electricity', 'Water', 'Internet / Phone',
+  'Rent', 'Electricity', 'Water', 'Gas (LPG Cylinder)', 'Internet / Phone',
   'Trade License', 'Business License', 'Health / Food Premise License',
   'Food Handling Course', 'Typhoid Vaccination',
   'Halal Certification', 'HACCP', 'GMP', 'GAP', 'ISO 9001',
@@ -320,9 +320,17 @@ function updateGrandTotal() {
   const overhead = parseFloat(overheadText.replace(/[^0-9.]/g, '')) || 0;
   const manpower = parseFloat(manpowerText.replace(/[^0-9.]/g, '')) || 0;
   document.getElementById('grand-total').textContent = formatRM(overhead + manpower);
+
+  if (typeof rzBroadcast === 'function') {
+    rzBroadcast({ overheadMonthly: overhead, manpowerMonthly: manpower });
+  }
 }
 
+let rzInitialized = false;
+
 function init() {
+  if (rzInitialized) return;
+  rzInitialized = true;
   document.getElementById('add-overhead-row').addEventListener('click', createOverheadRow);
   document.getElementById('add-manpower-row').addEventListener('click', createManpowerRow);
   document.getElementById('save-pdf-om').addEventListener('click', () => window.print());

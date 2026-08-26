@@ -555,6 +555,17 @@ th.sortable:hover { color: var(--accent-dark); }
   margin: 10px 0;
 }
 
+.info-note {
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 0.85rem;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+  margin: 10px 0 20px;
+}
+.info-note strong { color: var(--text); }
+
 /* ---- Pricing panel: target food cost, selling price, platform/tax ---- */
 
 .pricing-panel { margin-top: 20px; padding-top: 20px; border-top: 1px dashed var(--line); }
@@ -724,6 +735,16 @@ th.sortable:hover { color: var(--accent-dark); }
   margin-bottom: 20px;
 }
 .link-btn:hover { text-decoration: underline; }
+
+/* Connector panel — buttons that open the linked tools */
+.connector-panel {
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+}
+.connector-intro { margin: 0 0 12px; font-size: 0.9rem; color: var(--text); }
+.connector-panel .calc-actions { margin: 0; }
 
 /* Inputs + results grid */
 .ica-grid {
@@ -1014,4 +1035,81 @@ th.sortable:hover { color: var(--accent-dark); }
 
 @media (max-width: 800px) {
   .grand-total-card { flex-direction: column; align-items: flex-start; }
+}
+
+/* ---- 17. Cross-tab switcher ----
+   Fixed floating button, bottom-right, stays put while scrolling —
+   deliberately positioned clear of any content/data. Only rendered
+   when there's actually something to switch to (see costing-sync.js). */
+
+#rz-switcher {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 100;
+}
+
+.rz-switcher-toggle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+}
+.rz-switcher-toggle:hover { background: var(--accent-dark); }
+.rz-switcher-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+.rz-switcher-menu {
+  position: absolute;
+  right: 0;
+  bottom: 62px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.rz-switcher-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rz-switcher-item:hover:not(:disabled) { background: var(--paper); }
+.rz-switcher-item.current { color: var(--muted); cursor: default; }
+.rz-switcher-item:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
+
+@media print {
+  #rz-switcher { display: none !important; }
+}
+
+/* Live-synced field indicator, used on Cost Analysis */
+.synced-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+  white-space: nowrap;
 }

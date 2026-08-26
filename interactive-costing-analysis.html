@@ -61,18 +61,23 @@
         <div class="ica-tip" id="ica-tip"></div>
         <button type="button" id="ica-edit-answers" class="link-btn no-print">&larr; Edit answers</button>
 
+        <div class="connector-panel no-print">
+          <p class="connector-intro">Pull numbers in live from the other tools instead of retyping them — opens in a new tab, stays linked while both are open, nothing is saved either way.</p>
+          <div class="calc-actions">
+            <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator">Open Menu Portion Creator</button>
+            <button type="button" class="btn btn-secondary" data-open-tool="overhead-manpower-calculator">Open Overhead &amp; Manpower</button>
+          </div>
+        </div>
+
         <div class="ica-grid">
           <div class="ica-inputs">
             <h3>Variable Costs <span class="toggle-hint">(per portion)</span></h3>
-            <label>Ingredient cost <input type="number" id="ing-cost" inputmode="decimal" min="0" step="0.01" value="3.50"></label>
-            <label>Packaging cost <input type="number" id="pkg-cost" inputmode="decimal" min="0" step="0.01" value="0.50"></label>
+            <label id="ing-cost-label"><span class="label-text">Ingredients &amp; packaging</span> <input type="number" id="ing-cost" inputmode="decimal" min="0" step="0.01" value="4.00"></label>
             <label>Selling price <input type="number" id="sell-price" inputmode="decimal" min="0" step="0.01" value="12.00"></label>
 
             <h3>Fixed Costs <span class="toggle-hint">(monthly)</span></h3>
-            <label id="rent-label"><span class="label-text">Rent / space cost</span> <input type="number" id="rent-cost" inputmode="decimal" min="0" step="10" value="3000"></label>
-            <label id="manpower-label"><span class="label-text">Manpower</span> <input type="number" id="manpower-cost" inputmode="decimal" min="0" step="10" value="4500"></label>
-            <label id="utilities-row" hidden>Utilities <input type="number" id="utilities-cost" inputmode="decimal" min="0" step="10" value="1000"></label>
-            <label id="permits-row" hidden>Permits &amp; licenses <span class="toggle-hint">(monthly)</span> <input type="number" id="permits-cost" inputmode="decimal" min="0" step="10" value="0"></label>
+            <label id="overhead-cost-label"><span class="label-text">Overhead</span> <input type="number" id="overhead-cost" inputmode="decimal" min="0" step="10" value="4000"></label>
+            <label id="manpower-cost-label"><span class="label-text">Manpower</span> <input type="number" id="manpower-cost" inputmode="decimal" min="0" step="10" value="4500"></label>
 
             <h3>Volume</h3>
             <div class="slider-row">
@@ -184,6 +189,9 @@
     </div>
   </footer>
 
-  <script src="interactive-costing-analysis.js?v=2" defer></script>
+  <div id="rz-switcher" class="no-print" hidden></div>
+
+  <script src="costing-sync.js?v=1" defer></script>
+  <script src="interactive-costing-analysis.js?v=3" defer></script>
 </body>
 </html>

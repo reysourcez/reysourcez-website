@@ -215,7 +215,7 @@ function getIngredients() {
 
 /* ================= 2. MENU PORTION CREATOR ================= */
 
-const MENU_TYPES = ['Main', 'Side', 'Sauce', 'Dip', 'Garnish', 'Beverage', 'Other'];
+const MENU_TYPES = ['Main', 'Side', 'Sauce', 'Dip', 'Garnish', 'Beverage', 'Packaging', 'Other'];
 
 let menuBlockIdCounter = 0;
 let menuRowIdCounter = 0;
@@ -363,6 +363,15 @@ function updateMenuBlockSummary(block) {
   block.querySelector('.commission-tax-amount').textContent = formatRM(commissionTaxAmount);
   block.querySelector('.sst-amount').textContent = formatRM(sstAmount);
   block.querySelector('.net-amount').textContent = formatRM(netAmount);
+
+  // Sync to Cost Analysis if it's listening. Only the FIRST menu
+  // block syncs for now — Cost Analysis assumes one product; once
+  // it supports a full multi-menu portfolio (KIV'd), every block
+  // will feed in.
+  if (typeof rzBroadcast === 'function' && block === document.querySelector('.menu-block')) {
+    const name = block.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item';
+    rzBroadcast({ costPerPortion: total, dishName: name });
+  }
 }
 
 // Rebuilds this block's Item dropdowns from current ingredients,
@@ -471,6 +480,7 @@ function createMenuBlock() {
   block.querySelector('.add-menu-row-btn').addEventListener('click', () => createMenuRow(block));
   block.querySelector('.remove-block-btn').addEventListener('click', () => block.remove());
   block.querySelector('.target-food-cost').addEventListener('input', () => refreshMenuBlockRows(block));
+  block.querySelector('.menu-name-input').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.commission-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.commission-tax-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.sst-pct').addEventListener('input', () => updateMenuBlockSummary(block));
@@ -500,9 +510,13 @@ function createMenuBlock() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-08-23-fee-markup-fix');
+console.info('[Menu Calculator] script build: 2026-08-24-cross-tab-sync');
+
+let rzInitialized = false;
 
 function init() {
+  if (rzInitialized) return;
+  rzInitialized = true;
   document.getElementById('add-row').addEventListener('click', createIngredientRow);
   document.getElementById('save-pdf').addEventListener('click', () => window.print());
   document.getElementById('add-menu-block').addEventListener('click', createMenuBlock);

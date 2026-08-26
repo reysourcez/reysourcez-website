@@ -96,6 +96,8 @@
         <h2>Manpower</h2>
         <p class="menu-builder-intro">Add each staff member. <strong>Permanent</strong> staff get EPF, SOCSO, and EIS calculated automatically. <strong>Freelance / casual</strong> staff are paid a flat sum with no statutory contributions.</p>
 
+        <p class="info-note">This calculator is built for Malaysian citizen / permanent resident staff under age 60. It does not yet support <strong>staff aged 60 and above</strong> or <strong>non-citizen / non-PR staff</strong> — both have different EPF/SOCSO rates that aren't modeled here. Work out those staff members' costs separately for now.</p>
+
         <div class="table-scroll">
           <table id="manpower-table">
             <caption class="sr-only">Manpower costs — add each staff member and see the true employer cost including statutory contributions</caption>
@@ -174,6 +176,9 @@
     </div>
   </footer>
 
+  <div id="rz-switcher" class="no-print" hidden></div>
+
+  <script src="costing-sync.js?v=1" defer></script>
   <script src="overhead-manpower-calculator.js?v=1" defer></script>
 </body>
 </html>

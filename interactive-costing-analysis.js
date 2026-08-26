@@ -17,7 +17,7 @@
    belongs (variable cost, fixed cost, or its own category).
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-08-22-v1');
+console.info('[Interactive Costing Analysis] script build: 2026-08-24-cross-tab-sync');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -52,27 +52,11 @@ const WIZARD_STEPS = [
     ],
   },
   {
-    key: 'hasPermits',
-    question: 'Do you have permits or licenses to pay for?',
-    options: [
-      { value: 'true', label: 'Yes' },
-      { value: 'false', label: 'Not yet' },
-    ],
-  },
-  {
     key: 'manpower',
     question: "What's your manpower situation?",
     options: [
       { value: 'solo', label: 'Just me' },
       { value: 'staff', label: 'Me plus staff' },
-    ],
-  },
-  {
-    key: 'hasUtilities',
-    question: 'Do you pay for utilities separately (electricity, water, gas)?',
-    options: [
-      { value: 'true', label: 'Yes' },
-      { value: 'false', label: "Bundled in / not yet" },
     ],
   },
 ];
@@ -93,6 +77,10 @@ let wizardStepIndex = 0;
 const wizardAnswers = {};
 
 function renderWizardStep() {
+  if (wizardStepIndex >= WIZARD_STEPS.length) {
+    finishWizard();
+    return;
+  }
   const step = WIZARD_STEPS[wizardStepIndex];
   const container = document.getElementById('wizard-question');
   container.innerHTML = `
@@ -139,17 +127,15 @@ function editAnswers() {
 }
 
 function applyWizardDefaults() {
-  document.getElementById('utilities-row').hidden = wizardAnswers.hasUtilities !== 'true';
-  document.getElementById('permits-row').hidden = wizardAnswers.hasPermits !== 'true';
   document.getElementById('guide-venue-select').value = wizardAnswers.venue;
 
-  document.querySelector('#manpower-label .label-text').textContent = wizardAnswers.manpower === 'solo'
+  document.querySelector('#manpower-cost-label .label-text').textContent = wizardAnswers.manpower === 'solo'
     ? "Manpower (include your own wage, even if it's just you)"
-    : 'Manpower (total staff wages)';
+    : 'Manpower';
 
-  document.querySelector('#rent-label .label-text').textContent = wizardAnswers.venue === 'home'
-    ? "Rent / space cost (0 if there's no dedicated cost)"
-    : 'Rent / space cost';
+  document.querySelector('#overhead-cost-label .label-text').textContent = wizardAnswers.venue === 'home'
+    ? "Overhead (0 if there's no dedicated cost)"
+    : 'Overhead';
 
   // New sellers start on the conservative preset; experienced sellers
   // start optimistic. Either is just a starting point on the slider.
@@ -176,16 +162,11 @@ function applyPreset(kind) {
 /* ================= CORE CALCULATION ================= */
 
 function getInputs() {
-  const utilitiesHidden = document.getElementById('utilities-row').hidden;
-  const permitsHidden = document.getElementById('permits-row').hidden;
   return {
-    ingredient: num(document.getElementById('ing-cost')),
-    packaging: num(document.getElementById('pkg-cost')),
+    ingredient: num(document.getElementById('ing-cost')), // ingredients + packaging combined
     sellingPrice: num(document.getElementById('sell-price')),
-    rent: num(document.getElementById('rent-cost')),
+    overhead: num(document.getElementById('overhead-cost')),
     manpower: num(document.getElementById('manpower-cost')),
-    utilities: utilitiesHidden ? 0 : num(document.getElementById('utilities-cost')),
-    permits: permitsHidden ? 0 : num(document.getElementById('permits-cost')),
     // Number boxes are authoritative (typing is more precise than a
     // slider); the sliders are just a quick-adjust convenience that
     // stays in sync with them — see wireSliderPair().
@@ -199,8 +180,8 @@ function getInputs() {
 // Margin. Everything else (per-portion overhead/manpower allocation,
 // net profit at the current slider volume) follows from that.
 function computeResults(inputs) {
-  const variableCost = inputs.ingredient + inputs.packaging;
-  const totalFixed = inputs.rent + inputs.manpower + inputs.utilities + inputs.permits;
+  const variableCost = inputs.ingredient;
+  const totalFixed = inputs.overhead + inputs.manpower;
   const monthlyVolume = inputs.dailyVolume * inputs.operatingDays;
   const contributionMargin = inputs.sellingPrice - variableCost;
   const beMonth = contributionMargin > 0 ? totalFixed / contributionMargin : Infinity;
@@ -209,7 +190,7 @@ function computeResults(inputs) {
   const monthlyCost = totalFixed + variableCost * monthlyVolume;
   const netProfit = monthlyRevenue - monthlyCost;
 
-  const overheadPerPortion = monthlyVolume > 0 ? (inputs.rent + inputs.utilities + inputs.permits) / monthlyVolume : 0;
+  const overheadPerPortion = monthlyVolume > 0 ? inputs.overhead / monthlyVolume : 0;
   const manpowerPerPortion = monthlyVolume > 0 ? inputs.manpower / monthlyVolume : 0;
   const ingredientsPerPortion = variableCost;
   const marginPerPortion = inputs.sellingPrice - ingredientsPerPortion - overheadPerPortion - manpowerPerPortion;
@@ -390,14 +371,55 @@ function wireSliderPair(rangeId, numberId) {
   });
 }
 
+// Shows a small "synced from X" badge next to a field label so it's
+// clear a number came from another tool, not a manual guess. Manual
+// editing still works afterward — this is a starting value, not a lock.
+function markSynced(labelSelector, sourceLabel) {
+  const label = document.querySelector(labelSelector);
+  if (!label) return;
+  let badge = label.querySelector('.synced-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'synced-badge';
+    label.appendChild(badge);
+  }
+  badge.textContent = '\u2190 ' + sourceLabel;
+}
+
+function initSync() {
+  if (typeof rzListen !== 'function') return;
+  rzListen((data) => {
+    if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
+      document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
+      markSynced('#ing-cost-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+      recalculate();
+    }
+    if (data.source === 'overhead-manpower-calculator') {
+      if (typeof data.overheadMonthly === 'number') {
+        document.getElementById('overhead-cost').value = data.overheadMonthly.toFixed(2);
+        markSynced('#overhead-cost-label', 'Overhead & Manpower');
+      }
+      if (typeof data.manpowerMonthly === 'number') {
+        document.getElementById('manpower-cost').value = data.manpowerMonthly.toFixed(2);
+        markSynced('#manpower-cost-label', 'Overhead & Manpower');
+      }
+      recalculate();
+    }
+  });
+}
+
+let rzInitialized = false;
+
 function init() {
+  if (rzInitialized) return;
+  rzInitialized = true;
   renderWizardStep();
   document.getElementById('wizard-back').addEventListener('click', goBack);
   document.getElementById('ica-edit-answers').addEventListener('click', editAnswers);
   document.getElementById('save-pdf-ica').addEventListener('click', () => window.print());
   document.getElementById('guide-venue-select').addEventListener('change', recalculate);
 
-  ['ing-cost', 'pkg-cost', 'sell-price', 'rent-cost', 'manpower-cost', 'utilities-cost', 'permits-cost'].forEach((id) => {
+  ['ing-cost', 'sell-price', 'overhead-cost', 'manpower-cost'].forEach((id) => {
     document.getElementById(id).addEventListener('input', recalculate);
   });
   wireSliderPair('operating-days', 'operating-days-num');
@@ -405,6 +427,14 @@ function init() {
   document.querySelectorAll('[data-preset]').forEach((btn) => {
     btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
   });
+
+  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (typeof rzOpenOrFocusTool === 'function') rzOpenOrFocusTool(btn.dataset.openTool);
+    });
+  });
+
+  initSync();
 }
 
 document.addEventListener('DOMContentLoaded', init);
