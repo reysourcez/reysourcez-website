@@ -342,7 +342,6 @@ function renderStructureBar(label, mix, isLosing) {
     <div class="structure-row">
       <span class="structure-label">${label}${isLosing ? ' <span class="loss-flag">LOSING MONEY</span>' : ''}</span>
       <div class="structure-bar">${segmentsHTML}</div>
-      <span class="structure-values">${mix.ingredients.toFixed(0)}% / ${mix.overhead.toFixed(0)}% / ${mix.manpower.toFixed(0)}% / ${mix.margin.toFixed(0)}%</span>
     </div>
   `;
 }
