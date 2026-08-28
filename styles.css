@@ -83,6 +83,20 @@ a:focus-visible, button:focus-visible {
 
 .mark { color: var(--accent); } /* SVG icons use stroke="currentColor", so this one line colors all of them */
 
+/* Screen-reader-only text (table captions, icon-only button labels).
+   Referenced across every calculator page but never defined here
+   until now — those elements were visible to everyone, not just
+   screen readers. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---- 3. Header / nav ---- */
 .site-header {
   border-bottom: 1px solid var(--line);

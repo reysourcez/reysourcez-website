@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — Printing Calculator</title>
+  <meta name="description" content="Free print job costing calculator — work out your true cost per unit after wastage and setup costs, right in your browser. Nothing you enter is saved.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=6">
+  <style>
+    /* styles.css references .sr-only on every calculator page (table
+       captions, "remove row" labels) but never actually defines it —
+       so those elements currently aren't hidden from sighted users
+       the way they're meant to be. Defining it here so THIS page is
+       correct regardless of whether/when the shared file gets fixed.
+       Same rule, dropped into styles.css, would fix it everywhere. */
+    .sr-only {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="menu-calculator.html">Menu Calculator</a></li>
+        <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+        <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+        <li><a href="printing-calculator.html" aria-current="page">Printing Calculator</a></li>
+        <li><a href="food-worth-calculator.html">Food Worth</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <!-- ============ CALCULATOR INTRO ============ -->
+    <section class="calc-intro">
+      <div class="wrap calc-intro-header">
+        <div>
+          <span class="eyebrow">Free tool &middot; nothing is saved</span>
+          <h1>Print Job Costing Calculator</h1>
+          <p class="lead">Add every material you buy — paper, ink, finishing, packaging — and see your true cost per unit after wastage. Then build a print job, spread your setup cost across the run, and see your target price for the whole job — calculated instantly in your browser. Close this tab and everything is gone; nothing is ever sent or stored anywhere.</p>
+        </div>
+        <button type="button" id="save-pdf" class="btn btn-secondary no-print">Save as PDF</button>
+      </div>
+    </section>
+
+    <!-- ============ MATERIAL COSTING ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <h2>Material Costing</h2>
+
+        <div class="inflation-control">
+          <label for="global-inflation">Inflation Buffer %<span class="tooltip-icon" data-tooltip="Forward buffer for paper, ink and consumable price rises — applies uniformly to all items">?</span></label>
+          <input type="number" id="global-inflation" inputmode="decimal" min="0" step="0.1" value="0">
+          <span class="toggle-hint">one rate, applied to every item's True Cost below</span>
+        </div>
+
+        <div class="table-scroll">
+          <table id="calc-table">
+            <caption class="sr-only">Material costing — enter purchase details per row to see true cost per base unit</caption>
+            <thead>
+              <tr>
+                <th scope="col" class="sortable" data-sort="item">Item <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="price">Price (RM) <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="qty">Qty <span class="sort-indicator"></span></th>
+                <th scope="col">Purchase Unit</th>
+                <th scope="col" class="sortable auto-col" data-sort="priceperunit">Price / Base Unit <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="yield">Yield % <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable" data-sort="wastage">Wastage % <span class="sort-indicator"></span></th>
+                <th scope="col" class="sortable auto-col" data-sort="truecost">True Cost / Base Unit <span class="sort-indicator"></span></th>
+                <th scope="col" class="no-print"><span class="sr-only">Remove row</span></th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+
+        <div class="calc-actions no-print">
+          <button type="button" id="add-row" class="btn btn-primary">+ Add material</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PRINT JOB CREATOR ============ -->
+    <section class="menu-builder">
+      <div class="wrap">
+        <h2>Print Job Creator</h2>
+        <p class="menu-builder-intro">Combine materials from the table above into one print job, and see what it costs per unit and for the whole run — plus a target price, your setup cost spread across the quantity, and what's left after marketplace commission or SST, if either applies. Uncheck a row to leave it out of a total without deleting it. Click a column heading to sort.</p>
+
+        <div class="calc-actions no-print">
+          <button type="button" id="add-menu-block" class="btn btn-primary">+ Add Job</button>
+        </div>
+
+        <div id="menu-blocks"></div>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section class="calc-note no-print">
+      <div class="wrap">
+        <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit. <strong>Yield %</strong> is the usable share of what you buy — under 100% for roll ends or trim/bleed loss; leave at 100% if the whole thing is usable. <strong>Wastage %</strong> is a buffer on top for what you can't predict — misprints, colour-calibration sheets, torn stock. Both are set per item. <strong>Inflation</strong> is set once, above the table, and applies as a single blanket rate to every item's True Cost — a forward buffer for supplier price rises, not something that varies item to item.</p>
+        <p>For material priced by the sheet, pick <strong>sheet</strong> or <strong>ream</strong> (500 sheets) and set Qty to the sheet count. For large-format material sold by the roll — vinyl, canvas, flex banner — pick <strong>sqm</strong> or <strong>sqft</strong> and set Qty to the roll's total area (width × length), not the roll count. For something bought as one box or pack that yields a fixed count — a box of lanyard clips, a pack of zip ties — pick <strong>piece</strong> and set Qty to the count.</p>
+        <p><strong>In a print job:</strong> Amount is per single unit of the run — 1 sheet per flyer, or 0.1 sheet if you fit 10-up on one A4 sheet. <strong>Setup / plate cost</strong> is a one-time cost for the job — machine setup, plate-making, die-cutting — divided by Quantity to give a cost per unit, added to materials cost before the target price is worked out. <strong>Quantity</strong> also turns that per-unit target price into a whole-job quote.</p>
+        <p class="info-note"><strong>Quick glossary:</strong> <strong>GSM</strong> — grams per square metre, how paper weight is measured (higher = thicker). <strong>Ream</strong> — 500 sheets. <strong>Bleed</strong> — artwork printed slightly past the trim line so there's no white edge after cutting. <strong>Substrate</strong> — the material being printed on (paper, vinyl, canvas, fabric). <strong>Setup / plate cost</strong> — the fixed cost to prepare a job before the first unit prints, independent of how many units you make.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">Reysourcez Enterprise</div>
+          <p class="footer-tagline">We focus on providing catered solutions to your dilemmas.</p>
+        </div>
+        <div class="footer-links">
+          <div class="footer-col">
+            <h4>Site</h4>
+            <ul>
+              <li><a href="index.html">Home</a></li>
+              <li><a href="about.html">About</a></li>
+              <li><a href="services.html">Services</a></li>
+              <li><a href="menu-calculator.html">Menu Calculator</a></li>
+              <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+              <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+              <li><a href="printing-calculator.html">Printing Calculator</a></li>
+              <li><a href="food-worth-calculator.html">Food Worth</a></li>
+              <li><a href="contact.html">Contact</a></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>Contact</h4>
+            <ul>
+              <li><a href="mailto:reysourcez.ent@gmail.com">reysourcez.ent@gmail.com</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <div id="rz-switcher" class="no-print" hidden></div>
+
+  <script src="costing-sync.js?v=1" defer></script>
+  <script>
+  /* ============================================================
+     Print Job Costing Calculator
+     Vanilla JS, no dependencies, nothing saved anywhere.
+     ------------------------------------------------------------
+     Sibling to menu-calculator.js — same two-part pattern (raw
+     materials -> finished-product costing), adapted for print:
+       - Materials have a defined "true cost per base unit", same
+         idea as ingredients (paper, ink, finishing, packaging).
+       - A print job additionally has a QUANTITY (the print run)
+         and a one-time SETUP / PLATE COST divided across that
+         quantity. F&B dishes don't have this, but it's the single
+         biggest driver of per-unit price in printing, so it's
+         added here rather than blindly copying the F&B model.
+
+     Two linked parts:
+     1. Material Costing (#rows) — true cost per base unit for
+        each thing you buy (paper, ink, finishing, packaging).
+     2. Print Job Creator (#menu-blocks) — one or more jobs, each
+        built from materials above PLUS quantity + setup cost.
+        Every job block reads material data live via data-row-id /
+        data-true-cost / data-base-unit — one source of truth,
+        never a second copy of cost data.
+
+     TO EXTEND:
+       - New material column: add <th>/<td> to the row template in
+         createMaterialRow(), add the calc step in updateMaterialRow().
+       - New job-row column: same pattern in createJobRow() /
+         updateJobRow().
+       - New per-job summary figure: add markup in createJobBlock()'s
+         pricing-panel, compute it in updateJobBlockSummary().
+
+     Reuses the exact class/id names from styles.css's Menu
+     Calculator + Menu Portion Creator sections (#calc-table,
+     .menu-block, .menu-table, .pricing-panel, .net-summary, etc)
+     on purpose, so this page needs ZERO new CSS — every visual
+     rule already exists and is shared with the rest of the site.
+     ============================================================ */
+
+  console.info('[Printing Calculator] script build: 2026-08-28');
+
+  /* ================= EDITABLE SETTINGS =================
+     Change a number on the right of any line below — nothing else
+     in this file needs to change to update a starting default.
+     Everything here is also editable per-item/per-job on the page
+     itself; these only set what a brand-new row or job starts at.
+     Sources for the tax/commission figures are in chat, not here,
+     since real rates move — check before relying on them.
+     ============================================================ */
+  const SETTINGS = {
+    reamSheets:           500,  // sheets in one ream (paper industry standard)
+    defaultQuantity:      500,  // starting print-run size on a new job
+    defaultSetupCost:     20,   // RM, starting setup/plate cost on a new job
+    defaultTargetCostPct: 35,   // %, starting target cost ratio (about 65% margin)
+    defaultCommissionPct: 8,    // %, starting marketplace commission
+    defaultCommissionTax: 8,    // %, tax charged on that commission (SST)
+    defaultSstPct:        8,    // %, Sales & Service Tax on the selling price
+  };
+
+  /* ================= SHARED UTILITIES ================= */
+
+  function formatRM(value) {
+    if (!isFinite(value) || value < 0) return 'RM0.00';
+    if (value > 0 && value < 0.01) return '< RM0.01';
+    return 'RM' + value.toFixed(2);
+  }
+
+  function escapeHTML(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Reads a percentage-style input: falls back to a sensible default
+  // if blank/invalid, and never goes below `min` (e.g. can't divide
+  // by a zero yield or a zero quantity).
+  function parsePercent(inputEl, fallback, min) {
+    const raw = parseFloat(inputEl.value);
+    if (!isFinite(raw)) return fallback;
+    return Math.max(min, raw);
+  }
+
+  // Generic click-to-sort for any table. getSortValue(tr, key) must
+  // return a number or string for the given data-sort key. Reorders
+  // actual <tr> elements, so it's safe with the data-row-id linkage
+  // used elsewhere (nothing is keyed by row position).
+  function makeSortable(theadEl, tbodyEl, getSortValue, onSorted) {
+    const state = { key: null, dir: 1 };
+    theadEl.querySelectorAll('th.sortable').forEach((th) => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        state.dir = state.key === key ? state.dir * -1 : 1;
+        state.key = key;
+
+        theadEl.querySelectorAll('.sort-indicator').forEach((s) => { s.textContent = ''; });
+        const indicator = th.querySelector('.sort-indicator');
+        if (indicator) indicator.textContent = state.dir === 1 ? '\u25B2' : '\u25BC';
+
+        const rows = Array.from(tbodyEl.children);
+        rows.sort((a, b) => {
+          const va = getSortValue(a, key);
+          const vb = getSortValue(b, key);
+          if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * state.dir;
+          return String(va).localeCompare(String(vb)) * state.dir;
+        });
+        rows.forEach((r) => tbodyEl.appendChild(r));
+        if (onSorted) onSorted();
+      });
+    });
+  }
+
+  /* ================= 1. MATERIAL COSTING ================= */
+
+  // factor = how many base units are in one purchase unit.
+  // piece is for pre-divided purchases (a whole box/pack bought as
+  // one thing but used in a defined count) — factor 1 because the
+  // base unit IS the purchase unit; set Qty to the count instead.
+  const UNITS = {
+    kg:    { base: 'g',     factor: 1000 },
+    g:     { base: 'g',     factor: 1 },
+    lb:    { base: 'g',     factor: 453.592 },
+    oz:    { base: 'g',     factor: 28.3495 },
+    L:     { base: 'mL',    factor: 1000 },
+    mL:    { base: 'mL',    factor: 1 },
+    ream:  { base: 'sheet', factor: SETTINGS.reamSheets },
+    sheet: { base: 'sheet', factor: 1 },
+    sqm:   { base: 'sqm',   factor: 1 },
+    sqft:  { base: 'sqm',   factor: 0.092903 },
+    m:     { base: 'm',     factor: 1 },
+    cm:    { base: 'm',     factor: 0.01 },
+    dozen: { base: 'each',  factor: 12 },
+    each:  { base: 'each',  factor: 1 },
+    piece: { base: 'piece', factor: 1 },
+  };
+
+  let materialIdCounter = 0;
+
+  function unitOptionsHTML() {
+    return Object.keys(UNITS).map((k) => `<option value="${k}">${k}</option>`).join('');
+  }
+
+  function materialSortValue(tr, key) {
+    switch (key) {
+      case 'item': return tr.querySelector('.f-item').value.trim().toLowerCase();
+      case 'price': return parseFloat(tr.querySelector('.f-price').value) || 0;
+      case 'qty': return parseFloat(tr.querySelector('.f-qty').value) || 0;
+      case 'priceperunit': return parseFloat(tr.dataset.pricePerUnit) || 0;
+      case 'yield': return parseFloat(tr.querySelector('.f-yield').value) || 0;
+      case 'wastage': return parseFloat(tr.querySelector('.f-wastage').value) || 0;
+      case 'truecost': return parseFloat(tr.dataset.trueCost) || 0;
+      default: return '';
+    }
+  }
+
+  // Inflation is a single blanket rate (set once, above the table),
+  // not a per-item value — a macro assumption that should apply
+  // uniformly everywhere, unlike Yield/Wastage which genuinely vary
+  // material to material.
+  function getGlobalInflation() {
+    const el = document.getElementById('global-inflation');
+    return el ? parsePercent(el, 0, 0) : 0;
+  }
+
+  function refreshAllMaterialRows() {
+    document.querySelectorAll('#rows > tr').forEach((tr) => updateMaterialRow(tr));
+  }
+
+  function updateMaterialRow(tr) {
+    const price = parseFloat(tr.querySelector('.f-price').value) || 0;
+    const qty = parseFloat(tr.querySelector('.f-qty').value) || 0;
+    const unitKey = tr.querySelector('.f-unit').value;
+
+    // Yield: the KNOWN, measurable usable proportion — under 100%
+    // for roll ends, trim, or bleed loss. Not capped at 100; most
+    // print materials just stay at the default.
+    const yieldPct = parsePercent(tr.querySelector('.f-yield'), 100, 0.01);
+    // Wastage: an unaccountable buffer layered on top — misprints,
+    // colour-calibration sheets, torn stock.
+    const wastagePct = parsePercent(tr.querySelector('.f-wastage'), 0, 0);
+    // Inflation: one blanket forward-looking buffer, read from the
+    // single control above the table — see getGlobalInflation().
+    const inflationPct = getGlobalInflation();
+
+    const unit = UNITS[unitKey];
+    const totalBaseQty = qty * unit.factor;
+    const pricePerUnit = totalBaseQty > 0 ? price / totalBaseQty : 0;
+
+    const costAfterYield = pricePerUnit / (yieldPct / 100);
+    const costAfterBuffer = costAfterYield * (1 + wastagePct / 100);
+    const trueCost = costAfterBuffer * (1 + inflationPct / 100);
+
+    tr.querySelector('.r-price-per-unit').textContent = `${formatRM(pricePerUnit)}/${unit.base}`;
+    tr.querySelector('.r-true-cost').textContent = `${formatRM(trueCost)}/${unit.base}`;
+
+    // Raw values for the Print Job Creator to read — never the
+    // formatted/rounded text above.
+    tr.dataset.pricePerUnit = pricePerUnit;
+    tr.dataset.trueCost = trueCost;
+    tr.dataset.baseUnit = unit.base;
+
+    refreshAllJobBlocks();
+  }
+
+  // Purchase Unit guide:
+  // - kg/g/L/mL/lb/oz: weight or volume you measure at purchase.
+  // - sheet/ream: paper sold by the sheet or by the ream (500 sheets).
+  // - sqm/sqft: large-format material (vinyl, canvas, flex banner)
+  //   sold by the roll — set Qty to the roll's total area, not the
+  //   roll count.
+  // - m/cm: anything measured by length (binding coil, trim, ribbon).
+  // - each/dozen: whole countable items.
+  // - piece: bought as ONE whole box/pack but used in a defined
+  //   count — set Qty to that count (e.g. 100 lanyard clips), and
+  //   Price to what you paid for the whole box.
+  function createMaterialRow() {
+    materialIdCounter++;
+    const tbody = document.getElementById('rows');
+    const tr = document.createElement('tr');
+    tr.dataset.rowId = 'mat-' + materialIdCounter;
+    tr.innerHTML = `
+      <td><input type="text" class="f-item" name="item" placeholder="e.g. Art Card 260gsm A4"></td>
+      <td><input type="number" class="f-price" name="price" inputmode="decimal" min="0" step="0.01" value="0.00"></td>
+      <td><input type="number" class="f-qty" name="qty" inputmode="decimal" min="0.01" step="0.01" value="1"></td>
+      <td><select class="f-unit" name="unit">${unitOptionsHTML()}</select></td>
+      <td class="calc r-price-per-unit">RM0.00/g</td>
+      <td><input type="number" class="f-yield" name="yield" inputmode="decimal" min="0.01" step="0.1" value="100"></td>
+      <td><input type="number" class="f-wastage" name="wastage" inputmode="decimal" min="0" step="0.1" value="0"></td>
+      <td class="calc r-true-cost">RM0.00/g</td>
+      <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this item">&times;</button></td>
+    `;
+    tbody.appendChild(tr);
+
+    tr.querySelectorAll('input, select').forEach((el) => {
+      el.addEventListener('input', () => updateMaterialRow(tr));
+    });
+    tr.querySelector('.delete-row').addEventListener('click', () => {
+      tr.remove();
+      refreshAllJobBlocks();
+    });
+
+    updateMaterialRow(tr);
+  }
+
+  // The only place that reads material data — one source of truth
+  // for every job block below.
+  function getMaterials() {
+    const list = [];
+    document.querySelectorAll('#rows > tr').forEach((tr) => {
+      const nameRaw = tr.querySelector('.f-item').value.trim();
+      list.push({
+        id: tr.dataset.rowId,
+        name: nameRaw || 'Unnamed material',
+        trueCost: parseFloat(tr.dataset.trueCost) || 0,
+        baseUnit: tr.dataset.baseUnit || 'g',
+      });
+    });
+    return list;
+  }
+
+  /* ================= 2. PRINT JOB CREATOR ================= */
+
+  const JOB_ITEM_TYPES = ['Paper/Material', 'Ink/Toner', 'Finishing', 'Packaging', 'Other'];
+
+  let jobBlockIdCounter = 0;
+  let jobRowIdCounter = 0;
+
+  function jobTypeOptionsHTML() {
+    return JOB_ITEM_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('');
+  }
+
+  function jobItemOptionsHTML(selectedId) {
+    const materials = getMaterials();
+    if (materials.length === 0) {
+      return `<option value="">Add a material above first</option>`;
+    }
+    let html = `<option value="">\u2014 Select a material \u2014</option>`;
+    materials.forEach((m) => {
+      const sel = m.id === selectedId ? ' selected' : '';
+      html += `<option value="${m.id}"${sel}>${escapeHTML(m.name)}</option>`;
+    });
+    return html;
+  }
+
+  function jobSortValue(tr, key) {
+    switch (key) {
+      case 'type': return tr.querySelector('.m-type').value.toLowerCase();
+      case 'item': {
+        const sel = tr.querySelector('.m-item');
+        const opt = sel.options[sel.selectedIndex];
+        return (opt ? opt.textContent : '').toLowerCase();
+      }
+      case 'amount': return parseFloat(tr.querySelector('.m-amount').value) || 0;
+      case 'price': return parseFloat(tr.dataset.price) || 0;
+      default: return '';
+    }
+  }
+
+  function updateJobRow(tr) {
+    const select = tr.querySelector('.m-item');
+    const selectedId = select.value;
+    const amount = parseFloat(tr.querySelector('.m-amount').value) || 0;
+    const included = tr.querySelector('.m-include').checked;
+
+    const mat = getMaterials().find((m) => m.id === selectedId);
+
+    tr.querySelector('.m-unit-label').textContent = mat ? mat.baseUnit : '\u2014';
+
+    const price = mat ? amount * mat.trueCost : 0;
+    tr.querySelector('.m-price').textContent = formatRM(price);
+    tr.dataset.price = price;
+
+    tr.classList.toggle('excluded', !included);
+
+    const block = tr.closest('.menu-block');
+    if (block) updateJobBlockSummary(block);
+  }
+
+  function createJobRow(block) {
+    jobRowIdCounter++;
+    const tbody = block.querySelector('.menu-rows');
+    const tr = document.createElement('tr');
+    tr.dataset.menuRowId = 'jobrow-' + jobRowIdCounter;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="m-include" name="include" checked aria-label="Include in total"></td>
+      <td><select class="m-type" name="job-type">${jobTypeOptionsHTML()}</select></td>
+      <td><select class="m-item" name="job-item">${jobItemOptionsHTML(null)}</select></td>
+      <td>
+        <div class="amount-cell">
+          <input type="number" class="m-amount" name="amount" inputmode="decimal" min="0" step="0.001" value="0">
+          <span class="m-unit-label">\u2014</span>
+        </div>
+      </td>
+      <td class="calc m-price">RM0.00</td>
+      <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this material from the job">&times;</button></td>
+    `;
+    tbody.appendChild(tr);
+
+    tr.querySelector('.m-item').addEventListener('change', () => updateJobRow(tr));
+    tr.querySelector('.m-amount').addEventListener('input', () => updateJobRow(tr));
+    tr.querySelector('.m-include').addEventListener('change', () => updateJobRow(tr));
+    tr.querySelector('.delete-row').addEventListener('click', () => {
+      tr.remove();
+      updateJobBlockSummary(block);
+    });
+
+    updateJobRow(tr);
+  }
+
+  // Materials total (per unit) sums only the checked rows, same as
+  // Menu Portion Creator. Everything from here on is the printing-
+  // specific addition: Setup Cost is a JOB-level fixed cost (not
+  // tied to any one material row), so it's divided by Quantity and
+  // folded in AFTER the row total, before the target margin is
+  // applied — that's the one real structural difference from the
+  // F&B version, where every cost lives at ingredient level.
+  //
+  // Marketplace commission/SST still mark UP the target price
+  // rather than being deducted from it (the platform's and the tax
+  // authority's cut on top of what you quote, not something that
+  // should come out of your own target) — same gross-up mechanism
+  // as Menu Portion Creator, just applied to the whole-job total
+  // instead of a single dish, since a print run is normally quoted
+  // as one lump sum.
+  function updateJobBlockSummary(block) {
+    let materialsCostPerUnit = 0;
+    block.querySelectorAll('.menu-rows > tr').forEach((tr) => {
+      if (tr.querySelector('.m-include').checked) {
+        materialsCostPerUnit += parseFloat(tr.dataset.price) || 0;
+      }
+    });
+    block.querySelector('.menu-total').textContent = formatRM(materialsCostPerUnit);
+
+    const quantity = Math.max(1, parseFloat(block.querySelector('.job-quantity').value) || 1);
+    const setupCost = Math.max(0, parseFloat(block.querySelector('.job-setup-cost').value) || 0);
+    const setupCostPerUnit = setupCost / quantity;
+
+    block.querySelector('.setup-per-unit-hint').textContent =
+      `\u2192 ${formatRM(setupCostPerUnit)}/unit at qty ${quantity.toLocaleString()}`;
+
+    const totalCostPerUnit = materialsCostPerUnit + setupCostPerUnit;
+
+    const targetCostPct = parsePercent(block.querySelector('.target-cost-pct'), SETTINGS.defaultTargetCostPct, 0.1);
+    const targetPricePerUnit = totalCostPerUnit / (targetCostPct / 100);
+    const totalTargetPriceJob = targetPricePerUnit * quantity;
+
+    block.querySelector('.cost-target-result').innerHTML =
+      `${formatRM(materialsCostPerUnit)} materials + ${formatRM(setupCostPerUnit)} setup = <strong>${formatRM(totalCostPerUnit)}</strong>/unit \u2192 target <strong>${formatRM(targetPricePerUnit)}</strong>/unit`;
+
+    const useMarketplace = block.querySelector('.use-delivery-toggle').checked;
+    const useSST = block.querySelector('.use-sst-toggle').checked;
+    const commissionPct = parsePercent(block.querySelector('.commission-pct'), SETTINGS.defaultCommissionPct, 0);
+    const commissionTaxPct = parsePercent(block.querySelector('.commission-tax-pct'), SETTINGS.defaultCommissionTax, 0);
+    const sstPct = parsePercent(block.querySelector('.sst-pct'), SETTINGS.defaultSstPct, 0);
+
+    // Commission is charged on the QUOTED price, and its own tax is
+    // charged on the commission amount — so as a share of the quoted
+    // price, the commission side alone costs commissionPct * (1 + tax).
+    const commissionShare = useMarketplace ? (commissionPct / 100) * (1 + commissionTaxPct / 100) : 0;
+    const sstShare = useSST ? sstPct / 100 : 0;
+    const combinedShare = commissionShare + sstShare;
+
+    const warningEl = block.querySelector('.fee-warning');
+    let quotedPrice;
+    if (combinedShare >= 1) {
+      // Fees alone would consume the entire quoted price (or more) —
+      // there's no price that recovers the target, so don't pretend
+      // there is one.
+      quotedPrice = NaN;
+      warningEl.hidden = false;
+    } else {
+      quotedPrice = totalTargetPriceJob / (1 - combinedShare);
+      warningEl.hidden = true;
+    }
+
+    const commissionAmount = useMarketplace && isFinite(quotedPrice) ? quotedPrice * (commissionPct / 100) : 0;
+    const commissionTaxAmount = useMarketplace && isFinite(quotedPrice) ? commissionAmount * (commissionTaxPct / 100) : 0;
+    const sstAmount = useSST && isFinite(quotedPrice) ? quotedPrice * (sstPct / 100) : 0;
+    const netAmount = isFinite(quotedPrice) ? quotedPrice - commissionAmount - commissionTaxAmount - sstAmount : 0;
+    const perUnitQuoted = isFinite(quotedPrice) ? quotedPrice / quantity : 0;
+
+    block.querySelector('.per-unit-price').textContent = isFinite(quotedPrice) ? formatRM(perUnitQuoted) : '\u2014';
+    block.querySelector('.listed-price').textContent = isFinite(quotedPrice) ? formatRM(quotedPrice) : '\u2014';
+    block.querySelector('.commission-amount').textContent = formatRM(commissionAmount);
+    block.querySelector('.commission-tax-amount').textContent = formatRM(commissionTaxAmount);
+    block.querySelector('.sst-amount').textContent = formatRM(sstAmount);
+    block.querySelector('.net-amount').textContent = formatRM(netAmount);
+  }
+
+  // Rebuilds this block's Item dropdowns from current materials,
+  // keeping the same selection if that material still exists.
+  function refreshJobBlockDropdowns(block) {
+    block.querySelectorAll('.menu-rows > tr').forEach((tr) => {
+      const select = tr.querySelector('.m-item');
+      const currentValue = select.value;
+      select.innerHTML = jobItemOptionsHTML(currentValue);
+      updateJobRow(tr);
+    });
+  }
+
+  // Called whenever the material table changes (add/edit/delete/sort).
+  function refreshAllJobBlocks() {
+    document.querySelectorAll('.menu-block').forEach((block) => refreshJobBlockDropdowns(block));
+  }
+
+  function createJobBlock() {
+    jobBlockIdCounter++;
+    const n = jobBlockIdCounter;
+    const container = document.getElementById('menu-blocks');
+    const block = document.createElement('div');
+    block.className = 'menu-block';
+    block.dataset.blockId = 'jobblock-' + n;
+    block.innerHTML = `
+      <div class="menu-block-header">
+        <input type="text" class="menu-name-input" name="job-name" value="Untitled Print Job" aria-label="Print job name">
+        <button type="button" class="remove-block-btn no-print" aria-label="Remove this job">Remove job</button>
+      </div>
+
+      <div class="table-scroll">
+        <table class="menu-table">
+          <caption class="sr-only">Print job builder \u2014 combine materials from the table above into one job</caption>
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only">Include in total</span></th>
+              <th scope="col" class="sortable" data-sort="type">Type <span class="sort-indicator"></span></th>
+              <th scope="col" class="sortable" data-sort="item">Item <span class="sort-indicator"></span></th>
+              <th scope="col" class="sortable" data-sort="amount">Amount <span class="sort-indicator"></span></th>
+              <th scope="col" class="sortable auto-col" data-sort="price">Cost / unit <span class="sort-indicator"></span></th>
+              <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+            </tr>
+          </thead>
+          <tbody class="menu-rows"></tbody>
+          <tfoot>
+            <tr class="menu-total-row">
+              <td colspan="4"><strong>Materials total</strong> <span class="toggle-hint">(per unit)</span></td>
+              <td class="calc menu-total" colspan="2">RM0.00</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="calc-actions no-print">
+        <button type="button" class="add-menu-row-btn btn btn-primary">+ Add material to job</button>
+      </div>
+
+      <div class="pricing-panel">
+        <div class="pricing-row">
+          <label for="qty-${n}">Print run <span class="tooltip-icon" data-tooltip="Total units in this job — spreads the setup cost below across the whole run">?</span></label>
+          <input type="number" id="qty-${n}" class="job-quantity" name="job-quantity" inputmode="decimal" min="1" step="1" value="${SETTINGS.defaultQuantity}">
+          <span class="toggle-hint">units \u2014 also turns the per-unit price into a whole-job quote</span>
+        </div>
+
+        <div class="pricing-row">
+          <label for="setup-${n}">Setup / plate cost <span class="tooltip-icon" data-tooltip="One-time cost to prepare this job — machine setup, plate-making, die-cutting">?</span></label>
+          <input type="number" id="setup-${n}" class="job-setup-cost" name="job-setup-cost" inputmode="decimal" min="0" step="1" value="${SETTINGS.defaultSetupCost}">
+          <span class="toggle-hint setup-per-unit-hint">\u2192 RM0.00/unit</span>
+        </div>
+
+        <div class="pricing-row">
+          <label for="tfc-${n}">Target Cost % <span class="tooltip-icon" data-tooltip="Total cost (materials + setup) as % of selling price — lower % means higher margin">?</span></label>
+          <input type="number" id="tfc-${n}" class="target-cost-pct" name="target-cost-pct" inputmode="decimal" min="1" max="100" step="0.1" value="${SETTINGS.defaultTargetCostPct}">
+          <span class="pricing-result cost-target-result">\u2014</span>
+        </div>
+
+        <div class="platform-panel">
+          <label class="toggle-row">
+            <input type="checkbox" class="use-delivery-toggle" name="use-marketplace">
+            Sold via online marketplace <span class="tooltip-icon" data-tooltip="Platform takes commission; you also pay tax on that commission">?</span>
+          </label>
+          <div class="platform-fields" hidden>
+            <label>Commission % <input type="number" class="commission-pct" name="commission-pct" inputmode="decimal" min="0" max="100" step="0.1" value="${SETTINGS.defaultCommissionPct}"></label>
+            <label>Tax on commission % <input type="number" class="commission-tax-pct" name="commission-tax-pct" inputmode="decimal" min="0" max="100" step="0.1" value="${SETTINGS.defaultCommissionTax}"></label>
+          </div>
+
+          <label class="toggle-row">
+            <input type="checkbox" class="use-sst-toggle" name="use-sst">
+            SST registered <span class="tooltip-icon" data-tooltip="Sales & Service Tax on the selling price">?</span>
+          </label>
+          <div class="sst-fields" hidden>
+            <label>SST % <input type="number" class="sst-pct" name="sst-pct" inputmode="decimal" min="0" max="100" step="0.1" value="${SETTINGS.defaultSstPct}"></label>
+          </div>
+
+          <p class="fee-warning" hidden>These rates add up to 100% or more of the quoted price — there's no price that recovers your target. Lower the commission, tax, or SST rate.</p>
+
+          <div class="net-summary">
+            <div>Price per unit <span class="per-unit-price">RM0.00</span></div>
+            <div>Price to quote <span class="toggle-hint">(qty \u00d7 unit)</span> <span class="listed-price">RM0.00</span></div>
+            <div>&minus; Commission <span class="commission-amount">RM0.00</span></div>
+            <div>&minus; Tax on commission <span class="commission-tax-amount">RM0.00</span></div>
+            <div>&minus; SST <span class="sst-amount">RM0.00</span></div>
+            <div class="net-received">= You keep <strong class="net-amount">RM0.00</strong></div>
+          </div>
+        </div>
+      </div>
+    `;
+    container.appendChild(block);
+
+    block.querySelector('.add-menu-row-btn').addEventListener('click', () => createJobRow(block));
+    block.querySelector('.remove-block-btn').addEventListener('click', () => block.remove());
+    block.querySelector('.job-quantity').addEventListener('input', () => updateJobBlockSummary(block));
+    block.querySelector('.job-setup-cost').addEventListener('input', () => updateJobBlockSummary(block));
+    block.querySelector('.target-cost-pct').addEventListener('input', () => updateJobBlockSummary(block));
+    block.querySelector('.commission-pct').addEventListener('input', () => updateJobBlockSummary(block));
+    block.querySelector('.commission-tax-pct').addEventListener('input', () => updateJobBlockSummary(block));
+    block.querySelector('.sst-pct').addEventListener('input', () => updateJobBlockSummary(block));
+    block.querySelector('.use-delivery-toggle').addEventListener('change', (e) => {
+      block.querySelector('.platform-fields').hidden = !e.target.checked;
+      updateJobBlockSummary(block);
+    });
+    block.querySelector('.use-sst-toggle').addEventListener('change', (e) => {
+      block.querySelector('.sst-fields').hidden = !e.target.checked;
+      updateJobBlockSummary(block);
+    });
+
+    makeSortable(
+      block.querySelector('thead'),
+      block.querySelector('.menu-rows'),
+      jobSortValue,
+      () => updateJobBlockSummary(block)
+    );
+
+    createJobRow(block);
+    updateJobBlockSummary(block);
+  }
+
+  /* ================= INIT ================= */
+
+  let rzInitialized = false;
+
+  function init() {
+    if (rzInitialized) return;
+    rzInitialized = true;
+    document.getElementById('add-row').addEventListener('click', createMaterialRow);
+    document.getElementById('save-pdf').addEventListener('click', () => window.print());
+    document.getElementById('add-menu-block').addEventListener('click', createJobBlock);
+    document.getElementById('global-inflation').addEventListener('input', refreshAllMaterialRows);
+
+    makeSortable(
+      document.querySelector('#calc-table thead'),
+      document.getElementById('rows'),
+      materialSortValue,
+      () => refreshAllJobBlocks()
+    );
+
+    createMaterialRow();
+    createJobBlock();
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

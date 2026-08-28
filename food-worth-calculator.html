@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — Food Worth Calculator</title>
+  <meta name="description" content="Upload a photo of a meal and get an instant breakdown — item by item weight, calories, and nutrition — plus a value-for-money rating against the price you paid.">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=6">
+
+  <!-- Page-specific styles only. Everything else (buttons, tables, cards,
+       result pills, structure bars) is reused as-is from styles.css so this
+       page stays visually identical to the rest of the site. Fold these
+       into styles.css later if you'd rather keep all CSS in one file. -->
+  <style>
+    /* Not currently defined in styles.css, despite being used there
+       (table captions, icon-only remove buttons) — added defensively
+       so this page's screen-reader-only text actually stays hidden
+       regardless. Worth adding to styles.css itself at some point;
+       flagged separately rather than touched here. */
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+
+    .fw-setup-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 10px 12px; align-items: end; }
+    .fw-setup-grid label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 6px; }
+    .fw-setup-grid input[type="password"] {
+      width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: "IBM Plex Mono", monospace; font-size: 0.9rem; background: var(--surface);
+    }
+    .fw-setup-grid input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .fw-key-status { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
+    .fw-key-status.is-saved { color: var(--accent-dark); font-weight: 600; }
+    .fw-privacy-note { font-size: 0.82rem; color: var(--muted); margin: 12px 0 0; max-width: 68ch; }
+    .fw-privacy-note a { color: var(--accent-dark); }
+
+    .fw-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; text-align: center; background: var(--surface); }
+    .fw-upload-zone.has-image { border-style: solid; padding: 20px; text-align: left; }
+    .fw-preview-img { max-width: 240px; max-height: 240px; border-radius: 8px; display: block; margin: 0 auto 16px; }
+    .fw-upload-zone.has-image .fw-preview-img { margin: 0 0 16px; }
+    .fw-upload-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: center; }
+    .fw-upload-zone.has-image .fw-upload-row { justify-content: flex-start; }
+    .fw-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 12px; }
+    .fw-status.is-error { color: #C0392B; font-weight: 600; }
+
+    .fw-items-table td input[type="text"] { font-family: var(--font-body); min-width: 130px; }
+    .fw-items-table td input[type="number"] { width: 72px; }
+    .fw-items-table td.fw-note-cell input { min-width: 160px; font-family: var(--font-body); }
+
+    .fw-price-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-end; margin: 24px 0; }
+    .fw-price-field label { display: block; font-weight: 600; font-size: 0.9rem; margin-bottom: 6px; }
+    .fw-price-field input {
+      width: 110px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: "IBM Plex Mono", monospace; font-size: 0.95rem; text-align: right;
+    }
+    .fw-price-field input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .fw-rating-badge { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; margin-top: 2px; }
+
+    .fw-macro-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.82rem; color: var(--muted); margin: 20px 0 10px; }
+    .fw-macro-legend span { display: flex; align-items: center; gap: 6px; }
+    /* .legend-swatch is 14x3px by default (styles.css, chart legend) —
+       overridden here to the small-square variant used by the cost
+       structure legend, since that scoping is local to .structure-key
+       there and wouldn't otherwise reach this page. */
+    .fw-macro-legend .legend-swatch { width: 12px; height: 12px; border-radius: 3px; }
+    .fw-seg-protein { background: var(--accent); }
+    .fw-seg-carbs { background: #2E5FA3; }
+    .fw-seg-fat { background: #D4A017; }
+    .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
+
+    @media (max-width: 800px) {
+      .fw-setup-grid { grid-template-columns: 1fr; }
+      .fw-price-row { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li><a href="menu-calculator.html">Menu Calculator</a></li>
+        <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+        <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+        <li><a href="printing-calculator.html">Printing Calculator</a></li>
+        <li><a href="food-worth-calculator.html" aria-current="page">Food Worth</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; your own Gemini key &middot; nothing saved on our side</span>
+        <h1>Food Worth Calculator</h1>
+        <p class="lead">Upload a photo of a meal. Gemini estimates what's on the plate — item by item weight, calories, and nutrition. Add what it cost and see what you're actually getting for the price.</p>
+      </div>
+    </section>
+
+    <!-- ============ API KEY SETUP ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <h2>Your Gemini API key</h2>
+        <div class="connector-panel">
+          <p class="connector-intro">This tool calls Google's Gemini API directly from your browser using your own free key — nothing routes through Reysourcez. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>; the free tier needs no credit card.</p>
+          <div class="fw-setup-grid">
+            <div>
+              <label for="fw-api-key">API key</label>
+              <input type="password" id="fw-api-key" name="api-key" placeholder="Paste your Gemini API key" autocomplete="off">
+            </div>
+            <button type="button" id="fw-save-key" class="btn btn-primary">Save for this visit</button>
+            <button type="button" id="fw-clear-key" class="btn btn-secondary">Clear</button>
+          </div>
+          <p class="fw-key-status" id="fw-key-status">No key saved yet — it clears automatically when you close this tab.</p>
+          <p class="fw-privacy-note">Your key is kept only in this browser tab and sent straight to Google, never to Reysourcez. Google's free tier may review usage to improve their models; paid-tier keys aren't reviewed this way — see <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Gemini API terms</a>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PHOTO UPLOAD ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <h2>Add a photo</h2>
+        <div class="fw-upload-zone" id="fw-upload-zone">
+          <img id="fw-preview-img" class="fw-preview-img" alt="" hidden>
+          <div class="fw-upload-row">
+            <label for="fw-photo-input" class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo</label>
+            <input type="file" id="fw-photo-input" accept="image/*" capture="environment" class="sr-only">
+            <button type="button" id="fw-analyze-btn" class="btn btn-primary" disabled>Analyze photo</button>
+          </div>
+        </div>
+        <p class="fw-status" id="fw-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <!-- ============ RESULTS ============ -->
+    <section class="calc-panel" id="fw-results" hidden>
+      <div class="wrap">
+        <h2>What's on the plate</h2>
+        <p class="menu-builder-intro">Every number below is Gemini's estimate — edit anything you know better, and the totals below update as you type. Uncheck a row to leave it out without deleting it.</p>
+
+        <div class="table-scroll">
+          <table class="menu-table fw-items-table" id="fw-items-table">
+            <caption class="sr-only">Detected food items with estimated weight, calories, and nutrition per item</caption>
+            <thead>
+              <tr>
+                <th scope="col"><span class="sr-only">Include in total</span></th>
+                <th scope="col">Item</th>
+                <th scope="col">Weight (g)</th>
+                <th scope="col">Calories</th>
+                <th scope="col">Protein (g)</th>
+                <th scope="col">Carbs (g)</th>
+                <th scope="col">Fat (g)</th>
+                <th scope="col">Fiber (g)</th>
+                <th scope="col">Note</th>
+                <th scope="col" class="no-print"><span class="sr-only">Remove row</span></th>
+              </tr>
+            </thead>
+            <tbody id="fw-item-rows"></tbody>
+          </table>
+        </div>
+
+        <div class="calc-actions no-print">
+          <button type="button" id="fw-add-item" class="btn btn-secondary">+ Add item</button>
+        </div>
+
+        <div class="ica-results" style="margin-top:20px;">
+          <div class="result-card">
+            <span class="result-label">Total weight</span>
+            <span class="result-value" id="fw-total-weight">0 g</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">Total calories</span>
+            <span class="result-value" id="fw-total-calories">0 kcal</span>
+          </div>
+        </div>
+
+        <h2 style="margin-top:32px;">What did it cost?</h2>
+        <div class="fw-price-row">
+          <div class="fw-price-field">
+            <label for="fw-price">Price paid (RM)</label>
+            <input type="number" id="fw-price" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
+          </div>
+          <div class="fw-price-field">
+            <label for="fw-benchmark">Your benchmark<span class="tooltip-icon" data-tooltip="What you'd consider fair value — adjust to match your own sense of local prices">?</span></label>
+            <input type="number" id="fw-benchmark" inputmode="decimal" min="0" step="0.05" value="1.00">
+            <span class="toggle-hint">RM per 100 kcal</span>
+          </div>
+        </div>
+
+        <div class="ica-results">
+          <div class="result-card">
+            <span class="result-label">Cost per 100 kcal</span>
+            <span class="result-value" id="fw-cost-per-kcal">RM0.00</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">Cost per 100 g</span>
+            <span class="result-value" id="fw-cost-per-100g">RM0.00</span>
+          </div>
+          <div class="result-card" id="fw-rating-card" style="grid-column: span 2;">
+            <span class="result-label">Value rating</span>
+            <span class="fw-rating-badge" id="fw-rating-badge">Add a price above</span>
+          </div>
+        </div>
+
+        <h2 style="margin-top:32px;">Nutritional balance</h2>
+        <p class="structure-note">Share of calories from each macronutrient, across the items you've kept checked above. Fiber is part of total carbs (as on a nutrition label), shown separately below as a reference figure rather than its own segment.</p>
+        <div class="fw-macro-legend">
+          <span><i class="legend-swatch fw-seg-protein"></i>Protein</span>
+          <span><i class="legend-swatch fw-seg-carbs"></i>Carbs</span>
+          <span><i class="legend-swatch fw-seg-fat"></i>Fat</span>
+        </div>
+        <div class="structure-bar" id="fw-macro-bar" style="flex: 0 0 300px;"></div>
+        <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <script src="food-worth-calculator.js?v=1" defer></script>
+</body>
+</html>
