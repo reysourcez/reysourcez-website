@@ -17,7 +17,7 @@
    belongs (variable cost, fixed cost, or its own category).
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-08-24-cross-tab-sync');
+console.info('[Interactive Costing Analysis] script build: 2026-08-27-preset-margin-fix');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -153,7 +153,7 @@ function renderTip() {
 /* ================= VOLUME PRESETS ================= */
 
 function applyPreset(kind) {
-  const value = kind === 'pessimistic' ? 100 : 300;
+  const value = kind === 'pessimistic' ? 50 : 300;
   document.getElementById('daily-volume').value = value;
   document.getElementById('daily-volume-num').value = value;
   recalculate();
@@ -206,10 +206,16 @@ function recalculate() {
   const inputs = getInputs();
   const r = computeResults(inputs);
 
-  document.getElementById('res-margin').textContent = formatRM(r.contributionMargin) + '/portion';
-  document.getElementById('res-be-month').textContent = isFinite(r.beMonth)
+  const marginEl = document.getElementById('res-margin');
+  const marginNegative = r.contributionMargin < 0;
+  marginEl.textContent = formatRM(Math.abs(r.contributionMargin)) + '/portion' + (marginNegative ? ' (loss)' : '');
+  marginEl.closest('.result-card').classList.toggle('is-loss', marginNegative);
+
+  const beMonthEl = document.getElementById('res-be-month');
+  beMonthEl.textContent = isFinite(r.beMonth)
     ? Math.ceil(r.beMonth).toLocaleString() + ' portions'
     : 'Not reachable at this price';
+  beMonthEl.closest('.result-card').classList.toggle('is-loss', !isFinite(r.beMonth));
   document.getElementById('res-be-day').textContent = isFinite(r.beDay)
     ? Math.ceil(r.beDay).toLocaleString() + ' portions'
     : '\u2014';

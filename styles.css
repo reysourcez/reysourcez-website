@@ -924,7 +924,8 @@ th.sortable:hover { color: var(--accent-dark); }
 .structure-label { flex: 0 0 auto; font-size: 0.88rem; font-weight: 600; color: var(--text); min-width: 120px; }
 .loss-flag { color: #C0392B; font-weight: 700; font-size: 0.78rem; text-transform: uppercase; margin-left: 4px; }
 .structure-bar {
-  flex: 0 0 300px;
+  flex: 0 1 300px;
+  min-width: 0;
   display: flex;
   height: 26px;
   border-radius: 5px;
