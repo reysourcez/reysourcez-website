@@ -15,12 +15,13 @@
    ============================================================ */
 
 const RZ_SYNC_CHANNEL_NAME = 'reysourcez-costing-sync';
-console.info('[Costing Sync] script build: 2026-08-24-v1');
+console.info('[Costing Sync] script build: 2026-08-28-printing-calculator');
 
 const RZ_TOOLS = {
   'menu-calculator': { url: 'menu-calculator.html', label: 'Menu Portion Creator', icon: '\uD83C\uDF7D\uFE0F' },
   'overhead-manpower-calculator': { url: 'overhead-manpower-calculator.html', label: 'Overhead & Manpower', icon: '\uD83D\uDCB0' },
   'interactive-costing-analysis': { url: 'interactive-costing-analysis.html', label: 'Costing Analysis', icon: '\uD83D\uDCCA' },
+  'printing-calculator': { url: 'printing-calculator.html', label: 'Printing Calculator', icon: '\uD83D\uDDA8\uFE0F' },
 };
 
 function rzCurrentToolKey() {

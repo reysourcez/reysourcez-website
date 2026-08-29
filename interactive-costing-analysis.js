@@ -17,7 +17,7 @@
    belongs (variable cost, fixed cost, or its own category).
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-08-27-preset-margin-fix');
+console.info('[Interactive Costing Analysis] script build: 2026-08-28-printing-sync');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -400,6 +400,15 @@ function initSync() {
       if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
         document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
         markSynced('#sell-price-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+      }
+      recalculate();
+    }
+    if (data.source === 'printing-calculator' && typeof data.costPerPortion === 'number') {
+      document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
+      markSynced('#ing-cost-label', 'Printing Calculator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+      if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
+        document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
+        markSynced('#sell-price-label', 'Printing Calculator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
       }
       recalculate();
     }

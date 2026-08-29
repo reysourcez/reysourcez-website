@@ -169,7 +169,7 @@
 
   <div id="rz-switcher" class="no-print" hidden></div>
 
-  <script src="costing-sync.js?v=1" defer></script>
+  <script src="costing-sync.js?v=2" defer></script>
   <script>
   /* ============================================================
      Print Job Costing Calculator
@@ -596,6 +596,17 @@
     block.querySelector('.commission-tax-amount').textContent = formatRM(commissionTaxAmount);
     block.querySelector('.sst-amount').textContent = formatRM(sstAmount);
     block.querySelector('.net-amount').textContent = formatRM(netAmount);
+
+    // Sync to Cost Analysis if it's listening — same one-block-only
+    // assumption as Menu Portion Creator (see its comment for why).
+    // Cost per unit is materials + amortized setup, since that's the
+    // true full cost of one unit; selling price is the per-unit
+    // quoted price after marketplace/SST gross-up, matching what
+    // Menu Portion Creator sends for its own listed price.
+    if (typeof rzBroadcast === 'function' && block === document.querySelector('.menu-block')) {
+      const name = block.querySelector('.menu-name-input').value.trim() || 'Untitled Print Job';
+      rzBroadcast({ costPerPortion: totalCostPerUnit, sellingPrice: isFinite(quotedPrice) ? perUnitQuoted : undefined, dishName: name });
+    }
   }
 
   // Rebuilds this block's Item dropdowns from current materials,
