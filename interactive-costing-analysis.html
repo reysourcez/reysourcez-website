@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 
@@ -29,11 +29,16 @@
         <li><a href="index.html">Home</a></li>
         <li><a href="about.html">About</a></li>
         <li><a href="services.html">Services</a></li>
-        <li><a href="menu-calculator.html">Menu Calculator</a></li>
-        <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-        <li><a href="interactive-costing-analysis.html" aria-current="page">Costing Analysis</a></li>
-        <li><a href="printing-calculator.html">Printing Calculator</a></li>
-        <li><a href="food-worth-calculator.html">Food Worth</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html" aria-current="page">Costing Analysis</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
+          </ul>
+        </li>
         <li><a href="contact.html">Contact</a></li>
       </ul>
     </nav>
@@ -196,6 +201,7 @@
   <div id="rz-switcher" class="no-print" hidden></div>
 
   <script src="costing-sync.js?v=2" defer></script>
+  <script src="nav-dropdown.js?v=1" defer></script>
   <script src="interactive-costing-analysis.js?v=5" defer></script>
 </body>
 </html>

@@ -117,7 +117,19 @@ function rzInitSwitcher() {
       btn.addEventListener('click', () => { rzOpenOrFocusTool(btn.dataset.key); menu.hidden = true; toggle.setAttribute('aria-expanded', 'false'); });
     });
     const backBtn = menu.querySelector('#rz-back-to-opener');
-    if (backBtn) backBtn.addEventListener('click', () => { window.opener.focus(); menu.hidden = true; toggle.setAttribute('aria-expanded', 'false'); });
+    if (backBtn) backBtn.addEventListener('click', () => {
+      // window.opener.focus() is best-effort only — Chrome (since
+      // v64) and Firefox both deliberately restrict a background tab
+      // from pulling focus back onto its opener, so this frequently
+      // does nothing even though it's not an error. The broadcast
+      // below is the actual fix: it asks the opener tab to flash its
+      // title, which reliably shows up in the tab bar even when we
+      // can't force focus onto it.
+      window.opener.focus();
+      if (typeof rzBroadcast === 'function') rzBroadcast({ type: 'rz-come-back', target: openerKey });
+      menu.hidden = true;
+      toggle.setAttribute('aria-expanded', 'false');
+    });
     return true;
   }
 
@@ -131,3 +143,35 @@ function rzInitSwitcher() {
 }
 
 document.addEventListener('DOMContentLoaded', rzInitSwitcher);
+
+/* ================= "Come back here" signal ================= */
+// Since a background tab can't reliably force focus onto its opener
+// (see the back-button handler above), it asks instead: every page
+// listens here, and if it's the addressed tab, flashes its own
+// title so it's easy to spot in the tab bar. Reverts on its own
+// once that tab actually gets focus, or after 20s regardless.
+function rzInitComeBackListener() {
+  const ch = rzGetChannel();
+  if (!ch) return;
+  const myKey = rzCurrentToolKey();
+  if (!myKey) return;
+  const originalTitle = document.title;
+  let revertTimer = null;
+
+  function revert() {
+    document.title = originalTitle;
+    if (revertTimer) { clearTimeout(revertTimer); revertTimer = null; }
+    window.removeEventListener('focus', revert);
+  }
+
+  ch.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'rz-come-back' && event.data.target === myKey) {
+      document.title = '\u21A9 Switch back here \u2014 ' + originalTitle;
+      window.addEventListener('focus', revert);
+      if (revertTimer) clearTimeout(revertTimer);
+      revertTimer = setTimeout(revert, 20000);
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', rzInitComeBackListener);

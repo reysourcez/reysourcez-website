@@ -146,6 +146,77 @@ a:focus-visible, button:focus-visible {
   border-bottom-color: var(--accent);
 }
 
+/* ---- Nav dropdown ("Business Analysis" menu) ---- */
+.nav-dropdown { position: relative; }
+.nav-dropdown-toggle {
+  background: none;
+  border: none;
+  font-family: var(--font-body);
+  color: var(--ink);
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding: 0 0 4px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.nav-dropdown-toggle:hover,
+.nav-dropdown-toggle.active,
+.nav-dropdown.is-open .nav-dropdown-toggle {
+  border-bottom-color: var(--accent);
+}
+.nav-dropdown-caret {
+  width: 6px; height: 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  margin-top: -3px;
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+.nav-dropdown:hover .nav-dropdown-caret,
+.nav-dropdown.is-open .nav-dropdown-caret {
+  transform: rotate(-135deg);
+  margin-top: 3px;
+}
+.nav-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin: 10px 0 0;
+  padding: 8px;
+  min-width: 210px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,0.14);
+  display: none;
+  z-index: 20;
+}
+.nav-dropdown:hover .nav-dropdown-menu,
+.nav-dropdown.is-open .nav-dropdown-menu {
+  display: block;
+}
+.nav-dropdown-menu li { margin: 0; }
+.nav-dropdown-menu a {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  border-bottom: none;
+}
+.nav-dropdown-menu a:hover,
+.nav-dropdown-menu a[aria-current="page"] {
+  background: var(--paper);
+  color: var(--accent-dark);
+}
+
 /* ---- 4. Buttons ---- */
 .btn {
   display: inline-block;
@@ -299,6 +370,9 @@ a:focus-visible, button:focus-visible {
   .values { grid-template-columns: 1fr; gap: 32px; }
   .nav { justify-content: center; text-align: center; }
   .nav-links { justify-content: center; width: 100%; }
+  .nav-dropdown { width: 100%; }
+  .nav-dropdown-toggle { justify-content: center; width: 100%; }
+  .nav-dropdown-menu { position: static; width: 100%; margin-top: 4px; box-shadow: none; border: none; }
 }
 
 /* ---- 13. Menu calculator ----
