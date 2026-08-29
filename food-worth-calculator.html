@@ -17,28 +17,6 @@
        page stays visually identical to the rest of the site. Fold these
        into styles.css later if you'd rather keep all CSS in one file. -->
   <style>
-    /* Not currently defined in styles.css, despite being used there
-       (table captions, icon-only remove buttons) — added defensively
-       so this page's screen-reader-only text actually stays hidden
-       regardless. Worth adding to styles.css itself at some point;
-       flagged separately rather than touched here. */
-    .sr-only {
-      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
-    }
-
-    .fw-setup-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 10px 12px; align-items: end; }
-    .fw-setup-grid label { font-weight: 600; font-size: 0.9rem; display: block; margin-bottom: 6px; }
-    .fw-setup-grid input[type="password"] {
-      width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 4px;
-      font-family: "IBM Plex Mono", monospace; font-size: 0.9rem; background: var(--surface);
-    }
-    .fw-setup-grid input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    .fw-key-status { font-size: 0.8rem; color: var(--muted); margin: 8px 0 0; }
-    .fw-key-status.is-saved { color: var(--accent-dark); font-weight: 600; }
-    .fw-privacy-note { font-size: 0.82rem; color: var(--muted); margin: 12px 0 0; max-width: 68ch; }
-    .fw-privacy-note a { color: var(--accent-dark); }
-
     .fw-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; text-align: center; background: var(--surface); }
     .fw-upload-zone.has-image { border-style: solid; padding: 20px; text-align: left; }
     .fw-preview-img { max-width: 240px; max-height: 240px; border-radius: 8px; display: block; margin: 0 auto 16px; }
@@ -75,7 +53,6 @@
     .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
 
     @media (max-width: 800px) {
-      .fw-setup-grid { grid-template-columns: 1fr; }
       .fw-price-row { flex-direction: column; align-items: stretch; }
     }
   </style>
@@ -111,29 +88,9 @@
 
     <section class="calc-intro">
       <div class="wrap">
-        <span class="eyebrow">Free tool &middot; your own Gemini key &middot; nothing saved on our side</span>
+        <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
         <h1>Food Worth Calculator</h1>
         <p class="lead">Upload a photo of a meal. Gemini estimates what's on the plate — item by item weight, calories, and nutrition. Add what it cost and see what you're actually getting for the price.</p>
-      </div>
-    </section>
-
-    <!-- ============ API KEY SETUP ============ -->
-    <section class="calc-panel">
-      <div class="wrap">
-        <h2>Your Gemini API key</h2>
-        <div class="connector-panel">
-          <p class="connector-intro">This tool calls Google's Gemini API directly from your browser using your own free key — nothing routes through Reysourcez. Get one at <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a>; the free tier needs no credit card.</p>
-          <div class="fw-setup-grid">
-            <div>
-              <label for="fw-api-key">API key</label>
-              <input type="password" id="fw-api-key" name="api-key" placeholder="Paste your Gemini API key" autocomplete="off">
-            </div>
-            <button type="button" id="fw-save-key" class="btn btn-primary">Save for this visit</button>
-            <button type="button" id="fw-clear-key" class="btn btn-secondary">Clear</button>
-          </div>
-          <p class="fw-key-status" id="fw-key-status">No key saved yet — it clears automatically when you close this tab.</p>
-          <p class="fw-privacy-note">Your key is kept only in this browser tab and sent straight to Google, never to Reysourcez. Google's free tier may review usage to improve their models; paid-tier keys aren't reviewed this way — see <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noopener">Gemini API terms</a>.</p>
-        </div>
       </div>
     </section>
 
@@ -243,6 +200,6 @@
     </div>
   </footer>
 
-  <script src="food-worth-calculator.js?v=1" defer></script>
+  <script src="food-worth-calculator.js?v=3" defer></script>
 </body>
 </html>

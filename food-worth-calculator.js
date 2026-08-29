@@ -46,7 +46,7 @@ const MAX_IMAGE_EDGE = 1024; // px — resized client-side before it's ever sent
 // food-worth-proxy-worker.js for what it does and how to deploy it —
 // short version: it holds the real Gemini key server-side so this
 // file, and every visitor's browser, never sees it.
-const PROXY_ENDPOINT = https://food-worth-proxy.reysourcez-ent.workers.dev/; // e.g. https://food-worth-proxy.yoursubdomain.workers.dev
+const PROXY_ENDPOINT = 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE'; // e.g. https://food-worth-proxy.yoursubdomain.workers.dev
 
 // Soft, client-side cap so this stays polite even before any
 // server-side limit exists. NOT real security — anyone can clear
@@ -329,6 +329,7 @@ function recalculate() {
 let currentImageBase64 = null;
 
 async function handleFileSelect(e) {
+  console.log('[Food Worth] photo input changed, file count:', e.target.files.length);
   const file = e.target.files[0];
   if (!file) return;
   setStatus('Preparing photo\u2026');
@@ -405,6 +406,7 @@ function init() {
     });
     document.getElementById('fw-price').addEventListener('input', recalculate);
     document.getElementById('fw-benchmark').addEventListener('input', recalculate);
+    console.log('[Food Worth] init complete, all listeners attached');
   } catch (err) {
     console.error('[Food Worth Calculator] setup failed:', err);
     const status = document.getElementById('fw-status');
