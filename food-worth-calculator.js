@@ -46,7 +46,7 @@ const MAX_IMAGE_EDGE = 1024; // px — resized client-side before it's ever sent
 // food-worth-proxy-worker.js for what it does and how to deploy it —
 // short version: it holds the real Gemini key server-side so this
 // file, and every visitor's browser, never sees it.
-const PROXY_ENDPOINT = 'https://food-worth-proxy.reysourcez-ent.workers.dev'; // e.g. https://food-worth-proxy.yoursubdomain.workers.dev
+const PROXY_ENDPOINT = 'https://food-worth-proxy.reysourcez-ent.workers.dev';
 
 // Soft, client-side cap so this stays polite even before any
 // server-side limit exists. NOT real security — anyone can clear
@@ -143,11 +143,20 @@ function resizeImageToBase64(file) {
    function just hands the proxy a photo and reads back items. */
 
 async function analyzePhoto(base64Image) {
-  const response = await fetch(PROXY_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: base64Image, mime_type: 'image/jpeg' }),
-  });
+  let response;
+  try {
+    response = await fetch(PROXY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Image, mime_type: 'image/jpeg' }),
+    });
+  } catch (e) {
+    // fetch() throws a generic TypeError for network-level failures —
+    // wrong/unreachable URL, or the browser silently refusing to hand
+    // back a cross-origin response. Both are worth naming explicitly
+    // rather than surfacing "Failed to fetch" with no next step.
+    throw new Error('Could not reach the analysis service \u2014 check PROXY_ENDPOINT is correct and that this page\u2019s URL is in the Worker\u2019s ALLOWED_ORIGINS.');
+  }
 
   let data;
   try { data = await response.json(); }
