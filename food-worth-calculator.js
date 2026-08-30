@@ -419,8 +419,7 @@ function createDishPanel() {
     <div class="fw-upload-zone">
       <img class="fw-preview-img" alt="" hidden>
       <div class="fw-upload-row">
-        <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo</label>
-        <input type="file" accept="image/*" class="sr-only fw-photo-input">
+        <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo<input type="file" accept="image/*" class="sr-only fw-photo-input"></label>
         <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
       </div>
     </div>
