@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <script>if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('rz-embedded');</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Menu Calculator</title>
   <meta name="description" content="Free menu costing calculator — work out your true cost per unit after wastage, right in your browser. Nothing you enter is saved.">
@@ -10,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -47,7 +48,7 @@
   <main id="main">
 
     <!-- ============ CALCULATOR INTRO ============ -->
-    <section class="calc-intro">
+    <section class="calc-intro rz-embed-hide">
       <div class="wrap calc-intro-header">
         <div>
           <span class="eyebrow">Free tool &middot; nothing is saved</span>
@@ -110,7 +111,7 @@
     </section>
 
     <!-- ============ HOW IT WORKS ============ -->
-    <section class="calc-note no-print">
+    <section class="calc-note no-print rz-embed-hide">
       <div class="wrap">
         <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit. <strong>Yield %</strong> is the usable share you can actually measure or predict — under 100% for trim loss, over 100% for something that gains weight when cooked (dry noodles or rice absorbing water). <strong>Wastage %</strong> is a buffer on top for what you can't predict — shrinkage, moisture loss. Both are set per item. <strong>Inflation</strong> is set once, above the table, and applies as a single blanket rate to every item's True Cost — it's a forward buffer for supplier price rises, not something that varies item to item.</p>
         <p>For a purchase that's pre-divided rather than sold by weight — a pack of noodles that makes 8 portions, a whole chicken cut into 8 pieces — pick the <strong>portion</strong> or <strong>piece</strong> unit, and set Qty to the portion/piece count rather than a weight.</p>

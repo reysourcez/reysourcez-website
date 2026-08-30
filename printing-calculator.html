@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <script>if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('rz-embedded');</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Printing Calculator</title>
   <meta name="description" content="Free print job costing calculator — work out your true cost per unit after wastage and setup costs, right in your browser. Nothing you enter is saved.">
@@ -10,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=10">
   <style>
     /* styles.css references .sr-only on every calculator page (table
        captions, "remove row" labels) but never actually defines it —
@@ -64,7 +65,7 @@
   <main id="main">
 
     <!-- ============ CALCULATOR INTRO ============ -->
-    <section class="calc-intro">
+    <section class="calc-intro rz-embed-hide">
       <div class="wrap calc-intro-header">
         <div>
           <span class="eyebrow">Free tool &middot; nothing is saved</span>
@@ -127,7 +128,7 @@
     </section>
 
     <!-- ============ HOW IT WORKS ============ -->
-    <section class="calc-note no-print">
+    <section class="calc-note no-print rz-embed-hide">
       <div class="wrap">
         <p><strong>How it's calculated:</strong> Price ÷ (Qty × unit size) gives price per base unit. <strong>Yield %</strong> is the usable share of what you buy — under 100% for roll ends or trim/bleed loss; leave at 100% if the whole thing is usable. <strong>Wastage %</strong> is a buffer on top for what you can't predict — misprints, colour-calibration sheets, torn stock. Both are set per item. <strong>Inflation</strong> is set once, above the table, and applies as a single blanket rate to every item's True Cost — a forward buffer for supplier price rises, not something that varies item to item.</p>
         <p>For material priced by the sheet, pick <strong>sheet</strong> or <strong>ream</strong> (500 sheets) and set Qty to the sheet count. For large-format material sold by the roll — vinyl, canvas, flex banner — pick <strong>sqm</strong> or <strong>sqft</strong> and set Qty to the roll's total area (width × length), not the roll count. For something bought as one box or pack that yields a fixed count — a box of lanyard clips, a pack of zip ties — pick <strong>piece</strong> and set Qty to the count.</p>

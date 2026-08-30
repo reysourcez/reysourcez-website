@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -72,11 +72,24 @@
         <div class="ica-tip" id="ica-tip"></div>
 
         <div class="connector-panel no-print">
-          <p class="connector-intro">Pull numbers in live from the other tools instead of retyping them — opens in a new tab, stays linked while both are open, nothing is saved either way.</p>
           <div class="calc-actions">
-            <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator">Open Menu Portion Creator</button>
-            <button type="button" class="btn btn-secondary" data-open-tool="overhead-manpower-calculator">Open Overhead &amp; Manpower</button>
-            <button type="button" class="btn btn-secondary" data-open-tool="printing-calculator">Open Printing Calculator</button>
+            <span class="connector-label">Pull from<span class="tooltip-icon" data-tooltip="Opens right here, live-linked while it's open — nothing is saved either way">?</span></span>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-menu" data-overlay-tool="menu-calculator" aria-expanded="false">Menu Portion Creator</button>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-overhead" data-overlay-tool="overhead-manpower-calculator" aria-expanded="false">Overhead &amp; Manpower</button>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-printing" data-overlay-tool="printing-calculator" aria-expanded="false">Printing Calculator</button>
+          </div>
+        </div>
+
+        <div class="rz-overlay no-print" id="rz-overlay" hidden>
+          <button type="button" class="rz-overlay-backdrop" id="rz-overlay-backdrop" aria-label="Close"></button>
+          <div class="rz-overlay-panel" id="rz-overlay-panel">
+            <div class="rz-overlay-header">
+              <span class="rz-overlay-title" id="rz-overlay-title"></span>
+              <button type="button" class="rz-overlay-close" id="rz-overlay-close" aria-label="Close">&times;</button>
+            </div>
+            <iframe class="rz-overlay-frame" data-tool="menu-calculator" title="Menu Portion Creator" hidden></iframe>
+            <iframe class="rz-overlay-frame" data-tool="overhead-manpower-calculator" title="Overhead &amp; Manpower" hidden></iframe>
+            <iframe class="rz-overlay-frame" data-tool="printing-calculator" title="Printing Calculator" hidden></iframe>
           </div>
         </div>
 

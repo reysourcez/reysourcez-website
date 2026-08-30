@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <script>if (new URLSearchParams(location.search).get('embed') === '1') document.documentElement.classList.add('rz-embedded');</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Overhead &amp; Manpower Calculator</title>
   <meta name="description" content="Free overhead and manpower cost calculator for Malaysian F&B businesses — rent, utilities, licenses, and staff costs including EPF/SOCSO/EIS, calculated instantly in your browser.">
@@ -10,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=9">
+  <link rel="stylesheet" href="styles.css?v=10">
 </head>
 <body>
 
@@ -46,7 +47,7 @@
 
   <main id="main">
 
-    <section class="calc-intro">
+    <section class="calc-intro rz-embed-hide">
       <div class="wrap calc-intro-header">
         <div>
           <span class="eyebrow">Free tool &middot; nothing is saved</span>
@@ -144,7 +145,7 @@
     </section>
 
     <!-- ============ ABOUT THE NUMBERS ============ -->
-    <section class="calc-note no-print">
+    <section class="calc-note no-print rz-embed-hide">
       <div class="wrap">
         <p><strong>About the numbers:</strong> EPF, SOCSO, and EIS are federal (they apply the same way in Sarawak as anywhere else in Malaysia). SOCSO and EIS now use PERKESO's actual published wage-band tables (Act 4 / Act 800, Category 1, under 60), not a percentage approximation. EPF applies the official Third Schedule rounding rule — the percentage, rounded up to the next ringgit — rather than a bare percentage. This still assumes a Malaysian/PR employee under 60; contribution rates differ for non-citizen staff and staff aged 60+, and PCB/MTD income tax isn't included. Verify with KWSP/PERKESO for anything outside that.</p>
       </div>
