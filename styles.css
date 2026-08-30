@@ -1207,6 +1207,15 @@ th.sortable:hover { color: var(--accent-dark); }
 .rz-switcher-item.current { color: var(--muted); cursor: default; }
 .rz-switcher-item:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
 
+.rz-switcher-status {
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted);
+  padding: 8px 10px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
 @media print {
   #rz-switcher { display: none !important; }
 }

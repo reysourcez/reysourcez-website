@@ -66,6 +66,24 @@ function rzMaybeRequestNotificationPermission() {
   }
 }
 
+// Turns invisible permission state into something visible in the
+// switcher itself — browser-level permission (this can request) and
+// OS-level notification settings for the browser app (this can't
+// see or control at all) are two separate gates, and only the first
+// one is something a website has any influence over.
+function rzNotificationStatusText() {
+  if (typeof Notification === 'undefined') {
+    return 'Notifications not supported here \u2014 back button will flash the tab title only';
+  }
+  if (Notification.permission === 'granted') {
+    return 'Notifications on \u2014 back button can bring this tab forward. (If it still doesn\u2019t, check your computer\u2019s own notification settings for this browser \u2014 that\u2019s a separate switch outside this site\u2019s control.)';
+  }
+  if (Notification.permission === 'denied') {
+    return 'Notifications blocked for this site \u2014 back button will only flash the tab title. Allow them in your browser\u2019s site settings to enable one-click switching.';
+  }
+  return 'Notifications not yet allowed \u2014 open the \u22ee menu once to be asked, or back button will just flash the tab title for now';
+}
+
 const rzOpenTabs = {}; // key -> window reference, hub side only
 
 function rzOpenOrFocusTool(key) {
@@ -125,6 +143,7 @@ function rzInitSwitcher() {
     });
     if (showBack) {
       html += `<button type="button" class="rz-switcher-item" id="rz-back-to-opener">${RZ_TOOLS[openerKey].icon} ${RZ_TOOLS[openerKey].label} (back)</button>`;
+      html += `<div class="rz-switcher-status">${rzNotificationStatusText()}</div>`;
     }
     menu.innerHTML = html;
     menu.querySelectorAll('.rz-switcher-item[data-key]').forEach((btn) => {
@@ -194,11 +213,16 @@ function rzInitComeBackListener() {
       // fires if permission was already granted; does nothing
       // otherwise, title flash still covers that case.
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        const n = new Notification('Reysourcez \u2014 switch back here', {
-          body: originalTitle,
-          tag: 'rz-come-back',
-        });
-        n.onclick = () => { window.focus(); n.close(); };
+        try {
+          const n = new Notification('Reysourcez \u2014 switch back here', {
+            body: originalTitle,
+            tag: 'rz-come-back',
+            requireInteraction: true,
+          });
+          n.onclick = () => { window.focus(); n.close(); };
+        } catch (err) {
+          console.error('[Costing Sync] Notification failed to show:', err);
+        }
       }
     }
   });
