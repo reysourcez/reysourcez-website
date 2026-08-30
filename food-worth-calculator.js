@@ -1,65 +1,54 @@
 /* ============================================================
    Food Worth Calculator
-   Vanilla JS, no dependencies. The photo goes straight from this
-   browser to Google — nothing routes through Reysourcez.
+   Vanilla JS, no dependencies. The photo goes to the Cloudflare
+   Worker proxy (food-worth-proxy-worker.js) — never straight to
+   Gemini, and never with a key visible in this file.
    ------------------------------------------------------------
-   Same shape as menu-calculator.js / interactive-costing-analysis.js:
-   1. MODEL   — plain data (item rows via data-row-id, same pattern
-                as the ingredient table) + pure functions that take
-                values in and return computed results, no DOM access:
-                computeTotals(), computeValueRating(), computeMacroMix().
-   2. VIEW    — render*() functions that only write the DOM.
-   3. CONTROLLER — runAnalysis() (calls Gemini), recalculate()
-                (re-reads current, possibly hand-edited values and
-                re-renders), init() (wires events).
+   DATA MODEL (v4): a session is one or more "dishes". Each dish is
+   its own self-contained unit — own photo, own upload zone, own
+   editable item table, own subtotal — exactly the same repeatable-
+   block pattern menu-calculator.js already uses for .menu-block
+   (create*, scope every lookup to that instance via
+   panel.querySelector(), never a page-wide id). A dish panel is
+   just a .menu-block wearing a different hat.
 
-   KEY HANDLING — changed again from v2: the real Gemini key no
-   longer lives here at all. GitHub's push protection correctly
-   flagged v2's hardcoded key as a live credential about to be
-   committed, which is the same exposure it always was, just caught
-   a step earlier. The key now lives only in a small Cloudflare
-   Worker (food-worth-proxy-worker.js, deployed separately, NOT part
-   of this repo) as an encrypted secret. This file just POSTs the
-   photo to that Worker and reads back { items } — it has no idea
-   what model is used, what the prompt says, or what the key is.
-   You must set PROXY_ENDPOINT below to your deployed Worker's URL
-   before this works.
+   Single food item mode: exactly one dish, tabs never appear.
+   Meal mode: "+ Add another dish" is offered once the active dish
+   has results; 2+ dishes render as tabs automatically. The mode
+   dropdown doesn't change how any one photo is analyzed — Gemini
+   already returns multiple items from one photo just fine, e.g. a
+   full plate. It only gates whether you can add MORE photos.
 
-   TO EXTEND:
-     - New nutrient column: add the <td><input> in createItemRow(),
-       read it in getItemRowValues(), fold it into computeTotals().
-     - Swap the Gemini model or edit the prompt/schema: all in
-       food-worth-proxy-worker.js now, not here — nothing in this
-       file knows what model is being called.
-     - Cross-tab sync into costing-sync.js: still not wired up on
-       purpose — this page answers "is this plate worth its price",
-       the other three answer "what does this cost me to make".
+   Meal totals = sum of every INCLUDED item across every dish. Price,
+   benchmark, rating, and the macro bar are meal-level, not per-dish
+   — computeTotals / computeValueRating / computeMacroMix are the
+   same pure functions as before, just fed a summed-across-dishes
+   totals object instead of one dish's.
+
+   FUTURE (KIV, architected for but not built):
+     - Micro-nutrients (vitamins, minerals): add fields to the item
+       schema in food-worth-proxy-worker.js + new columns here. The
+       dish -> meal summation loop just needs those keys added to
+       its accumulator; nothing about the dish/tab structure changes.
+     - Guideline comparison (US/Malaysian, % of RDA): a new module
+       that reads mealTotals (once it carries micro-nutrients) and a
+       chosen guideline dataset — doesn't touch the dish model at all.
+     - Rating v2: computeValueRating() already isolates the rating
+       formula in one pure function; folding in guideline-adherence
+       later is an extension of that function's inputs, not a rewrite.
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-08-29-v3-proxy');
+console.info('[Food Worth Calculator] script build: 2026-08-29-v4-meal-mode');
 
 /* ================= CONFIG ================= */
 
 const MAX_IMAGE_EDGE = 1024; // px — resized client-side before it's ever sent
-
-// PASTE YOUR DEPLOYED CLOUDFLARE WORKER URL BELOW. See
-// food-worth-proxy-worker.js for what it does and how to deploy it —
-// short version: it holds the real Gemini key server-side so this
-// file, and every visitor's browser, never sees it.
 const PROXY_ENDPOINT = 'https://food-worth-proxy.reysourcez-ent.workers.dev';
 
-// Soft, client-side cap so this stays polite even before any
-// server-side limit exists. NOT real security — anyone can clear
-// their own browser storage and reset it — just friction against an
-// accidental loop or casual overuse. Resets daily per browser. Raise
-// this (or delete the check in runAnalysis()) if it ever gets in a
-// real visitor's way. A proper enforced limit would live in the
-// Worker (e.g. a Cloudflare KV counter) — worth adding if this ever
-// needs real teeth, not required to get this working today.
 const MAX_ANALYSES_PER_DAY = 20;
 const USAGE_STORAGE_KEY = 'fw-usage';
 
-/* ================= SHARED UTILITIES (same patterns as the other pages) ================= */
+/* ================= SHARED UTILITIES ================= */
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -82,6 +71,11 @@ function numOrZero(v) {
   return isFinite(v) ? v : 0;
 }
 
+function setStatus(el, text, isError) {
+  el.textContent = text;
+  el.classList.toggle('is-error', !!isError);
+}
+
 /* ================= SOFT USAGE CAP ================= */
 
 function getUsageToday() {
@@ -89,7 +83,7 @@ function getUsageToday() {
     const raw = JSON.parse(localStorage.getItem(USAGE_STORAGE_KEY) || 'null');
     if (!raw || raw.day !== new Date().toDateString()) return 0;
     return raw.count;
-  } catch (e) { return 0; } // storage unavailable — cap just won't persist, not fatal
+  } catch (e) { return 0; }
 }
 
 function recordUsage() {
@@ -101,10 +95,7 @@ function recordUsage() {
   } catch (e) {}
 }
 
-/* ================= IMAGE HANDLING =================
-   Resized on a <canvas> before encoding so requests stay fast and
-   token-light. Gemini accepts JPEG/PNG/WEBP/HEIC/HEIF directly, so
-   an iPhone photo needs no format conversion, only this resize. */
+/* ================= IMAGE HANDLING ================= */
 
 function resizeImageToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -137,10 +128,7 @@ function resizeImageToBase64(file) {
   });
 }
 
-/* ================= PROXY CALL =================
-   Everything Gemini-specific (endpoint, model, prompt, schema,
-   response parsing) now lives in food-worth-proxy-worker.js. This
-   function just hands the proxy a photo and reads back items. */
+/* ================= PROXY CALL ================= */
 
 async function analyzePhoto(base64Image) {
   let response;
@@ -151,10 +139,6 @@ async function analyzePhoto(base64Image) {
       body: JSON.stringify({ image: base64Image, mime_type: 'image/jpeg' }),
     });
   } catch (e) {
-    // fetch() throws a generic TypeError for network-level failures —
-    // wrong/unreachable URL, or the browser silently refusing to hand
-    // back a cross-origin response. Both are worth naming explicitly
-    // rather than surfacing "Failed to fetch" with no next step.
     throw new Error('Could not reach the analysis service \u2014 check PROXY_ENDPOINT is correct and that this page\u2019s URL is in the Worker\u2019s ALLOWED_ORIGINS.');
   }
 
@@ -168,7 +152,7 @@ async function analyzePhoto(base64Image) {
   return Array.isArray(data.items) ? data.items : [];
 }
 
-/* ================= 1. MODEL: item rows ================= */
+/* ================= MODEL: item rows (scoped to one dish panel) ================= */
 
 let itemRowIdCounter = 0;
 
@@ -185,10 +169,10 @@ function getItemRowValues(tr) {
   };
 }
 
-function createItemRow(item) {
+function createItemRow(panel, item) {
   itemRowIdCounter++;
   const it = item || {};
-  const tbody = document.getElementById('fw-item-rows');
+  const tbody = panel.querySelector('.fw-item-rows');
   const tr = document.createElement('tr');
   tr.dataset.rowId = 'fw-item-' + itemRowIdCounter;
   tr.innerHTML = `
@@ -205,15 +189,18 @@ function createItemRow(item) {
   `;
   tbody.appendChild(tr);
 
-  tr.querySelectorAll('input').forEach((el) => el.addEventListener('input', recalculate));
-  tr.querySelector('.delete-row').addEventListener('click', () => { tr.remove(); recalculate(); });
+  tr.querySelectorAll('input').forEach((el) => el.addEventListener('input', () => {
+    recalculateDish(panel);
+    recalculateMeal();
+  }));
+  tr.querySelector('.delete-row').addEventListener('click', () => {
+    tr.remove();
+    recalculateDish(panel);
+    recalculateMeal();
+  });
 }
 
-function clearItemRows() {
-  document.getElementById('fw-item-rows').innerHTML = '';
-}
-
-/* ================= 1. MODEL: pure calculations ================= */
+/* ================= MODEL: pure calculations (dish-agnostic, unchanged shape) ================= */
 
 function computeTotals(rows) {
   const t = { weight: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
@@ -229,9 +216,6 @@ function computeTotals(rows) {
   return t;
 }
 
-// Ratio-based, not a hardcoded pass/fail: "benchmark" is whatever the
-// person typed into "Your benchmark" above, so this compares against
-// their own sense of fair value, not an assumed universal truth.
 function computeValueRating(totals, price, benchmarkPer100kcal) {
   if (!(price > 0) || !(totals.calories > 0)) {
     return { costPer100kcal: 0, costPer100g: 0, label: null };
@@ -246,14 +230,6 @@ function computeValueRating(totals, price, benchmarkPer100kcal) {
   return { costPer100kcal, costPer100g, label };
 }
 
-// Protein/carbs/fat only — fiber is already counted inside carbs_g
-// (standard nutrition-label convention), so a fourth segment would
-// double-count calories carbs already claimed. Fiber is surfaced
-// separately as a reference figure instead (see renderMacroFiberNote).
-// Percentages are normalized against their own sum rather than the
-// item's stated "calories" field, since AI estimates aren't always
-// perfectly self-consistent — this keeps the three segments always
-// summing to exactly 100% of the bar.
 function computeMacroMix(totals) {
   const proteinKcal = totals.protein * 4;
   const carbsKcal = totals.carbs * 4;
@@ -267,7 +243,7 @@ function computeMacroMix(totals) {
   };
 }
 
-/* ================= 2. VIEW: render functions ================= */
+/* ================= VIEW: meal-level render functions ================= */
 
 function renderTotals(totals) {
   document.getElementById('fw-total-weight').textContent = Math.round(totals.weight).toLocaleString() + ' g';
@@ -288,9 +264,6 @@ function renderRating(rating) {
   }
 }
 
-// Same segmented-bar markup as .structure-bar on the Costing Analysis
-// page (title attr for a native hover tooltip, seg-label text once a
-// segment is wide enough to hold it) — reused rather than reinvented.
 function renderMacroBar(mix) {
   const segs = [
     { key: 'protein', name: 'Protein', pct: mix.protein },
@@ -313,86 +286,249 @@ function renderMacroFiberNote(totals) {
     : '';
 }
 
-function setStatus(text, isError) {
-  const el = document.getElementById('fw-status');
-  el.textContent = text;
-  el.classList.toggle('is-error', !!isError);
-}
+/* ================= CONTROLLER: per-dish ================= */
 
-/* ================= 3. CONTROLLER ================= */
-
-function recalculate() {
-  const rows = Array.from(document.querySelectorAll('#fw-item-rows > tr')).map(getItemRowValues);
+function recalculateDish(panel) {
+  const rows = Array.from(panel.querySelectorAll('.fw-item-rows > tr')).map(getItemRowValues);
   const totals = computeTotals(rows);
-  const price = num(document.getElementById('fw-price'));
-  const benchmark = num(document.getElementById('fw-benchmark'), 1);
-  const rating = computeValueRating(totals, price, benchmark);
-  const mix = computeMacroMix(totals);
-
-  renderTotals(totals);
-  renderRating(rating);
-  renderMacroBar(mix);
-  renderMacroFiberNote(totals);
+  const subtotalEl = panel.querySelector('.fw-dish-subtotal');
+  if (subtotalEl) {
+    subtotalEl.textContent = rows.length
+      ? `Dish total: ${Math.round(totals.weight).toLocaleString()} g, ${Math.round(totals.calories).toLocaleString()} kcal`
+      : '';
+  }
 }
 
-let currentImageBase64 = null;
+function getDishTotals(panel) {
+  const rows = Array.from(panel.querySelectorAll('.fw-item-rows > tr')).map(getItemRowValues);
+  return computeTotals(rows);
+}
 
-async function handleFileSelect(e) {
-  console.log('[Food Worth] photo input changed, file count:', e.target.files.length);
+async function handleFileSelect(e, panel) {
   const file = e.target.files[0];
   if (!file) return;
-  setStatus('Preparing photo\u2026');
+  const statusEl = panel.querySelector('.fw-status');
+  setStatus(statusEl, 'Preparing photo\u2026');
   try {
     const { base64, previewUrl } = await resizeImageToBase64(file);
-    currentImageBase64 = base64;
-    const img = document.getElementById('fw-preview-img');
+    dishImageData.set(panel, base64);
+    const img = panel.querySelector('.fw-preview-img');
     img.src = previewUrl;
     img.hidden = false;
-    document.getElementById('fw-upload-zone').classList.add('has-image');
-    document.getElementById('fw-analyze-btn').disabled = false;
-    setStatus('Photo ready \u2014 click Analyze photo when you\u2019re set.');
+    panel.querySelector('.fw-upload-zone').classList.add('has-image');
+    panel.querySelector('.fw-analyze-btn').disabled = false;
+    setStatus(statusEl, 'Photo ready \u2014 click Analyze photo when you\u2019re set.');
   } catch (err) {
-    setStatus(err.message || 'Could not read that photo.', true);
+    setStatus(statusEl, err.message || 'Could not read that photo.', true);
   }
 }
 
-async function runAnalysis() {
+async function runAnalysis(panel) {
+  const statusEl = panel.querySelector('.fw-status');
+
   if (!PROXY_ENDPOINT || PROXY_ENDPOINT === 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE') {
-    setStatus('This tool needs its proxy URL set \u2014 see PROXY_ENDPOINT near the top of food-worth-calculator.js.', true);
+    setStatus(statusEl, 'This tool needs its proxy URL set \u2014 see PROXY_ENDPOINT near the top of food-worth-calculator.js.', true);
     return;
   }
-  if (!currentImageBase64) {
-    setStatus('Add a photo first.', true);
+  const base64 = dishImageData.get(panel);
+  if (!base64) {
+    setStatus(statusEl, 'Add a photo first.', true);
     return;
   }
   if (getUsageToday() >= MAX_ANALYSES_PER_DAY) {
-    setStatus('This browser has hit today\u2019s analysis limit. Try again tomorrow.', true);
+    setStatus(statusEl, 'This browser has hit today\u2019s analysis limit. Try again tomorrow.', true);
     return;
   }
 
-  const btn = document.getElementById('fw-analyze-btn');
+  const btn = panel.querySelector('.fw-analyze-btn');
   btn.disabled = true;
-  setStatus('Looking at your photo\u2026');
+  setStatus(statusEl, 'Looking at your photo\u2026');
 
   try {
-    const items = await analyzePhoto(currentImageBase64);
+    const items = await analyzePhoto(base64);
     recordUsage();
-    clearItemRows();
+    panel.querySelector('.fw-item-rows').innerHTML = '';
     if (items.length === 0) {
-      setStatus('Didn\u2019t spot any food in that photo \u2014 try a clearer, closer shot.', true);
+      setStatus(statusEl, 'Didn\u2019t spot any food in that photo \u2014 try a clearer, closer shot.', true);
     } else {
-      items.forEach((it) => createItemRow(it));
-      document.getElementById('fw-results').hidden = false;
-      recalculate();
-      setStatus(`Found ${items.length} item${items.length === 1 ? '' : 's'}. Edit anything you know better below.`);
-      document.getElementById('fw-results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      items.forEach((it) => createItemRow(panel, it));
+      panel.querySelector('.fw-dish-results').hidden = false;
+      document.getElementById('fw-meal-section').hidden = false;
+      recalculateDish(panel);
+      recalculateMeal();
+      updateAddDishVisibility();
+      setStatus(statusEl, `Found ${items.length} item${items.length === 1 ? '' : 's'}. Edit anything you know better below.`);
+      panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   } catch (err) {
-    setStatus(err.message || 'Something went wrong. Try again.', true);
+    setStatus(statusEl, err.message || 'Something went wrong. Try again.', true);
   } finally {
     btn.disabled = false;
   }
 }
+
+/* ================= CONTROLLER: meal-level (sums every dish) ================= */
+
+function recalculateMeal() {
+  const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
+  const mealTotals = { weight: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  panels.forEach((panel) => {
+    const dishTotals = getDishTotals(panel);
+    mealTotals.weight += dishTotals.weight;
+    mealTotals.calories += dishTotals.calories;
+    mealTotals.protein += dishTotals.protein;
+    mealTotals.carbs += dishTotals.carbs;
+    mealTotals.fat += dishTotals.fat;
+    mealTotals.fiber += dishTotals.fiber;
+  });
+
+  const price = num(document.getElementById('fw-price'));
+  const benchmark = num(document.getElementById('fw-benchmark'), 1);
+  const rating = computeValueRating(mealTotals, price, benchmark);
+  const mix = computeMacroMix(mealTotals);
+
+  renderTotals(mealTotals);
+  renderRating(rating);
+  renderMacroBar(mix);
+  renderMacroFiberNote(mealTotals);
+}
+
+/* ================= CONTROLLER: dish panels, tabs, mode ================= */
+
+// Base64 image data per dish, keyed by panel element rather than a
+// dataset string — WeakMap so a removed dish's image data is
+// garbage-collected instead of leaking.
+const dishImageData = new WeakMap();
+
+let dishIdCounter = 0;
+
+function createDishPanel() {
+  dishIdCounter++;
+  const id = 'dish-' + dishIdCounter;
+  const label = 'Dish ' + dishIdCounter;
+
+  const panel = document.createElement('div');
+  panel.className = 'fw-dish-panel menu-block';
+  panel.dataset.dishId = id;
+  panel.innerHTML = `
+    <div class="menu-block-header">
+      <input type="text" class="menu-name-input fw-dish-name" value="${escapeHTML(label)}" aria-label="Dish name">
+      <button type="button" class="remove-block-btn fw-remove-dish no-print" aria-label="Remove this dish" hidden>Remove dish</button>
+    </div>
+
+    <div class="fw-upload-zone">
+      <img class="fw-preview-img" alt="" hidden>
+      <div class="fw-upload-row">
+        <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo</label>
+        <input type="file" accept="image/*" class="sr-only fw-photo-input">
+        <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
+      </div>
+    </div>
+    <p class="fw-status" role="status" aria-live="polite"></p>
+
+    <div class="fw-dish-results" hidden>
+      <div class="table-scroll">
+        <table class="menu-table fw-items-table">
+          <caption class="sr-only">Detected food items with estimated weight, calories, and nutrition per item</caption>
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only">Include in total</span></th>
+              <th scope="col">Item</th>
+              <th scope="col">Weight (g)</th>
+              <th scope="col">Calories</th>
+              <th scope="col">Protein (g)</th>
+              <th scope="col">Carbs (g)</th>
+              <th scope="col">Fat (g)</th>
+              <th scope="col">Fiber (g)</th>
+              <th scope="col">Note</th>
+              <th scope="col" class="no-print"><span class="sr-only">Remove row</span></th>
+            </tr>
+          </thead>
+          <tbody class="fw-item-rows"></tbody>
+        </table>
+      </div>
+      <div class="calc-actions no-print">
+        <button type="button" class="btn btn-secondary fw-add-item">+ Add item</button>
+      </div>
+      <p class="fw-dish-subtotal"></p>
+    </div>
+  `;
+  document.getElementById('fw-dish-panels').appendChild(panel);
+
+  panel.querySelector('.fw-photo-input').addEventListener('change', (e) => handleFileSelect(e, panel));
+  panel.querySelector('.fw-analyze-btn').addEventListener('click', () => runAnalysis(panel));
+  panel.querySelector('.fw-add-item').addEventListener('click', () => {
+    createItemRow(panel, {});
+    recalculateDish(panel);
+    recalculateMeal();
+  });
+  panel.querySelector('.fw-dish-name').addEventListener('input', renderDishTabs);
+  panel.querySelector('.fw-remove-dish').addEventListener('click', () => {
+    const wasActive = !panel.hidden;
+    panel.remove();
+    recalculateMeal();
+    if (wasActive) {
+      const remaining = document.querySelector('.fw-dish-panel');
+      if (remaining) switchToDish(remaining.dataset.dishId);
+    } else {
+      renderDishTabs();
+    }
+    updateAddDishVisibility();
+  });
+
+  switchToDish(id);
+  return panel;
+}
+
+function switchToDish(id) {
+  document.querySelectorAll('.fw-dish-panel').forEach((p) => {
+    p.hidden = (p.dataset.dishId !== id);
+  });
+  renderDishTabs();
+  updateAddDishVisibility();
+}
+
+// Tabs only appear once there's something to switch between — a
+// single dish just shows its panel directly, no tab bar overhead.
+function renderDishTabs() {
+  const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
+  const tabsContainer = document.getElementById('fw-dish-tabs');
+
+  panels.forEach((p) => {
+    const removeBtn = p.querySelector('.fw-remove-dish');
+    if (removeBtn) removeBtn.hidden = panels.length <= 1;
+  });
+
+  if (panels.length <= 1) {
+    tabsContainer.hidden = true;
+    tabsContainer.innerHTML = '';
+    if (panels.length === 1) panels[0].hidden = false;
+    return;
+  }
+
+  tabsContainer.hidden = false;
+  tabsContainer.innerHTML = panels.map((p) => {
+    const name = p.querySelector('.fw-dish-name').value.trim() || 'Dish';
+    const isActive = !p.hidden;
+    return `<button type="button" class="fw-tab-btn${isActive ? ' is-active' : ''}" data-dish-id="${p.dataset.dishId}">${escapeHTML(name)}</button>`;
+  }).join('');
+  tabsContainer.querySelectorAll('.fw-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => switchToDish(btn.dataset.dishId));
+  });
+}
+
+// "+ Add another dish" only makes sense in meal mode, and only once
+// the currently active dish actually has results — otherwise you'd
+// be offering to add a second empty, unanalyzed dish next to the
+// first one.
+function updateAddDishVisibility() {
+  const mode = document.getElementById('fw-mode').value;
+  const activePanel = document.querySelector('.fw-dish-panel:not([hidden])');
+  const activeHasResults = !!(activePanel && !activePanel.querySelector('.fw-dish-results').hidden);
+  document.getElementById('fw-add-dish').hidden = !(mode === 'meal' && activeHasResults);
+}
+
+/* ================= INIT ================= */
 
 let rzInitialized = false;
 
@@ -400,25 +536,16 @@ function init() {
   if (rzInitialized) return;
   rzInitialized = true;
 
-  // Wrapped deliberately: if any element below is missing (a typo, a
-  // future HTML edit that renames something), this catches it and
-  // says so on the page instead of every button silently doing
-  // nothing with no clue why — that failure mode is exactly what a
-  // "nothing works, no error shown" report usually turns out to be.
   try {
-    document.getElementById('fw-photo-input').addEventListener('change', handleFileSelect);
-    document.getElementById('fw-analyze-btn').addEventListener('click', runAnalysis);
-    document.getElementById('fw-add-item').addEventListener('click', () => {
-      createItemRow({});
-      document.getElementById('fw-results').hidden = false;
-      recalculate();
-    });
-    document.getElementById('fw-price').addEventListener('input', recalculate);
-    document.getElementById('fw-benchmark').addEventListener('input', recalculate);
+    document.getElementById('fw-mode').addEventListener('change', updateAddDishVisibility);
+    document.getElementById('fw-add-dish').addEventListener('click', () => createDishPanel());
+    document.getElementById('fw-price').addEventListener('input', recalculateMeal);
+    document.getElementById('fw-benchmark').addEventListener('input', recalculateMeal);
+    createDishPanel(); // every session starts with one dish, single or meal mode alike
     console.log('[Food Worth] init complete, all listeners attached');
   } catch (err) {
     console.error('[Food Worth Calculator] setup failed:', err);
-    const status = document.getElementById('fw-status');
+    const status = document.querySelector('.fw-status');
     if (status) {
       status.textContent = 'This page failed to set up correctly (' + err.message + '). Open the browser console (F12) for details.';
       status.classList.add('is-error');

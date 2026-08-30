@@ -52,6 +52,24 @@
     .fw-seg-fat { background: #D4A017; }
     .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
 
+    .fw-mode-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+    .fw-mode-row select {
+      padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text);
+    }
+    .fw-mode-row select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .fw-dish-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 2px solid var(--line); }
+    .fw-tab-btn {
+      background: none; border: none; padding: 10px 16px; font-family: var(--font-body); font-weight: 600;
+      font-size: 0.92rem; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px;
+    }
+    .fw-tab-btn:hover { color: var(--text); }
+    .fw-tab-btn.is-active { color: var(--accent-dark); border-bottom-color: var(--accent); }
+    .fw-tab-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .fw-dish-subtotal { font-size: 0.9rem; color: var(--muted); margin: 10px 0 0; font-family: "IBM Plex Mono", monospace; }
+
     @media (max-width: 800px) {
       .fw-price-row { flex-direction: column; align-items: stretch; }
     }
@@ -94,52 +112,36 @@
       </div>
     </section>
 
-    <!-- ============ PHOTO UPLOAD ============ -->
+    <!-- ============ MODE ============ -->
     <section class="calc-panel">
       <div class="wrap">
-        <h2>Add a photo</h2>
-        <div class="fw-upload-zone" id="fw-upload-zone">
-          <img id="fw-preview-img" class="fw-preview-img" alt="" hidden>
-          <div class="fw-upload-row">
-            <label for="fw-photo-input" class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo</label>
-            <input type="file" id="fw-photo-input" accept="image/*" capture="environment" class="sr-only">
-            <button type="button" id="fw-analyze-btn" class="btn btn-primary" disabled>Analyze photo</button>
-          </div>
+        <h2>What are you checking?</h2>
+        <div class="fw-mode-row">
+          <select id="fw-mode">
+            <option value="single">Single food item</option>
+            <option value="meal">A meal (multiple dishes)</option>
+          </select>
+          <span class="toggle-hint">Meal mode lets you add a separate photo per dish, each in its own tab.</span>
         </div>
-        <p class="fw-status" id="fw-status" role="status" aria-live="polite"></p>
       </div>
     </section>
 
-    <!-- ============ RESULTS ============ -->
-    <section class="calc-panel" id="fw-results" hidden>
+    <!-- ============ DISHES (JS-generated, one .fw-dish-panel per dish) ============ -->
+    <section class="calc-panel">
       <div class="wrap">
-        <h2>What's on the plate</h2>
-        <p class="menu-builder-intro">Every number below is Gemini's estimate — edit anything you know better, and the totals below update as you type. Uncheck a row to leave it out without deleting it.</p>
-
-        <div class="table-scroll">
-          <table class="menu-table fw-items-table" id="fw-items-table">
-            <caption class="sr-only">Detected food items with estimated weight, calories, and nutrition per item</caption>
-            <thead>
-              <tr>
-                <th scope="col"><span class="sr-only">Include in total</span></th>
-                <th scope="col">Item</th>
-                <th scope="col">Weight (g)</th>
-                <th scope="col">Calories</th>
-                <th scope="col">Protein (g)</th>
-                <th scope="col">Carbs (g)</th>
-                <th scope="col">Fat (g)</th>
-                <th scope="col">Fiber (g)</th>
-                <th scope="col">Note</th>
-                <th scope="col" class="no-print"><span class="sr-only">Remove row</span></th>
-              </tr>
-            </thead>
-            <tbody id="fw-item-rows"></tbody>
-          </table>
-        </div>
-
+        <div class="fw-dish-tabs no-print" id="fw-dish-tabs" hidden></div>
+        <div id="fw-dish-panels"></div>
         <div class="calc-actions no-print">
-          <button type="button" id="fw-add-item" class="btn btn-secondary">+ Add item</button>
+          <button type="button" id="fw-add-dish" class="btn btn-secondary" hidden>+ Add another dish</button>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ MEAL TOTAL (sums every dish above) ============ -->
+    <section class="calc-panel" id="fw-meal-section" hidden>
+      <div class="wrap">
+        <h2>Total food value</h2>
+        <p class="menu-builder-intro">Summed across every dish above, excluding any unchecked items. Edit anything in a dish and this updates automatically.</p>
 
         <div class="ica-results" style="margin-top:20px;">
           <div class="result-card">
@@ -181,7 +183,7 @@
         </div>
 
         <h2 style="margin-top:32px;">Nutritional balance</h2>
-        <p class="structure-note">Share of calories from each macronutrient, across the items you've kept checked above. Fiber is part of total carbs (as on a nutrition label), shown separately below as a reference figure rather than its own segment.</p>
+        <p class="structure-note">Share of calories from each macronutrient, summed across every dish. Fiber is part of total carbs (as on a nutrition label), shown separately below as a reference figure rather than its own segment.</p>
         <div class="fw-macro-legend">
           <span><i class="legend-swatch fw-seg-protein"></i>Protein</span>
           <span><i class="legend-swatch fw-seg-carbs"></i>Carbs</span>
@@ -200,6 +202,6 @@
     </div>
   </footer>
 
-  <script src="food-worth-calculator.js?v=3" defer></script>
+  <script src="food-worth-calculator.js?v=4" defer></script>
 </body>
 </html>
