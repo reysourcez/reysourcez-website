@@ -52,6 +52,20 @@ function rzListen(handler) {
 
 /* ================= Floating tab switcher ================= */
 
+// Asked once, tied to the person actually opening the switcher — not
+// on page load, and not tied to the specific "back" click either, so
+// it doesn't interrupt that action. If granted, "come back" requests
+// can show a real notification (see rzInitComeBackListener below),
+// whose click reliably focuses this tab — the one case browsers
+// don't restrict. If denied, everything still works via the title
+// flash alone.
+function rzMaybeRequestNotificationPermission() {
+  if (typeof Notification === 'undefined') return;
+  if (Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
 const rzOpenTabs = {}; // key -> window reference, hub side only
 
 function rzOpenOrFocusTool(key) {
@@ -134,6 +148,7 @@ function rzInitSwitcher() {
   }
 
   toggle.addEventListener('click', () => {
+    rzMaybeRequestNotificationPermission();
     refresh();
     menu.hidden = !menu.hidden;
     toggle.setAttribute('aria-expanded', String(!menu.hidden));
@@ -170,6 +185,21 @@ function rzInitComeBackListener() {
       window.addEventListener('focus', revert);
       if (revertTimer) clearTimeout(revertTimer);
       revertTimer = setTimeout(revert, 20000);
+
+      // This part is the actual fix, not just a nicety: clicking a
+      // notification is specifically exempted from the restriction
+      // that blocks a plain window.opener.focus() call — browsers
+      // treat it as a trusted user gesture and focus the tab by
+      // default (see MDN's Notification click_event docs). Only
+      // fires if permission was already granted; does nothing
+      // otherwise, title flash still covers that case.
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        const n = new Notification('Reysourcez \u2014 switch back here', {
+          body: originalTitle,
+          tag: 'rz-come-back',
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+      }
     }
   });
 }

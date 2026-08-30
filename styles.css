@@ -1268,6 +1268,21 @@ th.sortable:hover { color: var(--accent-dark); }
   z-index: 1000;
 }
 
+/* For a tooltip-icon with no room above it (e.g. inside a table's
+   top row) — table-scroll's overflow-x:auto silently makes its
+   overflow-y "auto" too per the CSS spec, which clips anything that
+   pops up past its top edge. This variant opens downward instead. */
+.tooltip-icon.tooltip-below:hover::after {
+  bottom: auto;
+  top: 125%;
+}
+.tooltip-icon.tooltip-below:hover::before {
+  bottom: auto;
+  top: 118%;
+  border-top-color: transparent;
+  border-bottom-color: var(--ink);
+}
+
 /* Mobile: tooltips don't work, so hide the icon on small screens */
 @media (max-width: 600px) {
   .tooltip-icon { display: none; }
