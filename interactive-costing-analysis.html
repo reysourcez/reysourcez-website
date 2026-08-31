@@ -73,23 +73,10 @@
 
         <div class="connector-panel no-print">
           <div class="calc-actions">
-            <span class="connector-label">Pull from<span class="tooltip-icon" data-tooltip="Opens right here, live-linked while it's open — nothing is saved either way">?</span></span>
-            <button type="button" class="btn btn-secondary connector-btn connector-btn-menu" data-overlay-tool="menu-calculator" aria-expanded="false">Menu Portion Creator</button>
-            <button type="button" class="btn btn-secondary connector-btn connector-btn-overhead" data-overlay-tool="overhead-manpower-calculator" aria-expanded="false">Overhead &amp; Manpower</button>
-            <button type="button" class="btn btn-secondary connector-btn connector-btn-printing" data-overlay-tool="printing-calculator" aria-expanded="false">Printing Calculator</button>
-          </div>
-        </div>
-
-        <div class="rz-overlay no-print" id="rz-overlay" hidden>
-          <button type="button" class="rz-overlay-backdrop" id="rz-overlay-backdrop" aria-label="Close"></button>
-          <div class="rz-overlay-panel" id="rz-overlay-panel">
-            <div class="rz-overlay-header">
-              <span class="rz-overlay-title" id="rz-overlay-title"></span>
-              <button type="button" class="rz-overlay-close" id="rz-overlay-close" aria-label="Close">&times;</button>
-            </div>
-            <iframe class="rz-overlay-frame" data-tool="menu-calculator" title="Menu Portion Creator" hidden></iframe>
-            <iframe class="rz-overlay-frame" data-tool="overhead-manpower-calculator" title="Overhead &amp; Manpower" hidden></iframe>
-            <iframe class="rz-overlay-frame" data-tool="printing-calculator" title="Printing Calculator" hidden></iframe>
+            <span class="connector-label">Pull from<span class="tooltip-icon" data-tooltip="Opens in a new tab, stays linked while both are open — nothing is saved either way">?</span></span>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-menu" data-open-tool="menu-calculator">Menu Portion Creator</button>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-overhead" data-open-tool="overhead-manpower-calculator">Overhead &amp; Manpower</button>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-printing" data-open-tool="printing-calculator">Printing Calculator</button>
           </div>
         </div>
 

@@ -352,82 +352,6 @@ function renderStructureBar(label, mix, isLosing) {
   `;
 }
 
-/* ================= Inline tool overlay ================= */
-// The 3 "pull from" buttons used to open the other tool in a whole
-// new browser tab, which is what needed the switcher/focus-stealing/
-// notification chain in costing-sync.js. Embedding the tool in an
-// iframe on this page instead removes the need for any of that:
-// BroadcastChannel treats an iframe exactly like a separate tab (both
-// are separate browsing contexts), so the embedded tool's own
-// rzBroadcast() call still reaches this page's rzListen() exactly
-// the way it always did — nothing about the sync changed, only how
-// the other tool is displayed.
-
-const OVERLAY_THEMES = {
-  'menu-calculator': { theme: 'theme-menu', title: 'Menu Portion Creator' },
-  'overhead-manpower-calculator': { theme: 'theme-overhead', title: 'Overhead & Manpower' },
-  'printing-calculator': { theme: 'theme-printing', title: 'Printing Calculator' },
-};
-
-let overlayOpenTool = null;
-let overlayLastFocusedBtn = null;
-
-function openOverlay(toolKey, triggerBtn) {
-  const info = OVERLAY_THEMES[toolKey];
-  if (!info) return;
-  const overlay = document.getElementById('rz-overlay');
-  const panel = document.getElementById('rz-overlay-panel');
-  const title = document.getElementById('rz-overlay-title');
-
-  panel.className = 'rz-overlay-panel ' + info.theme;
-  title.textContent = info.title;
-  overlay.hidden = false;
-  overlayOpenTool = toolKey;
-  if (triggerBtn) overlayLastFocusedBtn = triggerBtn;
-
-  document.querySelectorAll('.rz-overlay-frame').forEach((frame) => {
-    const isThisOne = frame.dataset.tool === toolKey;
-    frame.hidden = !isThisOne;
-    // Lazy-load once; stays loaded (whatever you've typed and all)
-    // after that, even while hidden behind a different tool — so
-    // switching between them doesn't lose progress in either.
-    if (isThisOne && !frame.src) frame.src = toolKey + '.html?embed=1';
-  });
-
-  document.querySelectorAll('.connector-btn').forEach((btn) => {
-    const isThisOne = btn.dataset.overlayTool === toolKey;
-    btn.classList.toggle('is-active', isThisOne);
-    btn.setAttribute('aria-expanded', String(isThisOne));
-  });
-
-  document.getElementById('rz-overlay-close').focus();
-}
-
-function closeOverlay() {
-  document.getElementById('rz-overlay').hidden = true;
-  overlayOpenTool = null;
-  document.querySelectorAll('.connector-btn').forEach((btn) => {
-    btn.classList.remove('is-active');
-    btn.setAttribute('aria-expanded', 'false');
-  });
-  if (overlayLastFocusedBtn) overlayLastFocusedBtn.focus();
-}
-
-function initOverlay() {
-  document.querySelectorAll('.connector-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const key = btn.dataset.overlayTool;
-      if (overlayOpenTool === key) closeOverlay();
-      else openOverlay(key, btn);
-    });
-  });
-  document.getElementById('rz-overlay-close').addEventListener('click', closeOverlay);
-  document.getElementById('rz-overlay-backdrop').addEventListener('click', closeOverlay);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && overlayOpenTool) closeOverlay();
-  });
-}
-
 /* ================= INIT ================= */
 
 // Keeps a <input type="range"> and its paired <input type="number">
@@ -522,7 +446,11 @@ function init() {
     btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
   });
 
-  initOverlay();
+  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (typeof rzOpenOrFocusTool === 'function') rzOpenOrFocusTool(btn.dataset.openTool);
+    });
+  });
 
   initSync();
 }
