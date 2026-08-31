@@ -52,6 +52,30 @@
     .fw-seg-fat { background: #D4A017; }
     .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
 
+    /* Tag/pill treatment for the micronutrient list below — nothing
+       like this exists in styles.css yet (everything reusable there
+       is a card, a bar segment, or a plain list), so this is new,
+       page-scoped CSS. Worth promoting to styles.css as a shared
+       .tag/.pill component if another page ever wants the same look. */
+    .fw-micro-group { margin-bottom: 14px; }
+    .fw-micro-group:last-child { margin-bottom: 0; }
+    .fw-micro-group-label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--muted); margin-bottom: 8px; }
+    .fw-micro-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .fw-micro-tag {
+      display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 999px;
+      border: 1px solid var(--line); background: var(--surface);
+      font-family: var(--font-body); font-size: 0.85rem; font-weight: 600; color: var(--text);
+    }
+    /* "High" = cleared 20% DV, the FDA's own "excellent source" bar.
+       .is-caution is sodium specifically (see MICRONUTRIENT_FIELDS in
+       food-worth-calculator.js) — same amber/red already used on this
+       page for the fat macro segment and the error status, so a
+       flagged nutrient reads as "worth noting", not another green tick. */
+    .fw-micro-tag.is-high { border-color: var(--accent); color: var(--accent-dark); }
+    .fw-micro-tag.is-caution { border-color: #D4A017; color: #9C7A12; }
+    .fw-micro-tag.is-caution.is-high { border-color: #C0392B; color: #C0392B; }
+    .fw-micro-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
+
     .fw-dish-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 2px solid var(--line); }
     .fw-tab-item { display: inline-flex; align-items: center; gap: 5px; padding-left: 10px; }
     .fw-tab-item .fw-dish-include { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); }
@@ -88,11 +112,16 @@
         <li><a href="index.html">Home</a></li>
         <li><a href="about.html">About</a></li>
         <li><a href="services.html">Services</a></li>
-        <li><a href="menu-calculator.html">Menu Calculator</a></li>
-        <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-        <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-        <li><a href="printing-calculator.html">Printing Calculator</a></li>
-        <li><a href="food-worth-calculator.html" aria-current="page">Food Worth</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="food-worth-calculator.html" aria-current="page">Food Worth</a></li>
+          </ul>
+        </li>
         <li><a href="contact.html">Contact</a></li>
       </ul>
     </nav>
@@ -158,6 +187,10 @@
             <span class="result-label">Cost per 100 g</span>
             <span class="result-value" id="fw-cost-per-100g">RM0.00</span>
           </div>
+          <div class="result-card" id="fw-market-price-card" style="grid-column: span 2;">
+            <span class="result-label">Typical market price<span class="tooltip-icon" data-tooltip="Gemini's rough estimate of what a similar portion typically costs at a Malaysian hawker stall or casual eatery — a ballpark to compare against what you paid, not a live price lookup">?</span></span>
+            <span class="result-value" id="fw-market-price">Analyze a dish to see this</span>
+          </div>
           <div class="result-card" id="fw-rating-card" style="grid-column: span 2;">
             <span class="result-label">Value rating</span>
             <span class="fw-rating-badge" id="fw-rating-badge">Add a price above</span>
@@ -175,8 +208,8 @@
         <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
 
         <h2 style="margin-top:32px;">Vitamins &amp; minerals</h2>
-        <p class="structure-note">Gemini's rough combined estimate for everything above, summed across every dish. These are meaningfully less reliable than the weight and calorie figures above \u2014 general-purpose AI models are genuinely worse at this specifically, not just being cautious \u2014 so treat this as a rough sense of direction, not something to plan a diet around.</p>
-        <div class="net-summary" id="fw-micronutrients"></div>
+        <p class="structure-note">A rough read on which vitamins and minerals this meal looks like a meaningful source of, summed across every dish — using the FDA's Daily Value benchmarks rather than showing a precise number Gemini can't actually estimate that reliably. General-purpose AI models are genuinely worse at this specifically, not just being cautious, so treat any tag below as a rough signal, not something to plan a diet around.</p>
+        <div id="fw-micronutrients"></div>
       </div>
     </section>
 
@@ -188,6 +221,7 @@
     </div>
   </footer>
 
-  <script src="food-worth-calculator.js?v=7" defer></script>
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="food-worth-calculator.js?v=8" defer></script>
 </body>
 </html>

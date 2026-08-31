@@ -25,20 +25,33 @@
    same pure functions as before, just fed a summed-across-dishes
    totals object instead of one dish's.
 
+   Micronutrients and typical market price follow the same dish ->
+   WeakMap -> meal-sum shape as everything else (dishMicronutrients,
+   dishTypicalPrice), but neither is rendered as a bare number:
+   micronutrients become "good source of" / "higher in" tags via a
+   Daily Value threshold (microLevel()), and typical price renders as
+   a low-high RM range (formatPriceRange()) instead of one invented
+   figure. Gemini's absolute estimate isn't precise enough to show at
+   face value, but it's good enough to clear a threshold or bound a
+   range.
+
    FUTURE (KIV, architected for but not built):
-     - Micro-nutrients (vitamins, minerals): add fields to the item
-       schema in food-worth-proxy-worker.js + new columns here. The
-       dish -> meal summation loop just needs those keys added to
-       its accumulator; nothing about the dish/tab structure changes.
-     - Guideline comparison (US/Malaysian, % of RDA): a new module
-       that reads mealTotals (once it carries micro-nutrients) and a
-       chosen guideline dataset — doesn't touch the dish model at all.
+     - Full guideline comparison (US/Malaysian, %DV per nutrient shown
+       as a gauge, not just a good-source/excellent tag): the Daily
+       Value numbers already live on MICRONUTRIENT_FIELDS and the
+       threshold logic in microLevel(), so this is an extension of
+       that, not a rewrite.
      - Rating v2: computeValueRating() already isolates the rating
        formula in one pure function; folding in guideline-adherence
-       later is an extension of that function's inputs, not a rewrite.
+       or the typical-market-price range as a second signal is an
+       extension of that function's inputs, not a rewrite.
+     - Live market pricing (an actual price dataset/API) instead of
+       Gemini's own estimate, if the estimate proves too rough in
+       practice — dishTypicalPrice is already its own WeakMap, so
+       swapping the source only touches runAnalysis().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-08-29-v4-meal-mode');
+console.info('[Food Worth Calculator] script build: 2026-08-31-v5-micro-tags-market-price');
 
 /* ================= CONFIG ================= */
 
@@ -49,22 +62,29 @@ const MAX_ANALYSES_PER_DAY = 20;
 const USAGE_STORAGE_KEY = 'fw-usage';
 
 // Same set the Worker's schema asks Gemini for — dish-level, not
-// per-item (see food-worth-proxy-worker.js for why). Label + unit
-// live here once, used for both the fallback shape and rendering,
-// so adding a nutrient later is a one-line change in this list.
+// per-item (see food-worth-proxy-worker.js for why). `dv` is the
+// FDA's current Daily Value for that nutrient (21 CFR 101.9, the
+// 2016 update) — used only to decide whether a nutrient clears a
+// "meaningful amount" bar, via the same >=10% / >=20% DV thresholds
+// the FDA itself uses for "good source" / "excellent source" label
+// claims (21 CFR 101.54). `caution` flags the one nutrient (sodium)
+// where clearing that bar is worth a heads-up rather than a selling
+// point. None of this DV math is ever shown to the user as a number
+// — see microLevel() / renderMicronutrients() further down.
 const MICRONUTRIENT_FIELDS = [
-  { key: 'vitamin_a_mcg', label: 'Vitamin A', unit: 'mcg' },
-  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg' },
-  { key: 'vitamin_d_mcg', label: 'Vitamin D', unit: 'mcg' },
-  { key: 'vitamin_b12_mcg', label: 'Vitamin B12', unit: 'mcg' },
-  { key: 'calcium_mg', label: 'Calcium', unit: 'mg' },
-  { key: 'iron_mg', label: 'Iron', unit: 'mg' },
-  { key: 'potassium_mg', label: 'Potassium', unit: 'mg' },
-  { key: 'sodium_mg', label: 'Sodium', unit: 'mg' },
-  { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg' },
-  { key: 'zinc_mg', label: 'Zinc', unit: 'mg' },
+  { key: 'vitamin_a_mcg', label: 'Vitamin A', unit: 'mcg', dv: 900 },
+  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg', dv: 90 },
+  { key: 'vitamin_d_mcg', label: 'Vitamin D', unit: 'mcg', dv: 20 },
+  { key: 'vitamin_b12_mcg', label: 'Vitamin B12', unit: 'mcg', dv: 2.4 },
+  { key: 'calcium_mg', label: 'Calcium', unit: 'mg', dv: 1300 },
+  { key: 'iron_mg', label: 'Iron', unit: 'mg', dv: 18 },
+  { key: 'potassium_mg', label: 'Potassium', unit: 'mg', dv: 4700 },
+  { key: 'sodium_mg', label: 'Sodium', unit: 'mg', dv: 2300, caution: true },
+  { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg', dv: 420 },
+  { key: 'zinc_mg', label: 'Zinc', unit: 'mg', dv: 11 },
 ];
 const EMPTY_MICRONUTRIENTS = Object.fromEntries(MICRONUTRIENT_FIELDS.map((f) => [f.key, 0]));
+const EMPTY_TYPICAL_PRICE = { low: 0, high: 0 };
 
 /* ================= SHARED UTILITIES ================= */
 
@@ -72,6 +92,19 @@ function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
   if (value > 0 && value < 0.01) return '< RM0.01';
   return 'RM' + value.toFixed(2);
+}
+
+// Renders a dish/meal's typical-price estimate as a range rather
+// than a single figure — Gemini is estimating from one photo, so a
+// low-high band is a more honest shape for that guess than a single
+// invented number. Returns '' when there's nothing worth showing yet
+// (no dish analyzed, or Gemini returned zeros).
+function formatPriceRange(price) {
+  if (!price || !(price.high > 0)) return '';
+  if (price.low > 0 && price.low !== price.high) {
+    return formatRM(price.low) + '\u2013' + formatRM(price.high);
+  }
+  return formatRM(price.high);
 }
 
 function escapeHTML(str) {
@@ -167,9 +200,11 @@ async function analyzePhoto(base64Image) {
   if (!response.ok) {
     throw new Error(data.error || ('Analysis failed (error ' + response.status + '). Try again.'));
   }
+  const rawPrice = (data.typical_price_myr && typeof data.typical_price_myr === 'object') ? data.typical_price_myr : null;
   return {
     items: Array.isArray(data.items) ? data.items : [],
     micronutrients: (data.micronutrients && typeof data.micronutrients === 'object') ? data.micronutrients : EMPTY_MICRONUTRIENTS,
+    typicalPrice: rawPrice ? { low: numOrZero(Number(rawPrice.low)), high: numOrZero(Number(rawPrice.high)) } : { ...EMPTY_TYPICAL_PRICE },
   };
 }
 
@@ -264,6 +299,20 @@ function computeMacroMix(totals) {
   };
 }
 
+// Turns a raw estimate into "did this clear a meaningful bar" rather
+// than the estimate itself — Gemini's absolute mcg/mg guess for one
+// photo is shaky, but whether that guess is in the same ballpark as
+// a whole day's target is a coarser, more defensible claim. Mirrors
+// the FDA's own nutrient-content-claim thresholds (21 CFR 101.54):
+// >=10% DV for "good source", >=20% DV for "excellent"/"high in".
+function microLevel(value, dv) {
+  if (!(dv > 0)) return 'none';
+  const pct = (numOrZero(value) / dv) * 100;
+  if (pct >= 20) return 'high';
+  if (pct >= 10) return 'some';
+  return 'none';
+}
+
 /* ================= VIEW: meal-level render functions ================= */
 
 function renderTotals(totals) {
@@ -283,6 +332,11 @@ function renderRating(rating) {
     badge.textContent = rating.label;
     card.classList.toggle('is-loss', rating.label === 'Pricey');
   }
+}
+
+function renderMarketPrice(price) {
+  const el = document.getElementById('fw-market-price');
+  el.textContent = formatPriceRange(price) || 'Analyze a dish to see this';
 }
 
 function renderMacroBar(mix) {
@@ -307,16 +361,30 @@ function renderMacroFiberNote(totals) {
     : '';
 }
 
-function formatMicroValue(v) {
-  if (!isFinite(v) || v <= 0) return '0';
-  return v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1);
-}
-
 function renderMicronutrients(mealMicros) {
   const el = document.getElementById('fw-micronutrients');
-  el.innerHTML = MICRONUTRIENT_FIELDS.map((f) =>
-    `<div><span>${f.label}</span><span>${formatMicroValue(mealMicros[f.key])} ${f.unit}</span></div>`
-  ).join('');
+  const goodSources = [];
+  const cautionFlags = [];
+
+  MICRONUTRIENT_FIELDS.forEach((f) => {
+    const level = microLevel(mealMicros[f.key], f.dv);
+    if (level === 'none') return;
+    (f.caution ? cautionFlags : goodSources).push({ label: f.label, isHigh: level === 'high' });
+  });
+
+  const tagHTML = (item, isCautionGroup) =>
+    `<span class="fw-micro-tag${item.isHigh ? ' is-high' : ''}${isCautionGroup ? ' is-caution' : ''}">${escapeHTML(item.label)}</span>`;
+
+  let html = '';
+  if (goodSources.length) {
+    html += `<div class="fw-micro-group"><span class="fw-micro-group-label">Good source of</span>`
+      + `<div class="fw-micro-tags">${goodSources.map((i) => tagHTML(i, false)).join('')}</div></div>`;
+  }
+  if (cautionFlags.length) {
+    html += `<div class="fw-micro-group"><span class="fw-micro-group-label">Higher in</span>`
+      + `<div class="fw-micro-tags">${cautionFlags.map((i) => tagHTML(i, true)).join('')}</div></div>`;
+  }
+  el.innerHTML = html || '<p class="fw-micro-empty">Nothing cleared a meaningful level for this meal.</p>';
 }
 
 /* ================= CONTROLLER: per-dish ================= */
@@ -326,9 +394,13 @@ function recalculateDish(panel) {
   const totals = computeTotals(rows);
   const subtotalEl = panel.querySelector('.fw-dish-subtotal');
   if (subtotalEl) {
-    subtotalEl.textContent = rows.length
-      ? `Dish total: ${Math.round(totals.weight).toLocaleString()} g, ${Math.round(totals.calories).toLocaleString()} kcal`
-      : '';
+    if (!rows.length) {
+      subtotalEl.textContent = '';
+    } else {
+      const priceRange = formatPriceRange(dishTypicalPrice.get(panel));
+      const priceText = priceRange ? ` \u00b7 Typical price ${priceRange}` : '';
+      subtotalEl.textContent = `Dish total: ${Math.round(totals.weight).toLocaleString()} g, ${Math.round(totals.calories).toLocaleString()} kcal${priceText}`;
+    }
   }
 }
 
@@ -381,6 +453,7 @@ async function runAnalysis(panel) {
     const result = await analyzePhoto(base64);
     recordUsage();
     dishMicronutrients.set(panel, result.micronutrients);
+    dishTypicalPrice.set(panel, result.typicalPrice);
     panel.querySelector('.fw-item-rows').innerHTML = '';
     if (result.items.length === 0) {
       setStatus(statusEl, 'Didn\u2019t spot any food in that photo \u2014 try a clearer, closer shot.', true);
@@ -407,6 +480,7 @@ function recalculateMeal() {
   const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
   const mealTotals = { weight: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
   const mealMicros = { ...EMPTY_MICRONUTRIENTS };
+  const mealPrice = { low: 0, high: 0 };
   panels.forEach((panel) => {
     if (panel.dataset.included === 'false') return; // excluded via its tab checkbox
     const dishTotals = getDishTotals(panel);
@@ -419,6 +493,10 @@ function recalculateMeal() {
 
     const micros = dishMicronutrients.get(panel) || EMPTY_MICRONUTRIENTS;
     MICRONUTRIENT_FIELDS.forEach((f) => { mealMicros[f.key] += numOrZero(micros[f.key]); });
+
+    const dishPrice = dishTypicalPrice.get(panel) || EMPTY_TYPICAL_PRICE;
+    mealPrice.low += numOrZero(dishPrice.low);
+    mealPrice.high += numOrZero(dishPrice.high);
   });
 
   const price = num(document.getElementById('fw-price'));
@@ -428,6 +506,7 @@ function recalculateMeal() {
 
   renderTotals(mealTotals);
   renderRating(rating);
+  renderMarketPrice(mealPrice);
   renderMacroBar(mix);
   renderMacroFiberNote(mealTotals);
   renderMicronutrients(mealMicros);
@@ -440,6 +519,7 @@ function recalculateMeal() {
 // garbage-collected instead of leaking.
 const dishImageData = new WeakMap();
 const dishMicronutrients = new WeakMap();
+const dishTypicalPrice = new WeakMap();
 
 let dishIdCounter = 0;
 
