@@ -48,6 +48,24 @@ const PROXY_ENDPOINT = 'https://food-worth-proxy.reysourcez-ent.workers.dev';
 const MAX_ANALYSES_PER_DAY = 20;
 const USAGE_STORAGE_KEY = 'fw-usage';
 
+// Same set the Worker's schema asks Gemini for — dish-level, not
+// per-item (see food-worth-proxy-worker.js for why). Label + unit
+// live here once, used for both the fallback shape and rendering,
+// so adding a nutrient later is a one-line change in this list.
+const MICRONUTRIENT_FIELDS = [
+  { key: 'vitamin_a_mcg', label: 'Vitamin A', unit: 'mcg' },
+  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg' },
+  { key: 'vitamin_d_mcg', label: 'Vitamin D', unit: 'mcg' },
+  { key: 'vitamin_b12_mcg', label: 'Vitamin B12', unit: 'mcg' },
+  { key: 'calcium_mg', label: 'Calcium', unit: 'mg' },
+  { key: 'iron_mg', label: 'Iron', unit: 'mg' },
+  { key: 'potassium_mg', label: 'Potassium', unit: 'mg' },
+  { key: 'sodium_mg', label: 'Sodium', unit: 'mg' },
+  { key: 'magnesium_mg', label: 'Magnesium', unit: 'mg' },
+  { key: 'zinc_mg', label: 'Zinc', unit: 'mg' },
+];
+const EMPTY_MICRONUTRIENTS = Object.fromEntries(MICRONUTRIENT_FIELDS.map((f) => [f.key, 0]));
+
 /* ================= SHARED UTILITIES ================= */
 
 function formatRM(value) {
@@ -149,7 +167,10 @@ async function analyzePhoto(base64Image) {
   if (!response.ok) {
     throw new Error(data.error || ('Analysis failed (error ' + response.status + '). Try again.'));
   }
-  return Array.isArray(data.items) ? data.items : [];
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    micronutrients: (data.micronutrients && typeof data.micronutrients === 'object') ? data.micronutrients : EMPTY_MICRONUTRIENTS,
+  };
 }
 
 /* ================= MODEL: item rows (scoped to one dish panel) ================= */
@@ -286,6 +307,18 @@ function renderMacroFiberNote(totals) {
     : '';
 }
 
+function formatMicroValue(v) {
+  if (!isFinite(v) || v <= 0) return '0';
+  return v >= 100 ? Math.round(v).toLocaleString() : v.toFixed(1);
+}
+
+function renderMicronutrients(mealMicros) {
+  const el = document.getElementById('fw-micronutrients');
+  el.innerHTML = MICRONUTRIENT_FIELDS.map((f) =>
+    `<div><span>${f.label}</span><span>${formatMicroValue(mealMicros[f.key])} ${f.unit}</span></div>`
+  ).join('');
+}
+
 /* ================= CONTROLLER: per-dish ================= */
 
 function recalculateDish(panel) {
@@ -345,19 +378,20 @@ async function runAnalysis(panel) {
   setStatus(statusEl, 'Looking at your photo\u2026');
 
   try {
-    const items = await analyzePhoto(base64);
+    const result = await analyzePhoto(base64);
     recordUsage();
+    dishMicronutrients.set(panel, result.micronutrients);
     panel.querySelector('.fw-item-rows').innerHTML = '';
-    if (items.length === 0) {
+    if (result.items.length === 0) {
       setStatus(statusEl, 'Didn\u2019t spot any food in that photo \u2014 try a clearer, closer shot.', true);
     } else {
-      items.forEach((it) => createItemRow(panel, it));
+      result.items.forEach((it) => createItemRow(panel, it));
       panel.querySelector('.fw-dish-results').hidden = false;
       document.getElementById('fw-meal-section').hidden = false;
       recalculateDish(panel);
       recalculateMeal();
       updateAddDishVisibility();
-      setStatus(statusEl, `Found ${items.length} item${items.length === 1 ? '' : 's'}. Edit anything you know better below.`);
+      setStatus(statusEl, `Found ${result.items.length} item${result.items.length === 1 ? '' : 's'}. Edit anything you know better below.`);
       panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   } catch (err) {
@@ -372,7 +406,9 @@ async function runAnalysis(panel) {
 function recalculateMeal() {
   const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
   const mealTotals = { weight: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  const mealMicros = { ...EMPTY_MICRONUTRIENTS };
   panels.forEach((panel) => {
+    if (panel.dataset.included === 'false') return; // excluded via its tab checkbox
     const dishTotals = getDishTotals(panel);
     mealTotals.weight += dishTotals.weight;
     mealTotals.calories += dishTotals.calories;
@@ -380,6 +416,9 @@ function recalculateMeal() {
     mealTotals.carbs += dishTotals.carbs;
     mealTotals.fat += dishTotals.fat;
     mealTotals.fiber += dishTotals.fiber;
+
+    const micros = dishMicronutrients.get(panel) || EMPTY_MICRONUTRIENTS;
+    MICRONUTRIENT_FIELDS.forEach((f) => { mealMicros[f.key] += numOrZero(micros[f.key]); });
   });
 
   const price = num(document.getElementById('fw-price'));
@@ -391,6 +430,7 @@ function recalculateMeal() {
   renderRating(rating);
   renderMacroBar(mix);
   renderMacroFiberNote(mealTotals);
+  renderMicronutrients(mealMicros);
 }
 
 /* ================= CONTROLLER: dish panels, tabs, mode ================= */
@@ -399,6 +439,7 @@ function recalculateMeal() {
 // dataset string — WeakMap so a removed dish's image data is
 // garbage-collected instead of leaking.
 const dishImageData = new WeakMap();
+const dishMicronutrients = new WeakMap();
 
 let dishIdCounter = 0;
 
@@ -453,6 +494,7 @@ function createDishPanel() {
     </div>
   `;
   document.getElementById('fw-dish-panels').appendChild(panel);
+  panel.dataset.included = 'true';
 
   panel.querySelector('.fw-photo-input').addEventListener('change', (e) => handleFileSelect(e, panel));
   panel.querySelector('.fw-analyze-btn').addEventListener('click', () => runAnalysis(panel));
@@ -489,6 +531,12 @@ function switchToDish(id) {
 
 // Tabs only appear once there's something to switch between — a
 // single dish just shows its panel directly, no tab bar overhead.
+// Each tab also carries its own include checkbox so a whole dish can
+// be dropped from the meal total without hunting through its items.
+// The checked state is stored on the PANEL (panel.dataset.included),
+// not the tab button — the tab bar's innerHTML gets fully rebuilt
+// every render, so anything living only in that markup would reset
+// itself the next time you switched dishes or renamed one.
 function renderDishTabs() {
   const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
   const tabsContainer = document.getElementById('fw-dish-tabs');
@@ -509,22 +557,33 @@ function renderDishTabs() {
   tabsContainer.innerHTML = panels.map((p) => {
     const name = p.querySelector('.fw-dish-name').value.trim() || 'Dish';
     const isActive = !p.hidden;
-    return `<button type="button" class="fw-tab-btn${isActive ? ' is-active' : ''}" data-dish-id="${p.dataset.dishId}">${escapeHTML(name)}</button>`;
+    const isIncluded = p.dataset.included !== 'false';
+    return `<span class="fw-tab-item${isIncluded ? '' : ' is-excluded'}">
+      <input type="checkbox" class="fw-dish-include" data-dish-id="${p.dataset.dishId}" ${isIncluded ? 'checked' : ''} aria-label="Include ${escapeHTML(name)} in total">
+      <button type="button" class="fw-tab-btn${isActive ? ' is-active' : ''}" data-dish-id="${p.dataset.dishId}">${escapeHTML(name)}</button>
+    </span>`;
   }).join('');
+
   tabsContainer.querySelectorAll('.fw-tab-btn').forEach((btn) => {
     btn.addEventListener('click', () => switchToDish(btn.dataset.dishId));
   });
+  tabsContainer.querySelectorAll('.fw-dish-include').forEach((cb) => {
+    cb.addEventListener('change', () => {
+      const panel = document.querySelector(`.fw-dish-panel[data-dish-id="${cb.dataset.dishId}"]`);
+      if (panel) panel.dataset.included = cb.checked ? 'true' : 'false';
+      renderDishTabs();
+      recalculateMeal();
+    });
+  });
 }
 
-// "+ Add another dish" only makes sense in meal mode, and only once
-// the currently active dish actually has results — otherwise you'd
-// be offering to add a second empty, unanalyzed dish next to the
-// first one.
+// "+ Add another dish" only makes sense once the currently active
+// dish actually has results — otherwise you'd be offering to add a
+// second empty, unanalyzed dish next to the first one.
 function updateAddDishVisibility() {
-  const mode = document.getElementById('fw-mode').value;
   const activePanel = document.querySelector('.fw-dish-panel:not([hidden])');
   const activeHasResults = !!(activePanel && !activePanel.querySelector('.fw-dish-results').hidden);
-  document.getElementById('fw-add-dish').hidden = !(mode === 'meal' && activeHasResults);
+  document.getElementById('fw-add-dish').hidden = !activeHasResults;
 }
 
 /* ================= INIT ================= */
@@ -536,7 +595,6 @@ function init() {
   rzInitialized = true;
 
   try {
-    document.getElementById('fw-mode').addEventListener('change', updateAddDishVisibility);
     document.getElementById('fw-add-dish').addEventListener('click', () => createDishPanel());
     document.getElementById('fw-price').addEventListener('input', recalculateMeal);
     document.getElementById('fw-benchmark').addEventListener('input', recalculateMeal);

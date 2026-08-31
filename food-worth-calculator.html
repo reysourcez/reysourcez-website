@@ -52,16 +52,12 @@
     .fw-seg-fat { background: #D4A017; }
     .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
 
-    .fw-mode-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-    .fw-mode-row select {
-      padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
-      font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text);
-    }
-    .fw-mode-row select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-
     .fw-dish-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 2px solid var(--line); }
+    .fw-tab-item { display: inline-flex; align-items: center; gap: 5px; padding-left: 10px; }
+    .fw-tab-item .fw-dish-include { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); }
+    .fw-tab-item.is-excluded .fw-tab-btn { opacity: 0.5; }
     .fw-tab-btn {
-      background: none; border: none; padding: 10px 16px; font-family: var(--font-body); font-weight: 600;
+      background: none; border: none; padding: 10px 12px 10px 4px; font-family: var(--font-body); font-weight: 600;
       font-size: 0.92rem; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px;
     }
     .fw-tab-btn:hover { color: var(--text); }
@@ -109,20 +105,6 @@
         <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
         <h1>Food Worth Calculator</h1>
         <p class="lead">Upload a photo of a meal. Gemini estimates what's on the plate — item by item weight, calories, and nutrition. Add what it cost and see what you're actually getting for the price.</p>
-      </div>
-    </section>
-
-    <!-- ============ MODE ============ -->
-    <section class="calc-panel">
-      <div class="wrap">
-        <h2>What are you checking?</h2>
-        <div class="fw-mode-row">
-          <select id="fw-mode">
-            <option value="single">Single food item</option>
-            <option value="meal">A meal (multiple dishes)</option>
-          </select>
-          <span class="toggle-hint">Meal mode lets you add a separate photo per dish, each in its own tab.</span>
-        </div>
       </div>
     </section>
 
@@ -191,6 +173,10 @@
         </div>
         <div class="structure-bar" id="fw-macro-bar" style="flex: 0 0 300px;"></div>
         <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
+
+        <h2 style="margin-top:32px;">Vitamins &amp; minerals</h2>
+        <p class="structure-note">Gemini's rough combined estimate for everything above, summed across every dish. These are meaningfully less reliable than the weight and calorie figures above \u2014 general-purpose AI models are genuinely worse at this specifically, not just being cautious \u2014 so treat this as a rough sense of direction, not something to plan a diet around.</p>
+        <div class="net-summary" id="fw-micronutrients"></div>
       </div>
     </section>
 
@@ -202,6 +188,6 @@
     </div>
   </footer>
 
-  <script src="food-worth-calculator.js?v=5" defer></script>
+  <script src="food-worth-calculator.js?v=7" defer></script>
 </body>
 </html>
