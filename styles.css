@@ -1152,6 +1152,30 @@ th.sortable:hover { color: var(--accent-dark); }
   #ica-chart { border: none; }
 }
 
+/* Quick ingredient costing panel — a lighter, inline stand-in for
+   Menu Portion Creator's ingredient table, native to this page (see
+   QUICK INGREDIENT COSTING in interactive-costing-analysis.js).
+   Deliberately reuses .menu-table/.table-scroll/.amount-cell/
+   .m-unit-label wholesale — same look as Menu Portion Creator's own
+   tables, for free. The only genuinely new rule is the text-input
+   width below, since .menu-table's existing rules only size its
+   <select> and number <input>s, not text inputs. */
+.quick-ing-panel {
+  background: var(--paper);
+  border-radius: 8px;
+  padding: 16px;
+  margin: -6px 0 20px;
+}
+.quick-ing-panel .menu-table td input[type="text"] {
+  font-family: var(--font-body);
+  min-width: 120px;
+}
+.quick-ing-note {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 12px 0 0;
+}
+
 /* ---- 16. Overhead & Manpower Calculator ----
    Reuses the existing #calc-table / .table-scroll / .calc /
    .menu-total-row conventions from the ingredient and menu-portion
@@ -1235,79 +1259,6 @@ th.sortable:hover { color: var(--accent-dark); }
 
 @media (max-width: 800px) {
   .grand-total-card { flex-direction: column; align-items: flex-start; }
-}
-
-/* ---- 17. Cross-tab switcher ----
-   Fixed floating button, bottom-right, stays put while scrolling —
-   deliberately positioned clear of any content/data. Only rendered
-   when there's actually something to switch to (see costing-sync.js). */
-
-#rz-switcher {
-  position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 100;
-}
-
-.rz-switcher-toggle {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: #fff;
-  border: none;
-  font-size: 1.4rem;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
-}
-.rz-switcher-toggle:hover { background: var(--accent-dark); }
-.rz-switcher-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-
-.rz-switcher-menu {
-  position: absolute;
-  right: 0;
-  bottom: 62px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-  padding: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 220px;
-}
-
-.rz-switcher-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  border-radius: 6px;
-  padding: 10px 12px;
-  font-family: var(--font-body);
-  font-size: 0.9rem;
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.rz-switcher-item:hover:not(:disabled) { background: var(--paper); }
-.rz-switcher-item.current { color: var(--muted); cursor: default; }
-.rz-switcher-item:focus-visible { outline: 3px solid var(--accent); outline-offset: -2px; }
-
-.rz-switcher-status {
-  font-size: 0.72rem;
-  line-height: 1.4;
-  color: var(--muted);
-  padding: 8px 10px 2px;
-  margin-top: 4px;
-  border-top: 1px solid var(--line);
-}
-
-@media print {
-  #rz-switcher { display: none !important; }
 }
 
 /* Live-synced field indicator, used on Cost Analysis */
