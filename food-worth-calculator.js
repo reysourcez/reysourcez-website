@@ -63,7 +63,7 @@
        swapping the source only touches runAnalysis().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-01-v6-nutrient-gaps-calorie-fit');
+console.info('[Food Worth Calculator] script build: 2026-09-01-v7-pdf-summary-strip');
 
 /* ================= CONFIG ================= */
 
@@ -478,7 +478,9 @@ function renderMarketPrice(price) {
 // Reads whichever calorie-need mode is active. Manual mode is just
 // the typed figure; calculate mode runs Mifflin-St Jeor + a TDEE
 // multiplier and also returns a BMI (0 when inputs are incomplete,
-// which every caller treats as "nothing to show yet").
+// which every caller treats as "nothing to show yet"). Called once
+// per recalculateMeal() and the result shared with renderCalorieFit
+// and renderSummaryStrip, rather than each reading the form itself.
 function getDailyNeed() {
   const manualMode = document.querySelector('.fw-calorie-tab[data-mode="manual"]').classList.contains('is-active');
   if (manualMode) {
@@ -495,8 +497,8 @@ function getDailyNeed() {
   return { dailyNeed, bmi: computeBMI(weight, height) };
 }
 
-function renderCalorieFit(mealCalories) {
-  const { dailyNeed, bmi } = getDailyNeed();
+function renderCalorieFit(mealCalories, need) {
+  const { dailyNeed, bmi } = need;
   const needEl = document.getElementById('fw-daily-need');
   const badge = document.getElementById('fw-calorie-share-badge');
   const card = document.getElementById('fw-calorie-share-card');
@@ -525,6 +527,34 @@ function renderCalorieFit(mealCalories) {
   card.classList.toggle('is-loss', pct > 100);
 }
 
+// The "read this in five seconds" strip at the top of the results —
+// value rating, calorie share, and the single most useful nutrient
+// note (whichever's more actionable: the top gap if there is one,
+// otherwise the top thing this meal already does well). Reuses the
+// same rating/coverage/need objects recalculateMeal already computed
+// once for the detailed sections below, rather than recomputing.
+function renderSummaryStrip(rating, mealCalories, dailyNeed, coverage) {
+  const el = document.getElementById('fw-summary-strip');
+  if (!el) return;
+
+  const calorieText = (dailyNeed > 0 && mealCalories > 0) ? Math.round((mealCalories / dailyNeed) * 100) + '%' : '\u2014';
+  let noteLabel = 'nutrients';
+  let noteText = '\u2014';
+  if (coverage.lackingFlags.length) {
+    noteText = coverage.lackingFlags[0].label;
+    noteLabel = 'could use more';
+  } else if (coverage.goodSources.length) {
+    noteText = coverage.goodSources[0].label;
+    noteLabel = 'good source of';
+  }
+
+  el.innerHTML = `
+    <span class="fw-summary-item"><strong>${escapeHTML(rating.label || '\u2014')}</strong><small>value</small></span>
+    <span class="fw-summary-item"><strong>${escapeHTML(calorieText)}</strong><small>of your day</small></span>
+    <span class="fw-summary-item"><strong>${escapeHTML(noteText)}</strong><small>${escapeHTML(noteLabel)}</small></span>
+  `;
+}
+
 function renderMacroBar(mix) {
   const segs = [
     { key: 'protein', name: 'Protein', pct: mix.protein },
@@ -547,27 +577,33 @@ function renderMacroFiberNote(totals) {
     : '';
 }
 
-function renderMicronutrients(mealMicros, mealTotals) {
+function renderMicronutrients(coverage) {
   const el = document.getElementById('fw-micronutrients');
-  const { goodSources, cautionFlags, lackingFlags } = computeNutrientCoverage(mealMicros, mealTotals);
+  const { goodSources, cautionFlags, lackingFlags } = coverage;
 
-  const tagHTML = (item, isCautionGroup) =>
-    `<span class="fw-micro-tag${item.isHigh ? ' is-high' : ''}${isCautionGroup ? ' is-caution' : ''}">${escapeHTML(item.label)}</span>`;
+  const tagHTML = (item, extraClass) =>
+    `<span class="fw-micro-tag${item.isHigh ? ' is-high' : ''}${extraClass ? ' ' + extraClass : ''}">${escapeHTML(item.label)}</span>`;
   const suggestionHTML = (item) =>
     `<li><strong>${escapeHTML(item.label)}</strong> \u2014 ${escapeHTML(item.hint)}</li>`;
+  // Small sparkle mark for the "could use more" card — a plain geometric
+  // shape (not an organic illustration) so it stays legible at 14px and
+  // matches the site's otherwise-typographic visual language.
+  const sparkleSVG = '<svg class="fw-micro-care-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1L9.2 6.2 14 8 9.2 9.8 8 15 6.8 9.8 2 8 6.8 6.2Z"/></svg>';
 
   let html = '';
   if (goodSources.length) {
     html += `<div class="fw-micro-group"><span class="fw-micro-group-label">Good source of</span>`
-      + `<div class="fw-micro-tags">${goodSources.map((i) => tagHTML(i, false)).join('')}</div></div>`;
+      + `<div class="fw-micro-tags">${goodSources.map((i) => tagHTML(i)).join('')}</div></div>`;
   }
   if (cautionFlags.length) {
     html += `<div class="fw-micro-group"><span class="fw-micro-group-label">Higher in</span>`
-      + `<div class="fw-micro-tags">${cautionFlags.map((i) => tagHTML(i, true)).join('')}</div>`
+      + `<div class="fw-micro-tags">${cautionFlags.map((i) => tagHTML(i, 'is-caution')).join('')}</div>`
       + `<ul class="fw-micro-suggestions">${cautionFlags.map(suggestionHTML).join('')}</ul></div>`;
   }
   if (lackingFlags.length) {
-    html += `<div class="fw-micro-group"><span class="fw-micro-group-label">Could use more</span>`
+    html += `<div class="fw-micro-group fw-micro-care">`
+      + `<span class="fw-micro-group-label">${sparkleSVG}Could use more</span>`
+      + `<div class="fw-micro-tags">${lackingFlags.map((i) => tagHTML(i, 'is-care')).join('')}</div>`
       + `<ul class="fw-micro-suggestions">${lackingFlags.map(suggestionHTML).join('')}</ul></div>`;
   }
   el.innerHTML = html || '<p class="fw-micro-empty">Nothing stood out either way for this meal.</p>';
@@ -690,14 +726,17 @@ function recalculateMeal() {
   const benchmark = num(document.getElementById('fw-benchmark'), 1);
   const rating = computeValueRating(mealTotals, price, benchmark);
   const mix = computeMacroMix(mealTotals);
+  const coverage = computeNutrientCoverage(mealMicros, mealTotals);
+  const need = getDailyNeed();
 
   renderTotals(mealTotals);
   renderRating(rating);
   renderMarketPrice(mealPrice);
   renderMacroBar(mix);
   renderMacroFiberNote(mealTotals);
-  renderMicronutrients(mealMicros, mealTotals);
-  renderCalorieFit(mealTotals.calories);
+  renderMicronutrients(coverage);
+  renderCalorieFit(mealTotals.calories, need);
+  renderSummaryStrip(rating, mealTotals.calories, need.dailyNeed, coverage);
 }
 
 /* ================= CONTROLLER: dish panels, tabs, mode ================= */
@@ -727,12 +766,12 @@ function createDishPanel() {
 
     <div class="fw-upload-zone">
       <img class="fw-preview-img" alt="" hidden>
-      <div class="fw-upload-row">
+      <div class="fw-upload-row no-print">
         <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo<input type="file" accept="image/*" class="sr-only fw-photo-input"></label>
         <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
       </div>
     </div>
-    <p class="fw-status" role="status" aria-live="polite"></p>
+    <p class="fw-status no-print" role="status" aria-live="polite"></p>
 
     <div class="fw-dish-results" hidden>
       <div class="table-scroll">
@@ -866,6 +905,7 @@ function init() {
     document.getElementById('fw-add-dish').addEventListener('click', () => createDishPanel());
     document.getElementById('fw-price').addEventListener('input', recalculateMeal);
     document.getElementById('fw-benchmark').addEventListener('input', recalculateMeal);
+    document.getElementById('fw-save-pdf').addEventListener('click', () => window.print());
 
     document.querySelectorAll('.fw-standard-tab').forEach((btn) => {
       btn.addEventListener('click', () => {

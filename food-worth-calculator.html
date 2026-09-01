@@ -26,6 +26,15 @@
     .fw-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 12px; }
     .fw-status.is-error { color: #C0392B; font-weight: 600; }
 
+    /* At-a-glance strip at the top of the results — a single-line
+       "read this in 5 seconds" summary before all the section-by-
+       section detail below. Prints along with the rest of the report
+       (no no-print here) since it's the best part to see on paper. */
+    .fw-summary-strip { display: flex; flex-wrap: wrap; gap: 20px; align-items: baseline; padding: 14px 18px; margin-bottom: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    .fw-summary-item { display: flex; flex-direction: column; gap: 2px; }
+    .fw-summary-item strong { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--text); }
+    .fw-summary-item small { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
     .fw-items-table td input[type="text"] { font-family: var(--font-body); min-width: 130px; }
     .fw-items-table td input[type="number"] { width: 72px; }
     .fw-items-table td.fw-note-cell input { min-width: 160px; font-family: var(--font-body); }
@@ -75,6 +84,18 @@
     .fw-micro-tag.is-caution { border-color: #D4A017; color: #9C7A12; }
     .fw-micro-tag.is-caution.is-high { border-color: #C0392B; color: #C0392B; }
     .fw-micro-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
+
+    /* "Could use more" gets its own warmer card rather than sitting
+       as plain text under the same style as everything else — this
+       is the group meant to feel like a genuine, friendly suggestion
+       rather than a data readout, so it earns a bit more visual
+       weight: a soft tint, a filled (not just outlined) tag, and a
+       small sparkle mark instead of nothing. */
+    .fw-micro-group.fw-micro-care { background: #F0F7F4; border: 1px solid #CFE6DD; border-radius: 10px; padding: 12px 14px 14px; }
+    .fw-micro-care .fw-micro-group-label { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-dark); }
+    .fw-micro-care-icon { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
+    .fw-micro-tag.is-care { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .fw-micro-care .fw-micro-suggestions li { font-size: 0.88rem; }
     .fw-micro-suggestions { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
     .fw-micro-suggestions li { font-size: 0.85rem; color: var(--text); }
 
@@ -178,6 +199,10 @@
     <!-- ============ MEAL TOTAL (sums every dish above) ============ -->
     <section class="calc-panel" id="fw-meal-section" hidden>
       <div class="wrap">
+        <div class="fw-summary-strip" id="fw-summary-strip"></div>
+        <div class="calc-actions no-print">
+          <button type="button" id="fw-save-pdf" class="btn btn-secondary">Save as PDF</button>
+        </div>
         <h2>Total food value</h2>
         <p class="menu-builder-intro">Summed across every dish above, excluding any unchecked items. Edit anything in a dish and this updates automatically.</p>
 
@@ -313,6 +338,6 @@
   </footer>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=9" defer></script>
+  <script src="food-worth-calculator.js?v=10" defer></script>
 </body>
 </html>
