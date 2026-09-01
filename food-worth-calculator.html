@@ -75,6 +75,33 @@
     .fw-micro-tag.is-caution { border-color: #D4A017; color: #9C7A12; }
     .fw-micro-tag.is-caution.is-high { border-color: #C0392B; color: #C0392B; }
     .fw-micro-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
+    .fw-micro-suggestions { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .fw-micro-suggestions li { font-size: 0.85rem; color: var(--text); }
+
+    /* Shared pill-toggle look for both the standard switch and the
+       calculate/manual calorie switch below — one small component
+       instead of two, since they're visually identical. */
+    .fw-standard-toggle { display: flex; align-items: center; gap: 8px; margin: 4px 0 16px; flex-wrap: wrap; }
+    .fw-standard-toggle-label { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+    .fw-standard-tab, .fw-calorie-tab {
+      padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
+      font-family: var(--font-body); font-weight: 600; font-size: 0.85rem; color: var(--muted); cursor: pointer;
+    }
+    .fw-standard-tab.is-active, .fw-calorie-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .fw-standard-tab:focus-visible, .fw-calorie-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .fw-calorie-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+    .fw-calorie-fields { display: flex; flex-wrap: wrap; gap: 16px; }
+    .fw-calorie-fields label, .fw-calorie-manual-label {
+      display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 0.88rem; color: var(--text); min-width: 140px;
+    }
+    .fw-calorie-manual-label { max-width: 220px; }
+    .fw-calorie-fields input, .fw-calorie-fields select, .fw-calorie-manual-label input {
+      padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: var(--font-body); font-size: 0.95rem; font-weight: 400; color: var(--text);
+    }
+    .fw-calorie-fields input:focus-visible, .fw-calorie-fields select:focus-visible, .fw-calorie-manual-label input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .fw-bmi-note { font-size: 0.82rem; color: var(--muted); margin: 12px 0 0; }
 
     .fw-dish-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 2px solid var(--line); }
     .fw-tab-item { display: inline-flex; align-items: center; gap: 5px; padding-left: 10px; }
@@ -207,9 +234,73 @@
         <div class="structure-bar" id="fw-macro-bar" style="flex: 0 0 300px;"></div>
         <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
 
-        <h2 style="margin-top:32px;">Vitamins &amp; minerals</h2>
-        <p class="structure-note">A rough read on which vitamins and minerals this meal looks like a meaningful source of, summed across every dish — using the FDA's Daily Value benchmarks rather than showing a precise number Gemini can't actually estimate that reliably. General-purpose AI models are genuinely worse at this specifically, not just being cautious, so treat any tag below as a rough signal, not something to plan a diet around.</p>
+        <h2 style="margin-top:32px;">Vitamins, minerals &amp; fiber</h2>
+        <div class="fw-standard-toggle no-print" role="tablist" aria-label="Reference standard">
+          <span class="fw-standard-toggle-label">Standard:</span>
+          <button type="button" class="fw-standard-tab is-active" data-standard="malaysia">Malaysia (NRV)</button>
+          <button type="button" class="fw-standard-tab" data-standard="usa">USA (FDA)</button>
+        </div>
+        <p class="structure-note">A rough read on which vitamins, minerals, and fiber this meal looks like a meaningful source of, is light on, or runs high in — summed across every dish, checked against whichever standard is selected above (this also sets the BMI bands in "How this fits your day" below). Suggestions are general food ideas, not a diet plan. General-purpose AI models are genuinely worse at estimating micronutrients specifically, not just being cautious, so treat any tag or suggestion here as a rough signal.</p>
         <div id="fw-micronutrients"></div>
+      </div>
+    </section>
+
+    <!-- ============ CALORIE FIT (BMR/TDEE + BMI, both standard-aware; independent Mifflin-St Jeor formula) ============ -->
+    <section class="calc-panel" id="fw-calorie-section" hidden>
+      <div class="wrap">
+        <h2>How this fits your day</h2>
+        <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
+
+        <div class="fw-calorie-toggle no-print" role="tablist">
+          <button type="button" class="fw-calorie-tab is-active" data-mode="calculate">Calculate my need</button>
+          <button type="button" class="fw-calorie-tab" data-mode="manual">I know my target</button>
+        </div>
+
+        <div class="fw-calorie-panel" id="fw-calorie-calculate">
+          <div class="fw-calorie-fields">
+            <label>Sex
+              <select id="fw-cal-sex">
+                <option value="female">Female</option>
+                <option value="male">Male</option>
+              </select>
+            </label>
+            <label>Age <span class="toggle-hint">years</span>
+              <input type="number" id="fw-cal-age" min="10" max="100" step="1" placeholder="30">
+            </label>
+            <label>Height <span class="toggle-hint">cm</span>
+              <input type="number" id="fw-cal-height" min="100" max="250" step="1" placeholder="165">
+            </label>
+            <label>Weight <span class="toggle-hint">kg</span>
+              <input type="number" id="fw-cal-weight" min="30" max="250" step="0.5" placeholder="60">
+            </label>
+            <label>Activity level
+              <select id="fw-cal-activity">
+                <option value="sedentary">Sedentary — little or no exercise</option>
+                <option value="light">Lightly active — 1–3 days/week</option>
+                <option value="active" selected>Active — 3–5 days/week</option>
+                <option value="very-active">Very active — 6–7 days/week</option>
+              </select>
+            </label>
+          </div>
+          <p class="fw-bmi-note" id="fw-bmi-note"></p>
+        </div>
+
+        <div class="fw-calorie-panel" id="fw-calorie-manual" hidden>
+          <label class="fw-calorie-manual-label">Your daily calorie target <span class="toggle-hint">kcal</span>
+            <input type="number" id="fw-cal-manual-target" min="800" max="6000" step="10" placeholder="2000">
+          </label>
+        </div>
+
+        <div class="ica-results" style="margin-top:20px;">
+          <div class="result-card">
+            <span class="result-label">Estimated daily need</span>
+            <span class="result-value" id="fw-daily-need">—</span>
+          </div>
+          <div class="result-card" id="fw-calorie-share-card" style="grid-column: span 2;">
+            <span class="result-label">This meal</span>
+            <span class="fw-rating-badge" id="fw-calorie-share-badge">Fill in the fields above</span>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -222,6 +313,6 @@
   </footer>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=8" defer></script>
+  <script src="food-worth-calculator.js?v=9" defer></script>
 </body>
 </html>
