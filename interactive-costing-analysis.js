@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-01-tool-dock');
+console.info('[Interactive Costing Analysis] script build: 2026-09-02-cost-structure-pies');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -322,41 +322,113 @@ function structureMix(ingredientsPerPortion, overheadPerPortion, manpowerPerPort
 }
 
 function renderStructure(inputs, r) {
-  const guideVenue = document.getElementById('guide-venue-select').value;
+  const guideSelect = document.getElementById('guide-venue-select');
+  const guideVenue = guideSelect.value;
   const guide = GUIDE_RATIOS[guideVenue] || GUIDE_RATIOS.stall;
   const yours = structureMix(r.ingredientsPerPortion, r.overheadPerPortion, r.manpowerPerPortion, r.marginPerPortion, inputs.sellingPrice);
+  const isLosing = yours.margin < 0;
 
-  const container = document.getElementById('structure-bars');
-  container.innerHTML =
-    renderStructureBar('Your numbers', yours, yours.margin < 0) +
-    renderStructureBar(`Guide: ${guideVenue}`, { ingredients: guide.ingredients, overhead: guide.overhead, manpower: guide.manpower, margin: guide.margin }, false);
+  // The loss flag lives as a static, always-in-the-DOM span next to
+  // "Your numbers" (see the HTML) — toggled via .hidden rather than
+  // rebuilt through innerHTML like the pies below, so nothing about
+  // the card header itself ever gets torn down and recreated.
+  document.getElementById('structure-loss-flag').hidden = !isLosing;
+
+  // Selected option's own visible text ("Stall / hawker"), not its
+  // value ("stall") — just for a readable aria-label on that pie.
+  const guideLabel = guideSelect.options[guideSelect.selectedIndex].textContent;
+
+  document.getElementById('structure-pie-yours').innerHTML =
+    renderStructurePie('Your numbers' + (isLosing ? ' (losing money)' : ''), yours);
+  document.getElementById('structure-pie-guide').innerHTML =
+    renderStructurePie('Guide, ' + guideLabel, {
+      ingredients: guide.ingredients, overhead: guide.overhead, manpower: guide.manpower, margin: guide.margin,
+    });
 }
 
-// Bar segment widths use the TRUE percentages (ingredients/overhead/
-// manpower are always >=0; margin is clamped to 0 only for drawing,
-// since a negative width isn't renderable). If margin is deeply
-// negative, the other three segments legitimately sum past 100% and
-// the bar's overflow:hidden clips them — that visual overflow IS the
-// signal that costs no longer fit inside the selling price.
-function renderStructureBar(label, mix, isLosing) {
+/* ---- Pie geometry ----
+   angleDeg is degrees CLOCKWISE from 12 o'clock (0deg = top, 90deg =
+   3 o'clock, and so on) — reads the same direction as a clock face
+   and every other pie chart, which is why every angle in this file
+   uses that convention rather than trigonometry's own default
+   (counter-clockwise from 3 o'clock). */
+function polarPoint(cx, cy, r, angleDeg) {
+  const rad = (angleDeg - 90) * (Math.PI / 180);
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+// One pie slice as an SVG <path>: out from the centre to the start
+// angle's edge, an arc around to the end angle's edge, back to the
+// centre. Guards the one genuinely degenerate case — a single
+// category sitting at ~100%, where the arc's start and end point
+// would land on the exact same spot and most browsers simply refuse
+// to draw anything — by stopping a hair short of a full turn
+// instead, leaving an imperceptible gap rather than a missing slice.
+function describePieSlice(cx, cy, r, startAngle, endAngle) {
+  const cappedEnd = Math.min(endAngle, startAngle + 359.98);
+  const startPt = polarPoint(cx, cy, r, startAngle);
+  const endPt = polarPoint(cx, cy, r, cappedEnd);
+  const largeArcFlag = (cappedEnd - startAngle) > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${startPt.x.toFixed(2)} ${startPt.y.toFixed(2)} `
+       + `A ${r} ${r} 0 ${largeArcFlag} 1 ${endPt.x.toFixed(2)} ${endPt.y.toFixed(2)} Z`;
+}
+
+// The two numbers most likely worth tweaking later live here, not
+// buried in the geometry functions above — see the settings note in
+// chat for the short version of this same table.
+const PIE_SETTINGS = {
+  viewBoxSize: 120, // svg viewBox is a square, this many units on a side
+  radius: 52,       // pie radius, in the same units as viewBoxSize
+};
+
+// Renders one side of the comparison: a pie (one SVG <path> per
+// category) plus a small value list underneath it. Every category's
+// percentage is always legible in that list regardless of how big or
+// small its slice is — the old bar chart could only print a
+// segment's own label if the segment itself was wide enough to hold
+// it, which is exactly what was going wrong for Overhead/Margin in
+// the screenshot this replaced.
+function renderStructurePie(ariaTitle, mix) {
   const segs = [
     { key: 'ingredients', name: 'Ingredients', pct: mix.ingredients },
     { key: 'overhead', name: 'Overhead', pct: mix.overhead },
     { key: 'manpower', name: 'Manpower', pct: mix.manpower },
-    { key: 'margin', name: 'Margin', pct: Math.max(0, mix.margin) },
+    { key: 'margin', name: 'Margin', pct: mix.margin },
   ];
-  const segmentsHTML = segs.map((s) => {
-    let inner = '';
-    if (s.pct >= 15) inner = `${Math.round(s.pct)}% ${s.name}`;
-    else if (s.pct >= 6) inner = `${Math.round(s.pct)}%`;
-    return `<span class="seg seg-${s.key}" style="width:${Math.max(0, s.pct)}%" title="${s.name} ${s.pct.toFixed(0)}%">${inner ? `<span class="seg-label">${inner}</span>` : ''}</span>`;
+
+  const { viewBoxSize: SIZE, radius: R } = PIE_SETTINGS;
+  const CX = SIZE / 2, CY = SIZE / 2;
+
+  // Slices are swept at their percentage CLAMPED to >=0 so the pie
+  // always closes into a full circle even on a loss (margin
+  // negative) — ingredients/overhead/manpower can never themselves
+  // be negative (see structureMix's own comment above), so margin is
+  // the only row this clamp ever actually touches. The value list
+  // below still prints the TRUE figure for every row regardless, so
+  // a real loss still reads honestly as e.g. "-12%" next to Margin
+  // even though its own slice draws as nothing.
+  const drawTotal = segs.reduce((sum, s) => sum + Math.max(0, s.pct), 0) || 1;
+
+  let cumAngle = 0;
+  const slices = segs.map((s) => {
+    const sweep = (Math.max(0, s.pct) / drawTotal) * 360;
+    if (sweep <= 0) return '';
+    const startAngle = cumAngle;
+    const endAngle = cumAngle + sweep;
+    cumAngle = endAngle;
+    return `<path d="${describePieSlice(CX, CY, R, startAngle, endAngle)}" class="pie-seg seg-${s.key}"><title>${s.name} ${Math.round(s.pct)}%</title></path>`;
+  }).join('');
+
+  const ariaSummary = segs.map((s) => `${Math.round(s.pct)}% ${s.name}`).join(', ');
+
+  const valueRows = segs.map((s) => {
+    const negativeCls = s.pct < 0 ? ' class="is-negative"' : '';
+    return `<li><i class="legend-swatch seg-${s.key}"></i>${s.name}<strong${negativeCls}>${Math.round(s.pct)}%</strong></li>`;
   }).join('');
 
   return `
-    <div class="structure-row">
-      <span class="structure-label">${label}${isLosing ? ' <span class="loss-flag">LOSING MONEY</span>' : ''}</span>
-      <div class="structure-bar">${segmentsHTML}</div>
-    </div>
+    <svg viewBox="0 0 ${SIZE} ${SIZE}" class="structure-pie" role="img" aria-label="${ariaTitle}: ${ariaSummary}">${slices}</svg>
+    <ul class="structure-pie-legend">${valueRows}</ul>
   `;
 }
 

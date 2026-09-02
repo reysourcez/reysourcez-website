@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
 
@@ -143,22 +143,44 @@
           <div class="structure-head">
             <h3>Cost Structure: Your Numbers vs. Guide</h3>
           </div>
-          <p class="structure-key">
-            <span><i class="legend-swatch legend-ingredients"></i>Ingredients</span>
-            <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
-            <span><i class="legend-swatch legend-manpower"></i>Manpower</span>
-            <span><i class="legend-swatch legend-margin"></i>Margin</span>
-            <label class="guide-select-label">Guide:
-              <select id="guide-venue-select">
-                <option value="home">Home-based</option>
-                <option value="stall">Stall / hawker</option>
-                <option value="truck">Food truck</option>
-                <option value="store">Store / restaurant</option>
-              </select>
-            </label>
-          </p>
-          <p class="structure-note">Reflects your cost structure <em>at the current sales volume above</em> — fixed costs spread over fewer portions cost more per portion, so this shifts as you move the slider.</p>
-          <div class="structure-bars" id="structure-bars"><!-- populated by JS --></div>
+
+          <div class="structure-layout">
+            <div class="structure-info">
+              <p class="structure-key">
+                <span><i class="legend-swatch legend-ingredients"></i>Ingredients</span>
+                <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
+                <span><i class="legend-swatch legend-manpower"></i>Manpower</span>
+                <span><i class="legend-swatch legend-margin"></i>Margin</span>
+              </p>
+              <p class="structure-note">Reflects your cost structure <em>at the current sales volume above</em> — fixed costs spread over fewer portions cost more per portion, so this shifts as you move the slider.</p>
+            </div>
+
+            <div class="structure-charts">
+              <div class="structure-pie-card">
+                <div class="structure-pie-card-header">
+                  <span class="structure-pie-title">Your numbers</span>
+                  <span class="loss-flag" id="structure-loss-flag" hidden>LOSING MONEY</span>
+                </div>
+                <div class="structure-pie-body" id="structure-pie-yours"><!-- populated by JS: pie + value list --></div>
+              </div>
+
+              <div class="structure-pie-card">
+                <div class="structure-pie-card-header">
+                  <!-- The dropdown itself IS this card's header — no
+                       separate "Guide:" label anywhere else on the
+                       page, so there's exactly one place showing and
+                       controlling which guide is selected. -->
+                  <select id="guide-venue-select" class="structure-pie-select" aria-label="Guide venue type">
+                    <option value="home">Home-based</option>
+                    <option value="stall">Stall / hawker</option>
+                    <option value="truck">Food truck</option>
+                    <option value="store">Store / restaurant</option>
+                  </select>
+                </div>
+                <div class="structure-pie-body" id="structure-pie-guide"><!-- populated by JS: pie + value list --></div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Loaded by clicking a "Pull from" button above — fetches
@@ -221,6 +243,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="interactive-costing-analysis.js?v=8" defer></script>
+  <script src="interactive-costing-analysis.js?v=9" defer></script>
 </body>
 </html>
