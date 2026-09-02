@@ -89,7 +89,7 @@
        runRecipeBreakdown().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-02-v8-recipe-breakdown-collapsible');
+console.info('[Food Worth Calculator] script build: 2026-09-02-v9-ui-polish-donut-chart');
 
 /* ================= CONFIG ================= */
 
@@ -409,7 +409,7 @@ function computeTotals(rows) {
 
 function computeValueRating(totals, price, benchmarkPer100kcal) {
   if (!(price > 0) || !(totals.calories > 0)) {
-    return { costPer100kcal: 0, costPer100g: 0, label: null };
+    return { costPer100kcal: 0, costPer100g: 0, label: null, ratio: 0 };
   }
   const costPer100kcal = (price / totals.calories) * 100;
   const costPer100g = totals.weight > 0 ? (price / totals.weight) * 100 : 0;
@@ -418,8 +418,9 @@ function computeValueRating(totals, price, benchmarkPer100kcal) {
   if (ratio <= 0.85) label = 'Great value';
   else if (ratio <= 1.25) label = 'Fair value';
   else label = 'Pricey';
-  return { costPer100kcal, costPer100g, label };
+  return { costPer100kcal, costPer100g, label, ratio };
 }
+
 
 // Grosses an ingredient cost up into an implied "fair" selling price
 // at the standard 30% ingredient-cost structure — a supply-side
@@ -546,10 +547,12 @@ function renderRating(rating) {
     badge.textContent = 'Add a price above';
     card.classList.remove('is-loss');
   } else {
-    badge.textContent = rating.label;
+    const pct = Math.round(rating.ratio * 100);
+    badge.innerHTML = `${escapeHTML(rating.label)}<span class="fw-rating-pct">${pct}%</span>`;
     card.classList.toggle('is-loss', rating.label === 'Pricey');
   }
 }
+
 
 function renderMarketPrice(price) {
   const el = document.getElementById('fw-market-price');
@@ -681,20 +684,63 @@ function renderSummaryStrip(rating, mealCalories, dailyNeed, coverage) {
   `;
 }
 
-function renderMacroBar(mix) {
+// Donut chart replacing the old horizontal bar so Nutritional
+// balance can sit in a half-width column next to Vitamins/minerals/
+// fiber. Math verified separately: segment lengths always sum to
+// exactly the circle's circumference (no gaps/overlaps), and a 0%
+// segment degrades to a zero-length arc rather than a rendering
+// glitch. Legend is rendered separately into #fw-macro-legend so it
+// can sit beside the chart with percentages, not just color keys.
+function renderMacroChart(mix, totalCalories) {
+  const chartEl = document.getElementById('fw-macro-chart');
+  const legendEl = document.getElementById('fw-macro-legend');
+  if (!chartEl || !legendEl) return;
+
   const segs = [
     { key: 'protein', name: 'Protein', pct: mix.protein },
     { key: 'carbs', name: 'Carbs', pct: mix.carbs },
     { key: 'fat', name: 'Fat', pct: mix.fat },
   ];
-  const html = segs.map((s) => {
-    let inner = '';
-    if (s.pct >= 15) inner = `${Math.round(s.pct)}% ${s.name}`;
-    else if (s.pct >= 6) inner = `${Math.round(s.pct)}%`;
-    return `<span class="seg fw-seg-${s.key}" style="width:${Math.max(0, s.pct)}%" title="${s.name} ${s.pct.toFixed(0)}%">${inner ? `<span class="seg-label">${inner}</span>` : ''}</span>`;
-  }).join('');
-  document.getElementById('fw-macro-bar').innerHTML = html;
+  const hasData = segs.some((s) => s.pct > 0);
+  const r = 70;
+  const cx = 90;
+  const cy = 90;
+  const strokeWidth = 28;
+  const circumference = 2 * Math.PI * r;
+
+  let arcsSVG;
+  if (!hasData) {
+    // Nothing analyzed yet — a flat gray ring rather than a blank
+    // square, so the chart's presence still reads as "waiting for
+    // data" instead of looking broken.
+    arcsSVG = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${strokeWidth}" />`;
+  } else {
+    let offsetSoFar = 0;
+    arcsSVG = segs.map((s) => {
+      const len = (Math.max(0, s.pct) / 100) * circumference;
+      const dasharray = `${len.toFixed(2)} ${(circumference - len).toFixed(2)}`;
+      const dashoffset = (-offsetSoFar).toFixed(2);
+      offsetSoFar += len;
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" class="fw-seg-${s.key}-stroke"
+        stroke-width="${strokeWidth}" stroke-dasharray="${dasharray}" stroke-dashoffset="${dashoffset}" />`;
+    }).join('');
+  }
+
+  const centerLabel = totalCalories > 0
+    ? `<text x="${cx}" y="${cy - 6}" text-anchor="middle" font-family="var(--font-display)" font-weight="700" font-size="22" fill="var(--text)">${Math.round(totalCalories).toLocaleString()}</text>
+       <text x="${cx}" y="${cy + 14}" text-anchor="middle" font-size="11" fill="var(--muted)">kcal</text>`
+    : '';
+
+  chartEl.innerHTML = `<svg viewBox="0 0 180 180" width="160" height="160" role="img" aria-label="Macronutrient breakdown: ${Math.round(mix.protein)}% protein, ${Math.round(mix.carbs)}% carbs, ${Math.round(mix.fat)}% fat">
+    <g transform="rotate(-90 ${cx} ${cy})">${arcsSVG}</g>
+    ${centerLabel}
+  </svg>`;
+
+  legendEl.innerHTML = hasData
+    ? segs.map((s) => `<span><i class="legend-swatch fw-seg-${s.key}"></i>${s.name} ${Math.round(s.pct)}%</span>`).join('')
+    : segs.map((s) => `<span><i class="legend-swatch fw-seg-${s.key}"></i>${s.name}</span>`).join('');
 }
+
 
 function renderMacroFiberNote(totals) {
   const el = document.getElementById('fw-macro-fiber-note');
@@ -809,8 +855,7 @@ async function runAnalysis(panel) {
       result.items.forEach((it) => createItemRow(panel, it));
       panel.querySelector('.fw-dish-results').hidden = false;
       document.getElementById('fw-meal-section').hidden = false;
-      document.getElementById('fw-macro-section').hidden = false;
-      document.getElementById('fw-vitamins-section').hidden = false;
+      document.getElementById('fw-detail-section').hidden = false;
       document.getElementById('fw-calorie-section').hidden = false;
       recalculateDish(panel);
       recalculateMeal();
@@ -895,7 +940,7 @@ function recalculateMeal() {
   renderRating(rating);
   renderMarketPrice(mealPrice);
   renderIngredientFairPrice(mealIngredientCost);
-  renderMacroBar(mix);
+  renderMacroChart(mix, mealTotals.calories);
   renderMacroFiberNote(mealTotals);
   renderMicronutrients(coverage);
   renderCalorieFit(mealTotals.calories, need);

@@ -1,5 +1,20 @@
 # Food Worth Calculator — change notes
 
+## 2026-09-02 (later same day) — UI polish round from live testing
+
+Feedback from actually seeing the page rendered, not just described — several real fixes came out of it:
+
+1. **Fixed a genuine bug**: the two long tooltips (typical market price, ingredient-cost fair price) had no length limit and were overflowing their container — shortened both substantially (they were 180+ characters; now under 110).
+2. **Fixed a genuine bug**: the collapsible section headings (`<summary><h2>...`) weren't going through the same `.wrap` centering as the body content below them, since `.wrap` only wrapped the body div, not the summary. That's very likely what read as "text too far left" — fixed by wrapping the heading in its own `.wrap` too (for "How this fits your day") or restructuring to one shared `.wrap` for the whole panel (for the side-by-side section below).
+3. **"Price paid" now highlights** with a soft yellow tint while empty, using `:placeholder-shown` — no JS needed, and it fades on its own the moment something's typed in.
+4. **Value rating now shows a percentage** — e.g. "Pricey 140%" — alongside the label, exposing the number that was already driving the label internally.
+5. **"Your benchmark" and the two granular cost cards (per-100kcal, per-100g) are hidden**, not deleted — commented in the HTML with exactly how to bring them back. The rating math is unaffected; the benchmark input still exists with its default value, just isn't shown.
+6. **Nutritional balance and Vitamins/minerals/fiber now sit side by side** in a shared panel, and the macro breakdown is a **donut chart instead of a bar** — a full-width bar wouldn't have had room in a half-width column, so this was as much a structural fix as a style change. Chart math (segment lengths, rotation, the all-zero placeholder state) was verified with a standalone script before going into the page, including a direct check against the exact 26/10/64 split from the screenshot.
+
+**On accuracy, since it came up:** neither typical market price nor the ingredient-cost breakdown is a live lookup — both are Gemini's trained general knowledge, not a real-time price API or anything connected to Menu Calculator. They're answering genuinely different questions (what the market usually charges vs. what a healthy cost structure would justify), which is why they can land far apart, as they did in the screenshot (RM7–12 vs RM14.67). Left both visible per "let's discuss before hiding" — worth a real conversation about which one earns its spot, or whether the gap between them is itself the useful signal.
+
+**Not yet done:** the message that prompted this cut off after "and then" — there may have been a fourth idea in there that didn't come through.
+
 ## 2026-09-02 — Recipe/ingredient-cost breakdown, collapsible sections
 
 1. **Recipe breakdown, opt-in per dish.** A new "Break down as a recipe" button appears under each dish's item table once it's been analyzed. Clicking it makes a **second, separate Gemini call** (same photo already in memory, no re-upload) asking a genuinely different question: does this match a common, nameable dish (Chicken Rice, Nasi Lemak, etc.), and if so, what are the *standard* ingredients and quantities for one portion, priced at average Malaysian rates? This is deliberately not folded into the main analysis — it's general recipe/pricing knowledge rather than photo-precision estimation, it won't apply to every dish, and running it on every analysis would cost every visitor extra latency and tokens for a feature most won't use. If Gemini isn't confident the dish matches a standard recipe, it says so plainly rather than forcing a guess, and the UI shows a short explanation instead of fabricated data.
