@@ -1170,30 +1170,6 @@ th.sortable:hover { color: var(--accent-dark); }
   #ica-chart { border: none; }
 }
 
-/* Quick ingredient costing panel — a lighter, inline stand-in for
-   Menu Portion Creator's ingredient table, native to this page (see
-   QUICK INGREDIENT COSTING in interactive-costing-analysis.js).
-   Deliberately reuses .menu-table/.table-scroll/.amount-cell/
-   .m-unit-label wholesale — same look as Menu Portion Creator's own
-   tables, for free. The only genuinely new rule is the text-input
-   width below, since .menu-table's existing rules only size its
-   <select> and number <input>s, not text inputs. */
-.quick-ing-panel {
-  background: var(--paper);
-  border-radius: 8px;
-  padding: 16px;
-  margin: -6px 0 20px;
-}
-.quick-ing-panel .menu-table td input[type="text"] {
-  font-family: var(--font-body);
-  min-width: 120px;
-}
-.quick-ing-note {
-  font-size: 0.8rem;
-  color: var(--muted);
-  margin: 12px 0 0;
-}
-
 /* ---- 16. Overhead & Manpower Calculator ----
    Reuses the existing #calc-table / .table-scroll / .calc /
    .menu-total-row conventions from the ingredient and menu-portion

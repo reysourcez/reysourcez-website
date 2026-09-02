@@ -360,129 +360,6 @@ function renderStructureBar(label, mix, isLosing) {
   `;
 }
 
-/* ================= QUICK INGREDIENT COSTING =================
-   A smaller, self-contained stand-in for Menu Portion Creator's
-   true-cost math, built directly into this page so someone can reach
-   a cost-per-portion figure without opening another tool in a new
-   tab at all. Deliberately lighter than Menu Portion Creator: one
-   row is one ingredient with a purchase price/qty/unit and an amount
-   used — there's no Yield%/Wastage%/Inflation here. If you need that
-   precision, or you're reusing the same ingredient list across
-   several dishes, use "Pull from Menu Portion Creator" instead.
-
-   NOTE: this duplicates the price-per-base-unit math that already
-   lives in Menu Calculator / Printing Calculator. If that formula
-   ever changes there, it will NOT automatically change here — it's a
-   second, smaller implementation of the same idea, kept deliberately
-   separate so this page has zero dependency on another tool ever
-   being open. Worth a quick check in both places if the math changes.
-   ============================================================ */
-
-// EDITABLE: purchase units this panel understands. factor = how many
-// of the base unit make up one purchase unit (e.g. 1 kg = 1000 g).
-// Add a line to support another unit — nothing else needs to change.
-const QUICK_UNITS = {
-  kg:    { base: 'g',     factor: 1000 },
-  g:     { base: 'g',     factor: 1 },
-  L:     { base: 'mL',    factor: 1000 },
-  mL:    { base: 'mL',    factor: 1 },
-  piece: { base: 'piece', factor: 1 },
-};
-
-let quickRowIdCounter = 0;
-let quickPanelStarted = false; // true once the panel has been opened at least once
-
-function quickUnitOptionsHTML() {
-  return Object.keys(QUICK_UNITS).map((k) => `<option value="${k}">${k}</option>`).join('');
-}
-
-// Same shape of math as Menu Calculator's true-cost-per-base-unit,
-// minus Yield/Wastage/Inflation: price/(qty*factor) = price per base
-// unit, then times amount used = this row's cost contribution.
-function updateQuickRow(tr) {
-  const price = num(tr.querySelector('.q-price'));
-  const qtyRaw = num(tr.querySelector('.q-qty'), 1);
-  const qty = qtyRaw > 0 ? qtyRaw : 0.01; // guard against divide-by-zero
-  const unit = QUICK_UNITS[tr.querySelector('.q-unit').value];
-  const amountUsed = num(tr.querySelector('.q-amount'));
-
-  const pricePerBaseUnit = price / (qty * unit.factor);
-  const cost = pricePerBaseUnit * amountUsed;
-
-  tr.querySelector('.q-unit-label').textContent = unit.base;
-  tr.querySelector('.q-cost').textContent = formatRM(cost);
-  tr.dataset.cost = cost;
-
-  recalcQuickTotal();
-}
-
-// Sums every row's cost into the panel's Total, and — only once that
-// total is actually above zero — pushes it into the main Ingredients
-// & packaging field above. The >0 guard matters: without it, opening
-// the panel and adding a single still-blank row would immediately
-// stomp a real number already sitting in that field with "RM0.00".
-function recalcQuickTotal() {
-  let total = 0;
-  document.querySelectorAll('#quick-ing-rows > tr').forEach((tr) => {
-    total += parseFloat(tr.dataset.cost) || 0;
-  });
-  document.getElementById('quick-ing-total').textContent = formatRM(total);
-
-  if (total > 0) {
-    document.getElementById('ing-cost').value = total.toFixed(2);
-    markSynced('#ing-cost-label', 'ingredient breakdown below');
-    recalculate();
-  }
-}
-
-function createQuickRow() {
-  quickRowIdCounter++;
-  const tbody = document.getElementById('quick-ing-rows');
-  const tr = document.createElement('tr');
-  tr.dataset.rowId = 'q-' + quickRowIdCounter;
-  tr.innerHTML = `
-    <td><input type="text" class="q-item" placeholder="e.g. Chicken thigh"></td>
-    <td><input type="number" class="q-price" inputmode="decimal" min="0" step="0.01" value="0.00"></td>
-    <td><input type="number" class="q-qty" inputmode="decimal" min="0.01" step="0.01" value="1"></td>
-    <td><select class="q-unit">${quickUnitOptionsHTML()}</select></td>
-    <td>
-      <div class="amount-cell">
-        <input type="number" class="q-amount" inputmode="decimal" min="0" step="0.01" value="0">
-        <span class="q-unit-label m-unit-label">g</span>
-      </div>
-    </td>
-    <td class="calc q-cost">RM0.00</td>
-    <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this ingredient">&times;</button></td>
-  `;
-  tbody.appendChild(tr);
-
-  tr.querySelectorAll('.q-item, .q-price, .q-qty, .q-amount').forEach((el) => {
-    el.addEventListener('input', () => updateQuickRow(tr));
-  });
-  tr.querySelector('.q-unit').addEventListener('change', () => updateQuickRow(tr));
-  tr.querySelector('.delete-row').addEventListener('click', () => {
-    tr.remove();
-    recalcQuickTotal();
-  });
-
-  updateQuickRow(tr);
-}
-
-// First open auto-adds one blank row so the panel isn't just an empty
-// table; later toggles just show/hide what's already there.
-function toggleQuickPanel() {
-  const panel = document.getElementById('quick-ing-panel');
-  const btn = document.getElementById('quick-ing-toggle');
-  const opening = panel.hidden;
-  panel.hidden = !opening;
-  btn.textContent = opening ? '\u2212 Hide ingredient breakdown' : '+ Break down ingredient & packaging costs';
-  btn.setAttribute('aria-expanded', String(opening));
-  if (opening && !quickPanelStarted) {
-    quickPanelStarted = true;
-    createQuickRow();
-  }
-}
-
 /* ================= INIT ================= */
 
 // Keeps a <input type="range"> and its paired <input type="number">
@@ -632,13 +509,25 @@ function rzRunIsolated(scriptText, sourceKey) {
   document.getElementById('tool-dock-body').appendChild(scriptEl);
 }
 
-function updateBackToTopVisibility() {
-  document.getElementById('rz-back-to-top').hidden = document.getElementById('tool-dock').hidden;
+// Shows or hides the whole dock (and everything that only makes
+// sense while it's visible: the back-to-top button, the top "Hide"
+// button, and which connector button reads as active) WITHOUT
+// touching #tool-dock-body's contents. That's the whole point —
+// hiding is not the same as closing. The tool's actual DOM, its
+// running script's closures, and whatever's been typed into it all
+// stay exactly as they were; showing it again just makes that same
+// state visible, same as re-clicking its own connector button does.
+function setDockVisible(visible) {
+  document.getElementById('tool-dock').hidden = !visible;
+  document.getElementById('rz-back-to-top').hidden = !visible;
+  document.getElementById('tool-dock-hide-btn').hidden = !visible;
+  if (!visible) updateConnectorActiveState(null);
 }
 
 // Highlights whichever connector button matches the tool currently
-// open in the dock — .is-active + the per-tool accent color already
-// existed in styles.css for this, just wasn't wired up to anything yet.
+// SHOWING in the dock — .is-active + the per-tool accent color
+// already existed in styles.css for this, just wasn't wired up to
+// anything yet.
 function updateConnectorActiveState(activeKey) {
   document.querySelectorAll('[data-open-tool]').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.openTool === activeKey);
@@ -653,17 +542,24 @@ async function rzLoadToolIntoDock(key) {
   const body = document.getElementById('tool-dock-body');
   const titleEl = document.getElementById('tool-dock-title');
 
-  if (dock.dataset.openTool === key && !dock.hidden) {
+  // Already loaded — whether currently showing or hidden via the
+  // Hide/close button — just reveal it and scroll down, don't
+  // refetch and lose whatever's been typed in there. Loading a
+  // DIFFERENT tool below still does a full fresh reload, which is
+  // the natural way to reset one (see chat re: a dedicated reset
+  // button — this covers the same need without one).
+  if (dock.dataset.openTool === key) {
+    setDockVisible(true);
+    updateConnectorActiveState(key);
     dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
 
-  dock.hidden = false;
   dock.className = 'tool-dock ' + dockConfig.theme;
   dock.dataset.openTool = key;
   titleEl.textContent = tool.label;
   body.innerHTML = '<p class="tool-dock-status">Loading\u2026</p>';
-  updateBackToTopVisibility();
+  setDockVisible(true);
   updateConnectorActiveState(key);
   dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -676,12 +572,19 @@ async function rzLoadToolIntoDock(key) {
     const main = doc.querySelector('main');
     if (!main) throw new Error('couldn\u2019t find that page\u2019s content');
 
-    // Drop the marketing intro + "how it's calculated" footer note
-    // (already flagged rz-embed-hide in the source HTML from an
-    // earlier, different attempt at this — reused here) and this
-    // page's own switcher mount point, which the fetched copy still
-    // has even though it's now unused.
-    main.querySelectorAll('.rz-embed-hide, #rz-switcher').forEach((el) => el.remove());
+    // Drop the marketing intro + "how it's calculated" footer note —
+    // already flagged rz-embed-hide in the source HTML from an
+    // earlier, different attempt at this, reused here. HIDDEN rather
+    // than removed on purpose: the intro section also holds each
+    // tool's #save-pdf button, and that tool's own init() looks it
+    // up unconditionally (document.getElementById('save-pdf')
+    // .addEventListener(...)) — remove the element outright and that
+    // line throws on a null reference, which silently kills every
+    // line after it in init(), including wiring up "+ Add Menu" /
+    // "+ Add Job". Hiding keeps the element queryable without
+    // showing it.
+    main.querySelectorAll('.rz-embed-hide').forEach((el) => { el.hidden = true; });
+    main.querySelectorAll('#rz-switcher').forEach((el) => el.remove()); // safe to fully remove — nothing looks this one up anymore
 
     const scriptText = dockConfig.inlineScript
       ? rzExtractInlineScript(doc)
@@ -733,20 +636,12 @@ function init() {
     btn.addEventListener('click', () => rzLoadToolIntoDock(btn.dataset.openTool));
   });
 
-  document.getElementById('tool-dock-close').addEventListener('click', () => {
-    document.getElementById('tool-dock').hidden = true;
-    document.getElementById('tool-dock-body').innerHTML = '';
-    document.getElementById('tool-dock').dataset.openTool = '';
-    updateBackToTopVisibility();
-    updateConnectorActiveState(null);
-  });
+  document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
+  document.getElementById('tool-dock-hide-btn').addEventListener('click', () => setDockVisible(false));
 
   document.getElementById('rz-back-to-top').addEventListener('click', () => {
     document.getElementById('ica-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-
-  document.getElementById('quick-ing-toggle').addEventListener('click', toggleQuickPanel);
-  document.getElementById('add-quick-ing-row').addEventListener('click', createQuickRow);
 
   initSync();
 }

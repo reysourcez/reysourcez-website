@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
 
@@ -77,6 +77,7 @@
             <button type="button" class="btn btn-secondary connector-btn connector-btn-menu" data-open-tool="menu-calculator">Menu Portion Creator</button>
             <button type="button" class="btn btn-secondary connector-btn connector-btn-overhead" data-open-tool="overhead-manpower-calculator">Overhead &amp; Manpower</button>
             <button type="button" class="btn btn-secondary connector-btn connector-btn-printing" data-open-tool="printing-calculator">Printing Calculator</button>
+            <button type="button" id="tool-dock-hide-btn" class="btn btn-secondary" hidden>Hide</button>
           </div>
         </div>
 
@@ -84,39 +85,6 @@
           <div class="ica-inputs">
             <h3>Variable Costs <span class="toggle-hint">(per portion)</span></h3>
             <label id="ing-cost-label"><span class="label-text">Ingredients &amp; packaging</span> <input type="number" id="ing-cost" inputmode="decimal" min="0" step="0.01" value="4.00"></label>
-
-            <button type="button" id="quick-ing-toggle" class="link-btn" aria-expanded="false">+ Break down ingredient &amp; packaging costs</button>
-            <div class="quick-ing-panel no-print" id="quick-ing-panel" hidden>
-              <div class="table-scroll">
-                <table class="menu-table" id="quick-ing-table">
-                  <caption class="sr-only">Quick ingredient costing — add what you paid for each ingredient and how much of it goes into one portion</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Item</th>
-                      <th scope="col">Price (RM)</th>
-                      <th scope="col">Qty</th>
-                      <th scope="col">Unit</th>
-                      <th scope="col">Used / portion</th>
-                      <th scope="col" class="auto-col">Cost</th>
-                      <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
-                    </tr>
-                  </thead>
-                  <tbody id="quick-ing-rows"></tbody>
-                  <tfoot>
-                    <tr class="menu-total-row">
-                      <td colspan="5"><strong>Total</strong> <span class="toggle-hint">(per portion)</span></td>
-                      <td class="calc" id="quick-ing-total">RM0.00</td>
-                      <td class="no-print"></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-              <div class="calc-actions no-print">
-                <button type="button" id="add-quick-ing-row" class="btn btn-secondary">+ Add ingredient</button>
-              </div>
-              <p class="quick-ing-note">A lighter version of Menu Portion Creator's math, built right into this page — no Yield%/Wastage%/Inflation controls. The total updates "Ingredients &amp; packaging" above automatically. Already built this dish in Menu Portion Creator? Use "Pull from Menu Portion Creator" above instead.</p>
-            </div>
-
             <label id="sell-price-label"><span class="label-text">Selling price</span> <input type="number" id="sell-price" inputmode="decimal" min="0" step="0.01" value="12.00"></label>
 
             <h3>Fixed Costs <span class="toggle-hint">(monthly)</span></h3>
@@ -253,6 +221,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="interactive-costing-analysis.js?v=7" defer></script>
+  <script src="interactive-costing-analysis.js?v=8" defer></script>
 </body>
 </html>
