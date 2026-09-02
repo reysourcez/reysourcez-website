@@ -138,6 +138,42 @@
 
     .fw-dish-subtotal { font-size: 0.9rem; color: var(--muted); margin: 10px 0 0; font-family: "IBM Plex Mono", monospace; }
 
+    /* Per-dish recipe breakdown — opt-in, read-only, sits under the
+       item table once someone clicks "Break down as a recipe". */
+    .fw-recipe-panel:not(:empty) { margin-top: 16px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    .fw-recipe-title { font-family: var(--font-display); font-size: 1.05rem; margin: 0 0 6px; }
+    .fw-recipe-disclaimer { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
+    .fw-recipe-ingredients { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+    .fw-recipe-ingredients li { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+    .fw-recipe-ing-name { font-weight: 600; flex: 1; }
+    .fw-recipe-ing-qty { color: var(--muted); }
+    .fw-recipe-ing-price { font-family: "IBM Plex Mono", monospace; }
+    .fw-recipe-total { font-size: 0.92rem; margin: 0; }
+    .fw-recipe-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
+
+    /* Nutritional balance, Vitamins/minerals/fiber, and How this fits
+       your day start collapsed once revealed — the summary strip up
+       top already gives the headline, so these are opt-in detail
+       rather than more mandatory scrolling. Native <details> instead
+       of a hand-rolled JS accordion: free keyboard support, no extra
+       ARIA bookkeeping, and it degrades sensibly if JS is slow to
+       load. Closed <details> content is display:none by default in
+       every browser except for <summary> itself -- the print override
+       below undoes that specifically for printing, so a saved PDF
+       always shows everything regardless of what was expanded on
+       screen when "Save as PDF" was clicked. */
+    .fw-collapsible-summary { cursor: pointer; list-style: none; padding: 4px 0; }
+    .fw-collapsible-summary::-webkit-details-marker { display: none; }
+    .fw-collapsible-summary h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+    .fw-collapsible-summary h2::after { content: '\25be'; font-size: 0.65em; color: var(--muted); position: relative; top: -1px; transition: transform 0.15s ease; }
+    .fw-collapsible[open] .fw-collapsible-summary h2::after { transform: rotate(180deg); }
+    .fw-collapsible-summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .fw-collapsible-body { padding-top: 16px; }
+    @media print {
+      .fw-collapsible-body { display: block !important; }
+      .fw-collapsible-summary h2::after { display: none; }
+    }
+
     @media (max-width: 800px) {
       .fw-price-row { flex-direction: column; align-items: stretch; }
     }
@@ -243,13 +279,22 @@
             <span class="result-label">Typical market price<span class="tooltip-icon" data-tooltip="Gemini's rough estimate of what a similar portion typically costs at a Malaysian hawker stall or casual eatery — a ballpark to compare against what you paid, not a live price lookup">?</span></span>
             <span class="result-value" id="fw-market-price">Analyze a dish to see this</span>
           </div>
+          <div class="result-card" id="fw-ingredient-cost-card" style="grid-column: span 2;" hidden>
+            <span class="result-label">Ingredient-cost fair price<span class="tooltip-icon" data-tooltip="A supply-side estimate: standard ingredients for this recipe at average Malaysian prices, grossed up by the F&B industry's common ~30% ingredient-cost structure. From the optional 'Break down as a recipe' button on a dish, separate from the typical market price above.">?</span></span>
+            <span class="result-value" id="fw-ingredient-fair-price">—</span>
+          </div>
           <div class="result-card" id="fw-rating-card" style="grid-column: span 2;">
             <span class="result-label">Value rating</span>
             <span class="fw-rating-badge" id="fw-rating-badge">Add a price above</span>
           </div>
         </div>
+      </div>
+    </section>
 
-        <h2 style="margin-top:32px;">Nutritional balance</h2>
+    <!-- ============ NUTRITIONAL BALANCE (collapsible — detail, not headline) ============ -->
+    <details class="calc-panel fw-collapsible" id="fw-macro-section" hidden>
+      <summary class="fw-collapsible-summary"><h2>Nutritional balance</h2></summary>
+      <div class="wrap fw-collapsible-body">
         <p class="structure-note">Share of calories from each macronutrient, summed across every dish. Fiber is part of total carbs (as on a nutrition label), shown separately below as a reference figure rather than its own segment.</p>
         <div class="fw-macro-legend">
           <span><i class="legend-swatch fw-seg-protein"></i>Protein</span>
@@ -258,8 +303,13 @@
         </div>
         <div class="structure-bar" id="fw-macro-bar" style="flex: 0 0 300px;"></div>
         <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
+      </div>
+    </details>
 
-        <h2 style="margin-top:32px;">Vitamins, minerals &amp; fiber</h2>
+    <!-- ============ VITAMINS, MINERALS & FIBER (collapsible — detail, not headline) ============ -->
+    <details class="calc-panel fw-collapsible" id="fw-vitamins-section" hidden>
+      <summary class="fw-collapsible-summary"><h2>Vitamins, minerals &amp; fiber</h2></summary>
+      <div class="wrap fw-collapsible-body">
         <div class="fw-standard-toggle no-print" role="tablist" aria-label="Reference standard">
           <span class="fw-standard-toggle-label">Standard:</span>
           <button type="button" class="fw-standard-tab is-active" data-standard="malaysia">Malaysia (NRV)</button>
@@ -268,12 +318,12 @@
         <p class="structure-note">A rough read on which vitamins, minerals, and fiber this meal looks like a meaningful source of, is light on, or runs high in — summed across every dish, checked against whichever standard is selected above (this also sets the BMI bands in "How this fits your day" below). Suggestions are general food ideas, not a diet plan. General-purpose AI models are genuinely worse at estimating micronutrients specifically, not just being cautious, so treat any tag or suggestion here as a rough signal.</p>
         <div id="fw-micronutrients"></div>
       </div>
-    </section>
+    </details>
 
-    <!-- ============ CALORIE FIT (BMR/TDEE + BMI, both standard-aware; independent Mifflin-St Jeor formula) ============ -->
-    <section class="calc-panel" id="fw-calorie-section" hidden>
-      <div class="wrap">
-        <h2>How this fits your day</h2>
+    <!-- ============ CALORIE FIT (BMR/TDEE + BMI, both standard-aware; independent Mifflin-St Jeor formula) — collapsible ============ -->
+    <details class="calc-panel fw-collapsible" id="fw-calorie-section" hidden>
+      <summary class="fw-collapsible-summary"><h2>How this fits your day</h2></summary>
+      <div class="wrap fw-collapsible-body">
         <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
 
         <div class="fw-calorie-toggle no-print" role="tablist">
@@ -327,7 +377,7 @@
           </div>
         </div>
       </div>
-    </section>
+    </details>
 
   </main>
 
@@ -338,6 +388,6 @@
   </footer>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=10" defer></script>
+  <script src="food-worth-calculator.js?v=11" defer></script>
 </body>
 </html>

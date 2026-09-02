@@ -47,23 +47,49 @@
    St Jeor) is a physiological formula, not a policy figure, so it
    doesn't change by country the way the nutrient/BMI bands do.
 
+   Recipe breakdown (analyzeRecipe() / runRecipeBreakdown()) is a
+   genuinely separate Gemini call, opt-in per dish via its own button
+   — not folded into the main analyzePhoto() schema, because it's a
+   different kind of task (general recipe/pricing knowledge, not
+   photo-precision estimation) that most analyses will never touch,
+   so it shouldn't cost every visitor extra latency/tokens by default.
+   Its result (an ingredient cost) is stored in its own WeakMap
+   (dishRecipeCost) and follows the exact same dish -> sum -> render
+   shape as typical price. computeImpliedFairPrice() grosses that sum
+   up via the F&B industry's ~30% ingredient-cost-structure benchmark
+   — cost \u00f7 target, not cost \u00d7 markup — deliberately never
+   merged into computeValueRating()'s own rating; paid price, typical
+   market price, and the ingredient-cost fair price are three
+   independent reference points, not one combined score.
+
+   Nutritional balance, Vitamins/minerals/fiber, and How this fits
+   your day are <details> elements, not <section>s — they start
+   collapsed once revealed (see runAnalysis()'s reveal block), since
+   the summary strip at the top already carries the headline. Total
+   food value and What did it cost stay always-expanded as the
+   primary, most-wanted numbers. See the .fw-collapsible CSS comment
+   in the HTML for why print gets its own override.
+
    FUTURE (KIV, architected for but not built):
      - Confirm current Malaysian NRV for Vitamin C/D against the
        gazetted Fifth A Schedule text directly, and for Potassium and
        Sodium if Malaysia ever publishes a distinct %NRV instead of
        flat mg thresholds for those two — dvMy is a single number per
        row, so this is a data fix, not a structural change.
-     - Rating v2: computeValueRating() already isolates the rating
-       formula in one pure function; folding in the typical-market-
-       price range as a second signal is an extension of that
-       function's inputs, not a rewrite.
+     - Editable recipe ingredients (adjust a price Gemini got wrong,
+       the same way item rows are already editable) — would mean
+       recipePanel's rendered list needs inputs instead of plain
+       text, and dishRecipeCost recomputed on edit like getDishTotals
+       already does for items.
      - Live market pricing (an actual price dataset/API) instead of
-       Gemini's own estimate, if the estimate proves too rough in
-       practice — dishTypicalPrice is already its own WeakMap, so
-       swapping the source only touches runAnalysis().
+       Gemini's own estimate, for either typical price or ingredient
+       costs, if the estimates prove too rough in practice —
+       dishTypicalPrice and dishRecipeCost are already their own
+       WeakMaps, so swapping the source only touches runAnalysis()/
+       runRecipeBreakdown().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-01-v7-pdf-summary-strip');
+console.info('[Food Worth Calculator] script build: 2026-09-02-v8-recipe-breakdown-collapsible');
 
 /* ================= CONFIG ================= */
 
@@ -104,6 +130,17 @@ const MICRONUTRIENT_FIELDS = [
 ];
 const EMPTY_MICRONUTRIENTS = Object.fromEntries(MICRONUTRIENT_FIELDS.map((f) => [f.key, 0]));
 const EMPTY_TYPICAL_PRICE = { low: 0, high: 0 };
+const EMPTY_RECIPE = { recognized: false, recipeName: '', ingredients: [], totalCost: 0 };
+
+// The F&B industry's common rule-of-thumb ingredient-cost structure
+// — a business targeting roughly this share of its selling price
+// going to ingredients is a widely used benchmark, not something
+// specific to any one dish. Used only to gross a recipe's ingredient
+// cost up into an implied "fair" selling price: cost \u00f7 target,
+// the same target \u00f7 (1 \u2212 rate) shape already used for SST/
+// marketplace fees elsewhere on the site, simplified since there's
+// just the one rate here rather than several stacked ones.
+const INGREDIENT_COST_TARGET_PCT = 0.30;
 
 // Fiber isn't part of the Worker's micronutrients object (it's
 // already tracked per-item as fiber_g and summed into mealTotals.fiber
@@ -275,6 +312,37 @@ async function analyzePhoto(base64Image) {
   };
 }
 
+// Same endpoint, same photo already sitting in memory — just a
+// different mode flag, so the Worker runs a different prompt/schema
+// against it (see food-worth-proxy-worker.js). Opt-in only: this
+// never runs as part of the normal analyzePhoto() flow.
+async function analyzeRecipe(base64Image) {
+  let response;
+  try {
+    response = await fetch(PROXY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Image, mime_type: 'image/jpeg', mode: 'recipe' }),
+    });
+  } catch (e) {
+    throw new Error('Could not reach the analysis service \u2014 check PROXY_ENDPOINT is correct and that this page\u2019s URL is in the Worker\u2019s ALLOWED_ORIGINS.');
+  }
+
+  let data;
+  try { data = await response.json(); }
+  catch (e) { throw new Error('Got an unreadable response from the analysis service. Try again.'); }
+
+  if (!response.ok) {
+    throw new Error(data.error || ('Recipe breakdown failed (error ' + response.status + '). Try again.'));
+  }
+  return {
+    recognized: !!data.recognized,
+    recipeName: typeof data.recipe_name === 'string' ? data.recipe_name : '',
+    ingredients: Array.isArray(data.ingredients) ? data.ingredients : [],
+    totalCost: numOrZero(Number(data.total_ingredient_cost_myr)),
+  };
+}
+
 /* ================= MODEL: item rows (scoped to one dish panel) ================= */
 
 let itemRowIdCounter = 0;
@@ -351,6 +419,19 @@ function computeValueRating(totals, price, benchmarkPer100kcal) {
   else if (ratio <= 1.25) label = 'Fair value';
   else label = 'Pricey';
   return { costPer100kcal, costPer100g, label };
+}
+
+// Grosses an ingredient cost up into an implied "fair" selling price
+// at the standard 30% ingredient-cost structure — a supply-side
+// estimate (what a healthily-run stall would need to charge),
+// deliberately kept separate from computeValueRating's own rating
+// (which is demand-side, benchmarked against the user's own sense of
+// fair value) and from Gemini's typical-market-price estimate
+// (also demand-side, benchmarked against what people actually pay).
+// All three are shown as independent reference points, not merged
+// into one score.
+function computeImpliedFairPrice(ingredientCost) {
+  return ingredientCost > 0 ? ingredientCost / INGREDIENT_COST_TARGET_PCT : 0;
 }
 
 function computeMacroMix(totals) {
@@ -473,6 +554,51 @@ function renderRating(rating) {
 function renderMarketPrice(price) {
   const el = document.getElementById('fw-market-price');
   el.textContent = formatPriceRange(price) || 'Analyze a dish to see this';
+}
+
+// The meal-level ingredient-cost-structure card — only appears once
+// at least one dish has an ingredient cost to show (i.e. someone has
+// opted into "Break down as a recipe" on at least one dish and it
+// came back recognized). Stays hidden otherwise rather than showing
+// an empty placeholder, since this is an opt-in feature most
+// analyses won't have touched.
+function renderIngredientFairPrice(ingredientCost) {
+  const card = document.getElementById('fw-ingredient-cost-card');
+  const el = document.getElementById('fw-ingredient-fair-price');
+  if (!card || !el) return;
+  if (!(ingredientCost > 0)) {
+    card.hidden = true;
+    return;
+  }
+  card.hidden = false;
+  el.textContent = formatRM(computeImpliedFairPrice(ingredientCost));
+}
+
+// Renders one dish's recipe breakdown into its own panel. errorMessage
+// takes priority (a failed call); otherwise recognized=false gets a
+// plain "didn't match" message rather than an empty ingredient list,
+// so it reads as an explanation, not a bug.
+function renderRecipePanel(el, result, errorMessage) {
+  if (errorMessage) {
+    el.innerHTML = `<p class="fw-status is-error">${escapeHTML(errorMessage)}</p>`;
+    return;
+  }
+  if (!result || !result.recognized || !result.ingredients.length) {
+    el.innerHTML = '<p class="fw-recipe-empty">This didn\u2019t match a common recipe closely enough to break down \u2014 works best on a single standard dish, like chicken rice or nasi lemak.</p>';
+    return;
+  }
+  const rows = result.ingredients.map((ing) => `<li>
+      <span class="fw-recipe-ing-name">${escapeHTML(ing.name)}</span>
+      <span class="fw-recipe-ing-qty">${escapeHTML(ing.quantity || '')}</span>
+      <span class="fw-recipe-ing-price">${formatRM(numOrZero(Number(ing.price_myr)))}</span>
+    </li>`).join('');
+  const fairPrice = computeImpliedFairPrice(result.totalCost);
+  el.innerHTML = `
+    <h3 class="fw-recipe-title">${escapeHTML(result.recipeName || 'This dish')} \u2014 standard recipe</h3>
+    <p class="fw-recipe-disclaimer">A rough breakdown based on how this dish is typically made and average Malaysian ingredient prices \u2014 not this specific plate's actual recipe or sourcing, so treat these as a ballpark for comparison, not an exact figure.</p>
+    <ul class="fw-recipe-ingredients">${rows}</ul>
+    <p class="fw-recipe-total">Ingredient cost: <strong>${formatRM(result.totalCost)}</strong> \u00b7 Implied fair price at a ${Math.round(INGREDIENT_COST_TARGET_PCT * 100)}% ingredient-cost structure: <strong>${formatRM(fairPrice)}</strong></p>
+  `;
 }
 
 // Reads whichever calorie-need mode is active. Manual mode is just
@@ -683,6 +809,8 @@ async function runAnalysis(panel) {
       result.items.forEach((it) => createItemRow(panel, it));
       panel.querySelector('.fw-dish-results').hidden = false;
       document.getElementById('fw-meal-section').hidden = false;
+      document.getElementById('fw-macro-section').hidden = false;
+      document.getElementById('fw-vitamins-section').hidden = false;
       document.getElementById('fw-calorie-section').hidden = false;
       recalculateDish(panel);
       recalculateMeal();
@@ -699,11 +827,43 @@ async function runAnalysis(panel) {
 
 /* ================= CONTROLLER: meal-level (sums every dish) ================= */
 
+async function runRecipeBreakdown(panel) {
+  const base64 = dishImageData.get(panel);
+  const recipePanel = panel.querySelector('.fw-recipe-panel');
+  if (!base64 || !recipePanel) return; // shouldn't happen — button only shows after a successful photo analysis
+
+  if (getUsageToday() >= MAX_ANALYSES_PER_DAY) {
+    recipePanel.hidden = false;
+    renderRecipePanel(recipePanel, null, 'This browser has hit today\u2019s analysis limit. Try again tomorrow.');
+    return;
+  }
+
+  const btn = panel.querySelector('.fw-recipe-btn');
+  btn.disabled = true;
+  btn.textContent = 'Breaking down\u2026';
+  recipePanel.hidden = false;
+  recipePanel.innerHTML = '<p class="fw-status">Checking if this matches a common recipe\u2026</p>';
+
+  try {
+    const result = await analyzeRecipe(base64);
+    recordUsage();
+    dishRecipeCost.set(panel, result.recognized ? result.totalCost : 0);
+    renderRecipePanel(recipePanel, result);
+    recalculateMeal();
+  } catch (err) {
+    renderRecipePanel(recipePanel, null, err.message || 'Something went wrong. Try again.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Break down as a recipe';
+  }
+}
+
 function recalculateMeal() {
   const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
   const mealTotals = { weight: 0, calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
   const mealMicros = { ...EMPTY_MICRONUTRIENTS };
   const mealPrice = { low: 0, high: 0 };
+  let mealIngredientCost = 0;
   panels.forEach((panel) => {
     if (panel.dataset.included === 'false') return; // excluded via its tab checkbox
     const dishTotals = getDishTotals(panel);
@@ -720,6 +880,8 @@ function recalculateMeal() {
     const dishPrice = dishTypicalPrice.get(panel) || EMPTY_TYPICAL_PRICE;
     mealPrice.low += numOrZero(dishPrice.low);
     mealPrice.high += numOrZero(dishPrice.high);
+
+    mealIngredientCost += numOrZero(dishRecipeCost.get(panel));
   });
 
   const price = num(document.getElementById('fw-price'));
@@ -732,6 +894,7 @@ function recalculateMeal() {
   renderTotals(mealTotals);
   renderRating(rating);
   renderMarketPrice(mealPrice);
+  renderIngredientFairPrice(mealIngredientCost);
   renderMacroBar(mix);
   renderMacroFiberNote(mealTotals);
   renderMicronutrients(coverage);
@@ -747,6 +910,7 @@ function recalculateMeal() {
 const dishImageData = new WeakMap();
 const dishMicronutrients = new WeakMap();
 const dishTypicalPrice = new WeakMap();
+const dishRecipeCost = new WeakMap();
 
 let dishIdCounter = 0;
 
@@ -796,8 +960,10 @@ function createDishPanel() {
       </div>
       <div class="calc-actions no-print">
         <button type="button" class="btn btn-secondary fw-add-item">+ Add item</button>
+        <button type="button" class="btn btn-secondary fw-recipe-btn">Break down as a recipe</button>
       </div>
       <p class="fw-dish-subtotal"></p>
+      <div class="fw-recipe-panel" hidden></div>
     </div>
   `;
   document.getElementById('fw-dish-panels').appendChild(panel);
@@ -810,6 +976,7 @@ function createDishPanel() {
     recalculateDish(panel);
     recalculateMeal();
   });
+  panel.querySelector('.fw-recipe-btn').addEventListener('click', () => runRecipeBreakdown(panel));
   panel.querySelector('.fw-dish-name').addEventListener('input', renderDishTabs);
   panel.querySelector('.fw-remove-dish').addEventListener('click', () => {
     const wasActive = !panel.hidden;
