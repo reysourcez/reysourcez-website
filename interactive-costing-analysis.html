@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=11">
+  <link rel="stylesheet" href="styles.css?v=12">
 </head>
 <body>
 
@@ -73,7 +73,7 @@
 
         <div class="connector-panel no-print">
           <div class="calc-actions">
-            <span class="connector-label">Pull from<span class="tooltip-icon" data-tooltip="Opens in a new tab, stays linked while both are open — nothing is saved either way">?</span></span>
+            <span class="connector-label">Pull from<span class="tooltip-icon" data-tooltip="Loads right here, further down this page — nothing is saved either way">?</span></span>
             <button type="button" class="btn btn-secondary connector-btn connector-btn-menu" data-open-tool="menu-calculator">Menu Portion Creator</button>
             <button type="button" class="btn btn-secondary connector-btn connector-btn-overhead" data-open-tool="overhead-manpower-calculator">Overhead &amp; Manpower</button>
             <button type="button" class="btn btn-secondary connector-btn connector-btn-printing" data-open-tool="printing-calculator">Printing Calculator</button>
@@ -192,6 +192,20 @@
           <p class="structure-note">Reflects your cost structure <em>at the current sales volume above</em> — fixed costs spread over fewer portions cost more per portion, so this shifts as you move the slider.</p>
           <div class="structure-bars" id="structure-bars"><!-- populated by JS --></div>
         </div>
+
+        <!-- Loaded by clicking a "Pull from" button above — fetches
+             that tool's own page, drops its working area in here (see
+             rzLoadToolIntoDock in the JS), and runs its actual script
+             against it. Sits after Cost Structure on purpose: opening
+             it only pushes the footer down, never the results/chart/
+             structure above, since those come earlier in the page. -->
+        <div class="tool-dock no-print" id="tool-dock" hidden>
+          <div class="tool-dock-header">
+            <span class="tool-dock-title" id="tool-dock-title"></span>
+            <button type="button" class="tool-dock-close" id="tool-dock-close" aria-label="Close this panel">&times;</button>
+          </div>
+          <div class="tool-dock-body" id="tool-dock-body"></div>
+        </div>
       </div>
     </section>
 
@@ -231,8 +245,14 @@
     </div>
   </footer>
 
+  <!-- Shows once the tool dock (above) is open — jumps back up to
+       the results instead of scrolling manually. Nothing like the
+       old switcher underneath: no channel, no permissions, no other
+       tabs to track, just scrollIntoView on a click. -->
+  <button type="button" id="rz-back-to-top" class="no-print" hidden>&uarr; Back to analysis</button>
+
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="interactive-costing-analysis.js?v=6" defer></script>
+  <script src="interactive-costing-analysis.js?v=7" defer></script>
 </body>
 </html>

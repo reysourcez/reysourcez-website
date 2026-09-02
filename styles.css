@@ -876,31 +876,33 @@ th.sortable:hover { color: var(--accent-dark); }
 .connector-btn-printing:hover, .connector-btn-printing.is-active { border-color: var(--printing-accent); color: var(--printing-accent); }
 .connector-btn-printing.is-active { background: var(--printing-accent); color: #fff; }
 
-/* ---- Inline tool overlay ---- */
-.rz-overlay { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 24px; }
-.rz-overlay-backdrop { position: absolute; inset: 0; background: rgba(22, 38, 31, 0.45); border: none; }
-.rz-overlay-panel {
-  position: relative;
-  background: var(--surface);
+/* ---- Tool dock ----
+   Loads another tool's real page inline (see rzLoadToolIntoDock in
+   the JS) instead of opening it in a new tab. Sits in the normal
+   page flow after Cost Structure, so opening it only pushes the
+   footer down — replaces the old fixed/backdrop modal overlay this
+   site briefly tried (GitHub Pages blocks iframing outright, so
+   that approach never worked at all); the header/title/close-button
+   treatment and per-tool theme colors below are carried over from
+   that attempt since the LOOK was fine, only the mechanism wasn't. */
+.tool-dock {
+  margin-top: 40px;
   border-radius: 14px;
   border-top: 6px solid var(--accent);
-  width: min(1000px, 100%);
-  height: min(80vh, 900px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  background: var(--surface);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+  scroll-margin-top: 90px; /* clears the sticky header when scrolled into view */
 }
-.rz-overlay-header {
+.tool-dock-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 18px;
+  padding: 14px 20px;
   background: var(--accent-soft);
-  flex-shrink: 0;
+  border-radius: 8px 8px 0 0;
 }
-.rz-overlay-title { font-family: var(--font-display); font-weight: 600; font-size: 1.1rem; color: var(--ink); }
-.rz-overlay-close {
+.tool-dock-title { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; color: var(--ink); }
+.tool-dock-close {
   background: none;
   border: none;
   font-size: 1.6rem;
@@ -910,34 +912,50 @@ th.sortable:hover { color: var(--accent-dark); }
   padding: 2px 10px;
   border-radius: 6px;
 }
-.rz-overlay-close:hover { background: rgba(0,0,0,0.08); }
-.rz-overlay-close:focus-visible { outline: 3px solid var(--ink); outline-offset: 1px; }
-.rz-overlay-frame { flex: 1; border: none; width: 100%; }
+.tool-dock-close:hover { background: rgba(0,0,0,0.08); }
+.tool-dock-close:focus-visible { outline: 3px solid var(--ink); outline-offset: 1px; }
+.tool-dock-body { padding: 8px 20px 24px; }
+.tool-dock-status { color: var(--muted); text-align: center; padding: 40px 20px; }
+.tool-dock-status.is-error { color: #C0392B; }
 
-.rz-overlay-panel.theme-menu { border-top-color: var(--menu-accent); }
-.rz-overlay-panel.theme-menu .rz-overlay-header { background: var(--menu-accent-soft); }
-.rz-overlay-panel.theme-overhead { border-top-color: var(--overhead-accent); }
-.rz-overlay-panel.theme-overhead .rz-overlay-header { background: var(--overhead-accent-soft); }
-.rz-overlay-panel.theme-printing { border-top-color: var(--printing-accent); }
-.rz-overlay-panel.theme-printing .rz-overlay-header { background: var(--printing-accent-soft); }
+.tool-dock.theme-menu { border-top-color: var(--menu-accent); }
+.tool-dock.theme-menu .tool-dock-header { background: var(--menu-accent-soft); }
+.tool-dock.theme-overhead { border-top-color: var(--overhead-accent); }
+.tool-dock.theme-overhead .tool-dock-header { background: var(--overhead-accent-soft); }
+.tool-dock.theme-printing { border-top-color: var(--printing-accent); }
+.tool-dock.theme-printing .tool-dock-header { background: var(--printing-accent-soft); }
 
-@media (max-width: 800px) {
-  .rz-overlay { padding: 0; }
-  .rz-overlay-panel { width: 100%; height: 100%; border-radius: 0; }
-}
 @media print {
-  .rz-overlay { display: none !important; }
+  .tool-dock { display: none !important; }
 }
 
-/* ---- Embedded mode (a tool loaded inside the overlay above,
-   via ?embed=1) — strips it down to just the working parts. ---- */
-.rz-embedded .site-header,
-.rz-embedded .site-footer,
-.rz-embedded #rz-switcher,
-.rz-embedded .rz-embed-hide {
-  display: none !important;
+/* ---- "Back to analysis" floating button ----
+   Appears only while the tool dock above is open. Deliberately
+   simple compared to the old floating switcher this replaced —
+   one button, one action (scroll up), no channel/permissions/other-
+   tabs tracking to go wrong. */
+#rz-back-to-top {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.25);
 }
-.rz-embedded main { padding-top: 4px; }
+#rz-back-to-top:hover { background: var(--accent-dark); }
+#rz-back-to-top:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media print { #rz-back-to-top { display: none !important; } }
 
 /* Inputs + results grid */
 .ica-grid {

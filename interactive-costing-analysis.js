@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-01-quick-ingredient-costing');
+console.info('[Interactive Costing Analysis] script build: 2026-09-01-tool-dock');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -522,39 +522,191 @@ function markSynced(labelSelector, sourceLabel) {
   badge.textContent = '\u2190 ' + sourceLabel;
 }
 
+// Same payload shape either way a number reaches this page: over
+// BroadcastChannel from a separate tab (initSync below), or handed
+// directly from a tool running inside the tool dock (see
+// rzRunIsolated further down) — this is the one place that actually
+// knows what to do with that payload, so both paths share it rather
+// than duplicating the field-mapping twice.
+function handleSyncPayload(data) {
+  if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
+    document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
+    markSynced('#ing-cost-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+    if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
+      document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
+      markSynced('#sell-price-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+    }
+    recalculate();
+  }
+  if (data.source === 'printing-calculator' && typeof data.costPerPortion === 'number') {
+    document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
+    markSynced('#ing-cost-label', 'Printing Calculator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+    if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
+      document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
+      markSynced('#sell-price-label', 'Printing Calculator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+    }
+    recalculate();
+  }
+  if (data.source === 'overhead-manpower-calculator') {
+    if (typeof data.overheadMonthly === 'number') {
+      document.getElementById('overhead-cost').value = data.overheadMonthly.toFixed(2);
+      markSynced('#overhead-cost-label', 'Overhead & Manpower');
+    }
+    if (typeof data.manpowerMonthly === 'number') {
+      document.getElementById('manpower-cost').value = data.manpowerMonthly.toFixed(2);
+      markSynced('#manpower-cost-label', 'Overhead & Manpower');
+    }
+    recalculate();
+  }
+}
+
 function initSync() {
   if (typeof rzListen !== 'function') return;
-  rzListen((data) => {
-    if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
-      document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
-      markSynced('#ing-cost-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
-      if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
-        document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
-        markSynced('#sell-price-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
-      }
-      recalculate();
-    }
-    if (data.source === 'printing-calculator' && typeof data.costPerPortion === 'number') {
-      document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
-      markSynced('#ing-cost-label', 'Printing Calculator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
-      if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
-        document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
-        markSynced('#sell-price-label', 'Printing Calculator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
-      }
-      recalculate();
-    }
-    if (data.source === 'overhead-manpower-calculator') {
-      if (typeof data.overheadMonthly === 'number') {
-        document.getElementById('overhead-cost').value = data.overheadMonthly.toFixed(2);
-        markSynced('#overhead-cost-label', 'Overhead & Manpower');
-      }
-      if (typeof data.manpowerMonthly === 'number') {
-        document.getElementById('manpower-cost').value = data.manpowerMonthly.toFixed(2);
-        markSynced('#manpower-cost-label', 'Overhead & Manpower');
-      }
-      recalculate();
-    }
+  rzListen(handleSyncPayload);
+}
+
+/* ================= TOOL DOCK (fetch-inject-execute) =================
+   Loads another tool's actual page — its real markup AND its real
+   script — into a dock near the bottom of this page, instead of
+   opening it in a new tab. Two real problems had to be solved for
+   this to actually work:
+
+   1. Every tool page independently declares things like
+      `let rzInitialized`, `function init()`, `function formatRM()`
+      at the top level (confirmed by checking all four files
+      directly). Paste another tool's script onto this page as-is
+      and the second declaration throws — "already declared" — and
+      NONE of that tool's code runs, buttons just sit there dead.
+      Fixed by wrapping the fetched script in its own IIFE (its own
+      private bubble) before running it, so nothing it declares can
+      collide with anything already on this page.
+
+   2. Cross-tab sync runs over BroadcastChannel, which by design
+      never delivers a message back to the channel it came from —
+      and an injected tool shares this page's ONE channel with this
+      page's own listener (see rzGetChannel in costing-sync.js,
+      which caches one channel on window). So an injected tool's
+      normal rzBroadcast() calls would just vanish, silently. Fixed
+      by shadowing `rzBroadcast` INSIDE that same IIFE bubble, so
+      the call still happens exactly like the tool's own code
+      expects, but lands directly on handleSyncPayload above instead
+      of going out over a channel that can't hear itself.
+
+   Only one tool lives in the dock at a time — opening a different
+   one discards the old DOM (and its listeners, via normal garbage
+   collection) and loads the new one fresh. Re-clicking the tool
+   that's ALREADY open just scrolls back down to it, rather than
+   reloading and losing whatever's been typed in there.
+
+   Needs an actual server — this page fetching its own sibling pages
+   is blocked by the browser if you just double-click the HTML file
+   open (file://). Test this specific feature on a real local server
+   or the deployed site, not by opening the file directly.
+   ============================================================ */
+
+const TOOL_DOCK_CONFIG = {
+  'menu-calculator': { scriptUrl: 'menu-calculator.js', theme: 'theme-menu' },
+  'overhead-manpower-calculator': { scriptUrl: 'overhead-manpower-calculator.js', theme: 'theme-overhead' },
+  'printing-calculator': { inlineScript: true, theme: 'theme-printing' },
+};
+
+// Printing Calculator keeps its logic inline in the page rather than
+// its own .js file, so its script has to be pulled out of the
+// fetched HTML instead of fetched separately. The OTHER script tags
+// on that page (costing-sync.js, nav-dropdown.js, both with a src
+// attribute) are deliberately skipped — this page already has its
+// own copies of those loaded.
+function rzExtractInlineScript(doc) {
+  const found = Array.from(doc.querySelectorAll('script')).find((s) => !s.src);
+  return found ? found.textContent : '';
+}
+
+function rzRunIsolated(scriptText, sourceKey) {
+  const scriptEl = document.createElement('script');
+  scriptEl.textContent =
+    '(function() {\n' +
+    '  const rzBroadcast = function(payload) { handleSyncPayload(Object.assign({ source: "' + sourceKey + '" }, payload)); };\n' +
+    scriptText + '\n' +
+    '  if (typeof init === "function") init();\n' +
+    '})();';
+  document.getElementById('tool-dock-body').appendChild(scriptEl);
+}
+
+function updateBackToTopVisibility() {
+  document.getElementById('rz-back-to-top').hidden = document.getElementById('tool-dock').hidden;
+}
+
+// Highlights whichever connector button matches the tool currently
+// open in the dock — .is-active + the per-tool accent color already
+// existed in styles.css for this, just wasn't wired up to anything yet.
+function updateConnectorActiveState(activeKey) {
+  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.openTool === activeKey);
   });
+}
+
+async function rzLoadToolIntoDock(key) {
+  if (typeof RZ_TOOLS === 'undefined' || !RZ_TOOLS[key]) return;
+  const dockConfig = TOOL_DOCK_CONFIG[key];
+  const tool = RZ_TOOLS[key];
+  const dock = document.getElementById('tool-dock');
+  const body = document.getElementById('tool-dock-body');
+  const titleEl = document.getElementById('tool-dock-title');
+
+  if (dock.dataset.openTool === key && !dock.hidden) {
+    dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  dock.hidden = false;
+  dock.className = 'tool-dock ' + dockConfig.theme;
+  dock.dataset.openTool = key;
+  titleEl.textContent = tool.label;
+  body.innerHTML = '<p class="tool-dock-status">Loading\u2026</p>';
+  updateBackToTopVisibility();
+  updateConnectorActiveState(key);
+  dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const html = await fetch(tool.url).then((r) => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    });
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const main = doc.querySelector('main');
+    if (!main) throw new Error('couldn\u2019t find that page\u2019s content');
+
+    // Drop the marketing intro + "how it's calculated" footer note
+    // (already flagged rz-embed-hide in the source HTML from an
+    // earlier, different attempt at this — reused here) and this
+    // page's own switcher mount point, which the fetched copy still
+    // has even though it's now unused.
+    main.querySelectorAll('.rz-embed-hide, #rz-switcher').forEach((el) => el.remove());
+
+    const scriptText = dockConfig.inlineScript
+      ? rzExtractInlineScript(doc)
+      : await fetch(dockConfig.scriptUrl).then((r) => r.text());
+
+    body.innerHTML = '';
+    Array.from(main.children).forEach((section) => {
+      // Unwrap this section's own .wrap div — it exists to center
+      // and pad content on that tool's OWN full page, which would
+      // just double up inside .tool-dock-body's own padding here.
+      // Keep the <section> itself: its class (.calc-panel /
+      // .menu-builder) carries real spacing/divider styling, not
+      // just centering.
+      const wrap = section.querySelector(':scope > .wrap');
+      if (wrap) {
+        while (wrap.firstChild) section.insertBefore(wrap.firstChild, wrap);
+        wrap.remove();
+      }
+      body.appendChild(section);
+    });
+
+    rzRunIsolated(scriptText, key);
+  } catch (err) {
+    body.innerHTML = '<p class="tool-dock-status is-error">Couldn\u2019t load this here (' + err.message + '). <a href="' + tool.url + '" target="_blank" rel="noopener">Open ' + tool.label + ' in a new tab instead</a>.</p>';
+  }
 }
 
 let rzInitialized = false;
@@ -578,9 +730,19 @@ function init() {
   });
 
   document.querySelectorAll('[data-open-tool]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (typeof rzOpenOrFocusTool === 'function') rzOpenOrFocusTool(btn.dataset.openTool);
-    });
+    btn.addEventListener('click', () => rzLoadToolIntoDock(btn.dataset.openTool));
+  });
+
+  document.getElementById('tool-dock-close').addEventListener('click', () => {
+    document.getElementById('tool-dock').hidden = true;
+    document.getElementById('tool-dock-body').innerHTML = '';
+    document.getElementById('tool-dock').dataset.openTool = '';
+    updateBackToTopVisibility();
+    updateConnectorActiveState(null);
+  });
+
+  document.getElementById('rz-back-to-top').addEventListener('click', () => {
+    document.getElementById('ica-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   document.getElementById('quick-ing-toggle').addEventListener('click', toggleQuickPanel);
