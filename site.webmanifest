@@ -1,0 +1,10 @@
+{
+  "name": "Reysourcez Enterprise",
+  "short_name": "Reysourcez",
+  "icons": [
+    { "src": "/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ],
+  "theme_color": "#1F6F5C",
+  "background_color": "#EEF0EA"
+}

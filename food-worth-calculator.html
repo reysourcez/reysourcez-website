@@ -6,6 +6,11 @@
   <title>Reysourcez Enterprise — Food Worth Calculator</title>
   <meta name="description" content="Upload a photo of a meal and get an instant breakdown — item by item weight, calories, and nutrition — plus a value-for-money rating against the price you paid.">
 
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -46,45 +51,20 @@
       font-family: "IBM Plex Mono", monospace; font-size: 0.95rem; text-align: right;
     }
     .fw-price-field input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    /* Nudges the eye to the one input that actually drives the rating
-       below — fades away the moment something's typed in, since
-       :placeholder-shown only matches while the field is empty. */
-    #fw-price:placeholder-shown { background: #FFF9E6; border-color: #D4A017; }
 
     .fw-rating-badge { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; margin-top: 2px; }
-    .fw-rating-pct { font-size: 0.85rem; font-weight: 600; color: var(--muted); margin-left: 6px; }
 
-    /* Donut chart replaces the old horizontal bar so this section can
-       sit in a half-width column next to Vitamins/minerals/fiber — a
-       full-width bar wouldn't have had room to breathe there. */
-    .fw-macro-chart-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin: 16px 0; }
-    .fw-macro-chart svg { display: block; }
-    .fw-macro-chart .fw-seg-protein-stroke { stroke: var(--accent); }
-    .fw-macro-chart .fw-seg-carbs-stroke { stroke: #2E5FA3; }
-    .fw-macro-chart .fw-seg-fat-stroke { stroke: #D4A017; }
-    .fw-macro-legend { display: flex; flex-direction: column; gap: 8px; font-size: 0.85rem; color: var(--text); }
-    .fw-macro-legend span { display: flex; align-items: center; gap: 8px; }
+    .fw-macro-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.82rem; color: var(--muted); margin: 20px 0 10px; }
+    .fw-macro-legend span { display: flex; align-items: center; gap: 6px; }
     /* .legend-swatch is 14x3px by default (styles.css, chart legend) —
        overridden here to the small-square variant used by the cost
        structure legend, since that scoping is local to .structure-key
        there and wouldn't otherwise reach this page. */
-    .fw-macro-legend .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+    .fw-macro-legend .legend-swatch { width: 12px; height: 12px; border-radius: 3px; }
     .fw-seg-protein { background: var(--accent); }
     .fw-seg-carbs { background: #2E5FA3; }
     .fw-seg-fat { background: #D4A017; }
     .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
-
-    /* Nutritional balance + Vitamins/minerals/fiber side by side.
-       Each <details> here is deliberately NOT also a .calc-panel —
-       stacking two full section treatments side by side risked
-       fighting with .wrap's own centering, so this uses one shared
-       .calc-panel + .wrap for the pair, with a plain bordered box
-       per column instead. */
-    .fw-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
-    .fw-detail-grid .fw-collapsible { border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px 20px; min-width: 0; }
-    @media (max-width: 800px) {
-      .fw-detail-grid { grid-template-columns: 1fr; }
-    }
 
     /* Tag/pill treatment for the micronutrient list below — nothing
        like this exists in styles.css yet (everything reusable there
@@ -284,13 +264,7 @@
             <label for="fw-price">Price paid (RM)</label>
             <input type="number" id="fw-price" inputmode="decimal" min="0" step="0.01" placeholder="0.00">
           </div>
-          <!-- Hidden 2026-09-02 per feedback: sits at its default
-               (1.00) for almost everyone and wasn't earning its space
-               on screen. The rating calculation still reads this
-               input's current value exactly as before -- it just
-               always gets the default now. Remove `hidden` to bring
-               the control back if it's ever needed again. -->
-          <div class="fw-price-field" hidden>
+          <div class="fw-price-field">
             <label for="fw-benchmark">Your benchmark<span class="tooltip-icon" data-tooltip="What you'd consider fair value — adjust to match your own sense of local prices">?</span></label>
             <input type="number" id="fw-benchmark" inputmode="decimal" min="0" step="0.05" value="1.00">
             <span class="toggle-hint">RM per 100 kcal</span>
@@ -298,25 +272,20 @@
         </div>
 
         <div class="ica-results">
-          <!-- Hidden 2026-09-02 per feedback: too granular to earn a
-               spot next to the three headline price cards below.
-               Still computed and written to these elements every
-               recalculation -- just remove `hidden` to bring them
-               back. -->
-          <div class="result-card" hidden>
+          <div class="result-card">
             <span class="result-label">Cost per 100 kcal</span>
             <span class="result-value" id="fw-cost-per-kcal">RM0.00</span>
           </div>
-          <div class="result-card" hidden>
+          <div class="result-card">
             <span class="result-label">Cost per 100 g</span>
             <span class="result-value" id="fw-cost-per-100g">RM0.00</span>
           </div>
           <div class="result-card" id="fw-market-price-card" style="grid-column: span 2;">
-            <span class="result-label">Typical market price<span class="tooltip-icon" data-tooltip="Gemini's estimate of typical cost at a Malaysian hawker stall or eatery — not a live price lookup.">?</span></span>
+            <span class="result-label">Typical market price<span class="tooltip-icon" data-tooltip="Gemini's rough estimate of what a similar portion typically costs at a Malaysian hawker stall or casual eatery — a ballpark to compare against what you paid, not a live price lookup">?</span></span>
             <span class="result-value" id="fw-market-price">Analyze a dish to see this</span>
           </div>
           <div class="result-card" id="fw-ingredient-cost-card" style="grid-column: span 2;" hidden>
-            <span class="result-label">Ingredient-cost fair price<span class="tooltip-icon" data-tooltip="Gemini's estimate of standard ingredients at typical Malaysian prices, grossed up by a 30% cost benchmark.">?</span></span>
+            <span class="result-label">Ingredient-cost fair price<span class="tooltip-icon" data-tooltip="A supply-side estimate: standard ingredients for this recipe at average Malaysian prices, grossed up by the F&B industry's common ~30% ingredient-cost structure. From the optional 'Break down as a recipe' button on a dish, separate from the typical market price above.">?</span></span>
             <span class="result-value" id="fw-ingredient-fair-price">—</span>
           </div>
           <div class="result-card" id="fw-rating-card" style="grid-column: span 2;">
@@ -327,41 +296,38 @@
       </div>
     </section>
 
-    <!-- ============ NUTRITIONAL BALANCE + VITAMINS/MINERALS/FIBER — side by side, each independently collapsible ============ -->
-    <section class="calc-panel" id="fw-detail-section" hidden>
-      <div class="wrap">
-        <div class="fw-detail-grid">
-          <details class="fw-collapsible">
-            <summary class="fw-collapsible-summary"><h2>Nutritional balance</h2></summary>
-            <div class="fw-collapsible-body">
-              <p class="structure-note">Share of calories from each macronutrient, summed across every dish. Fiber (below) is part of total carbs, not its own slice.</p>
-              <div class="fw-macro-chart-wrap">
-                <div class="fw-macro-chart" id="fw-macro-chart"></div>
-                <div class="fw-macro-legend" id="fw-macro-legend"></div>
-              </div>
-              <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
-            </div>
-          </details>
-
-          <details class="fw-collapsible">
-            <summary class="fw-collapsible-summary"><h2>Vitamins, minerals &amp; fiber</h2></summary>
-            <div class="fw-collapsible-body">
-              <div class="fw-standard-toggle no-print" role="tablist" aria-label="Reference standard">
-                <span class="fw-standard-toggle-label">Standard:</span>
-                <button type="button" class="fw-standard-tab is-active" data-standard="malaysia">Malaysia (NRV)</button>
-                <button type="button" class="fw-standard-tab" data-standard="usa">USA (FDA)</button>
-              </div>
-              <p class="structure-note">What this meal covers, is light on, or runs high in — checked against the standard above, which also sets the BMI bands in "How this fits your day." General-purpose AI is genuinely worse at estimating micronutrients specifically, so treat any tag or suggestion as a rough signal, not a diet plan.</p>
-              <div id="fw-micronutrients"></div>
-            </div>
-          </details>
+    <!-- ============ NUTRITIONAL BALANCE (collapsible — detail, not headline) ============ -->
+    <details class="calc-panel fw-collapsible" id="fw-macro-section" hidden>
+      <summary class="fw-collapsible-summary"><h2>Nutritional balance</h2></summary>
+      <div class="wrap fw-collapsible-body">
+        <p class="structure-note">Share of calories from each macronutrient, summed across every dish. Fiber is part of total carbs (as on a nutrition label), shown separately below as a reference figure rather than its own segment.</p>
+        <div class="fw-macro-legend">
+          <span><i class="legend-swatch fw-seg-protein"></i>Protein</span>
+          <span><i class="legend-swatch fw-seg-carbs"></i>Carbs</span>
+          <span><i class="legend-swatch fw-seg-fat"></i>Fat</span>
         </div>
+        <div class="structure-bar" id="fw-macro-bar" style="flex: 0 0 300px;"></div>
+        <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
       </div>
-    </section>
+    </details>
+
+    <!-- ============ VITAMINS, MINERALS & FIBER (collapsible — detail, not headline) ============ -->
+    <details class="calc-panel fw-collapsible" id="fw-vitamins-section" hidden>
+      <summary class="fw-collapsible-summary"><h2>Vitamins, minerals &amp; fiber</h2></summary>
+      <div class="wrap fw-collapsible-body">
+        <div class="fw-standard-toggle no-print" role="tablist" aria-label="Reference standard">
+          <span class="fw-standard-toggle-label">Standard:</span>
+          <button type="button" class="fw-standard-tab is-active" data-standard="malaysia">Malaysia (NRV)</button>
+          <button type="button" class="fw-standard-tab" data-standard="usa">USA (FDA)</button>
+        </div>
+        <p class="structure-note">A rough read on which vitamins, minerals, and fiber this meal looks like a meaningful source of, is light on, or runs high in — summed across every dish, checked against whichever standard is selected above (this also sets the BMI bands in "How this fits your day" below). Suggestions are general food ideas, not a diet plan. General-purpose AI models are genuinely worse at estimating micronutrients specifically, not just being cautious, so treat any tag or suggestion here as a rough signal.</p>
+        <div id="fw-micronutrients"></div>
+      </div>
+    </details>
 
     <!-- ============ CALORIE FIT (BMR/TDEE + BMI, both standard-aware; independent Mifflin-St Jeor formula) — collapsible ============ -->
     <details class="calc-panel fw-collapsible" id="fw-calorie-section" hidden>
-      <summary class="fw-collapsible-summary"><div class="wrap"><h2>How this fits your day</h2></div></summary>
+      <summary class="fw-collapsible-summary"><h2>How this fits your day</h2></summary>
       <div class="wrap fw-collapsible-body">
         <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
 
@@ -427,6 +393,6 @@
   </footer>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=12" defer></script>
+  <script src="food-worth-calculator.js?v=11" defer></script>
 </body>
 </html>
