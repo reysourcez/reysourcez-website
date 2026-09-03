@@ -1,5 +1,19 @@
 # Food Worth Calculator — change notes
 
+## 2026-09-03 — Fixed the value-rating percentage bug, rebalanced layout, redesigned summary
+
+**The important one first — a real bug, not a style tweak.** The rating percentage (e.g. "Fair value 117%" in the screenshot that caught this) was being computed against "Your benchmark," which got hidden from the UI on 2026-09-02 but never stopped silently driving the calculation from its stuck default of RM1.00/100kcal. So the percentage was comparing cost-per-100kcal against an invisible number nobody could see or set — not against typical market price, not against the ingredient-cost fair price, not against anything on screen at all. Traced the exact math against the screenshot (RM8 paid, RM1.17/100kcal, hidden benchmark defaulting to RM1.00 → 1.17 ÷ 1.00 = 117%, confirmed exact match) before touching anything.
+
+**The fix**: the rating now compares price paid against the average of typical market price and the ingredient-cost fair price — the two figures actually visible on screen — using whichever of the two is available (falls back to just one if the other hasn't been computed yet, e.g. no recipe breakdown done). Simple average, not weighted — there's no principled basis to trust one signal over the other, so this doesn't pretend to. Re-run against the screenshot numbers: RM8 vs. average(RM10 typical-mid, RM19 ingredient-fair) = RM14.50 → 55% → **Great value**, not "Fair value 117%." Tested against six scenarios (both signals present, only one present, neither present, no price entered, deliberately overpaying) before shipping — see the settings table below for exactly where this logic lives if the averaging approach ever needs revisiting.
+
+**Layout rebalanced** into the pyramid shape asked for: Total food value | What did it cost side by side, How this fits your day as a full-width box below that, then Nutritional balance | Vitamins/minerals/fiber side by side under that — all three rows sharing one consistent width via a single reusable `.fw-panel-box` style.
+
+**Summary section redesigned** into individually-boxed cards (was one shared strip) and gained a fourth card: "could use less," the mirror of "could use more" for anything flagged as a caution (currently just sodium). The value card now shows its percentage too, using the corrected math above.
+
+**On the tooltip/design reference image**: read it as showing the visual pattern (bold value, small caption label below) rather than literally showing raw nutrient values — that would have reversed the no-raw-numbers decision from 2026-08-31, which is still the operating rule everywhere else on this page. Flagging this interpretation explicitly in case it's not what was meant.
+
+**KIV, not built — taste rating × price-value worthiness.** Captured for later: a clickable 1–5 star taste rating per dish, combined with the existing price-value rating (Great value/Fair value/Pricey) into an overall "worthiness" verdict — 5 stars at a cheap price is the best combination, 1 star at an expensive price is the worst. This is a genuinely new dimension (subjective taste, not something Gemini or any calculation can supply) sitting alongside the objective price-value rating rather than replacing it. Would need: a small star-input UI component (5 clickable icons, no library needed), in-memory storage per dish (fits the existing "nothing persists" rule — resets on reload same as everything else), and a 5×3 lookup table or formula mapping (taste, price-value) → worthiness label. Not started — flagged as "nest kiv" (next, keep-in-view), so treating this as backlog, not a current-round ask.
+
 ## 2026-09-02 (later same day) — UI polish round from live testing
 
 Feedback from actually seeing the page rendered, not just described — several real fixes came out of it:
@@ -73,6 +87,8 @@ Everything below lives inside the code (this site has no separate settings file)
 
 | Setting | Current value | Where to change it |
 |---|---|---|
+| What the value rating compares price against | Average of typical market price and ingredient-cost fair price (whichever available) | `computeReferencePrice()`, `food-worth-calculator.js` |
+| Value rating thresholds | ≤85% Great value, ≤125% Fair value, above that Pricey | `computeValueRating()`, `food-worth-calculator.js` |
 | "Good source" / "could use more" thresholds | 10% and 5% of DV/NRV | `levelFromPct()` in `food-worth-calculator.js` |
 | "Excellent / Higher in" threshold | 20% of DV/NRV | `levelFromPct()` in `food-worth-calculator.js` |
 | Which nutrient gets the caution treatment | Sodium only | `caution: true` on the sodium row in `MICRONUTRIENT_FIELDS`, `food-worth-calculator.js` |

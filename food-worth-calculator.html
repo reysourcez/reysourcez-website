@@ -5,10 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Food Worth Calculator</title>
   <meta name="description" content="Upload a photo of a meal and get an instant breakdown — item by item weight, calories, and nutrition — plus a value-for-money rating against the price you paid.">
-<link rel="icon" href="favicon.ico" sizes="32x32">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="site.webmanifest">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,9 +30,10 @@
        "read this in 5 seconds" summary before all the section-by-
        section detail below. Prints along with the rest of the report
        (no no-print here) since it's the best part to see on paper. */
-    .fw-summary-strip { display: flex; flex-wrap: wrap; gap: 20px; align-items: baseline; padding: 14px 18px; margin-bottom: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
-    .fw-summary-item { display: flex; flex-direction: column; gap: 2px; }
+    .fw-summary-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .fw-summary-item { display: flex; flex-direction: column; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
     .fw-summary-item strong { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--text); }
+    .fw-summary-pct { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
     .fw-summary-item small { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
 
     .fw-items-table td input[type="text"] { font-family: var(--font-body); min-width: 130px; }
@@ -78,14 +75,17 @@
     .fw-seg-fat { background: #D4A017; }
     .fw-macro-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
 
-    /* Nutritional balance + Vitamins/minerals/fiber side by side.
-       Each <details> here is deliberately NOT also a .calc-panel —
-       stacking two full section treatments side by side risked
-       fighting with .wrap's own centering, so this uses one shared
-       .calc-panel + .wrap for the pair, with a plain bordered box
-       per column instead. */
+    /* Shared bordered-box treatment for every sub-panel on this page
+       (Total food value, What did it cost, How this fits your day,
+       Nutritional balance, Vitamins/minerals/fiber) — plain divs and
+       <details> both use it. Deliberately not also .calc-panel on
+       any of these: stacking two full section treatments side by
+       side inside .fw-detail-grid risked fighting with .wrap's own
+       centering, so instead there's one shared .calc-panel + .wrap
+       per row, with .fw-panel-box giving each column its own border. */
+    .fw-panel-box { border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px 20px; min-width: 0; }
+    .fw-panel-box.fw-full-box { margin-bottom: 24px; }
     .fw-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
-    .fw-detail-grid .fw-collapsible { border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px 20px; min-width: 0; }
     @media (max-width: 800px) {
       .fw-detail-grid { grid-template-columns: 1fr; }
     }
@@ -268,6 +268,8 @@
         <div class="calc-actions no-print">
           <button type="button" id="fw-save-pdf" class="btn btn-secondary">Save as PDF</button>
         </div>
+        <div class="fw-detail-grid">
+          <div class="fw-panel-box">
         <h2>Total food value</h2>
         <p class="menu-builder-intro">Summed across every dish above, excluding any unchecked items. Edit anything in a dish and this updates automatically.</p>
 
@@ -281,8 +283,10 @@
             <span class="result-value" id="fw-total-calories">0 kcal</span>
           </div>
         </div>
+          </div>
 
-        <h2 style="margin-top:32px;">What did it cost?</h2>
+          <div class="fw-panel-box">
+        <h2>What did it cost?</h2>
         <div class="fw-price-row">
           <div class="fw-price-field">
             <label for="fw-price">Price paid (RM)</label>
@@ -290,10 +294,11 @@
           </div>
           <!-- Hidden 2026-09-02 per feedback: sits at its default
                (1.00) for almost everyone and wasn't earning its space
-               on screen. The rating calculation still reads this
-               input's current value exactly as before -- it just
-               always gets the default now. Remove `hidden` to bring
-               the control back if it's ever needed again. -->
+               on screen. As of 2026-09-03 the rating no longer even
+               reads this value (see computeReferencePrice in
+               food-worth-calculator.js) -- it's fully inert now, kept
+               only in case a benchmark-style override is wanted again
+               later. Remove `hidden` to bring the control back. -->
           <div class="fw-price-field" hidden>
             <label for="fw-benchmark">Your benchmark<span class="tooltip-icon" data-tooltip="What you'd consider fair value — adjust to match your own sense of local prices">?</span></label>
             <input type="number" id="fw-benchmark" inputmode="decimal" min="0" step="0.05" value="1.00">
@@ -324,18 +329,78 @@
             <span class="result-value" id="fw-ingredient-fair-price">—</span>
           </div>
           <div class="result-card" id="fw-rating-card" style="grid-column: span 2;">
-            <span class="result-label">Value rating</span>
+            <span class="result-label">Value rating<span class="tooltip-icon" data-tooltip="Price paid vs. the average of typical market price and the ingredient-cost fair price above — whichever of the two you have.">?</span></span>
             <span class="fw-rating-badge" id="fw-rating-badge">Add a price above</span>
+          </div>
+        </div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ============ NUTRITIONAL BALANCE + VITAMINS/MINERALS/FIBER — side by side, each independently collapsible ============ -->
+    <!-- ============ HOW THIS FITS YOUR DAY (full-width box) + NUTRITIONAL BALANCE / VITAMINS (side by side below it) ============ -->
     <section class="calc-panel" id="fw-detail-section" hidden>
       <div class="wrap">
+        <details class="fw-collapsible fw-panel-box fw-full-box">
+          <summary class="fw-collapsible-summary"><h2>How this fits your day</h2></summary>
+          <div class="fw-collapsible-body">
+            <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
+
+            <div class="fw-calorie-toggle no-print" role="tablist">
+              <button type="button" class="fw-calorie-tab is-active" data-mode="calculate">Calculate my need</button>
+              <button type="button" class="fw-calorie-tab" data-mode="manual">I know my target</button>
+            </div>
+
+            <div class="fw-calorie-panel" id="fw-calorie-calculate">
+              <div class="fw-calorie-fields">
+                <label>Sex
+                  <select id="fw-cal-sex">
+                    <option value="female">Female</option>
+                    <option value="male">Male</option>
+                  </select>
+                </label>
+                <label>Age <span class="toggle-hint">years</span>
+                  <input type="number" id="fw-cal-age" min="10" max="100" step="1" placeholder="30">
+                </label>
+                <label>Height <span class="toggle-hint">cm</span>
+                  <input type="number" id="fw-cal-height" min="100" max="250" step="1" placeholder="165">
+                </label>
+                <label>Weight <span class="toggle-hint">kg</span>
+                  <input type="number" id="fw-cal-weight" min="30" max="250" step="0.5" placeholder="60">
+                </label>
+                <label>Activity level
+                  <select id="fw-cal-activity">
+                    <option value="sedentary">Sedentary — little or no exercise</option>
+                    <option value="light">Lightly active — 1–3 days/week</option>
+                    <option value="active" selected>Active — 3–5 days/week</option>
+                    <option value="very-active">Very active — 6–7 days/week</option>
+                  </select>
+                </label>
+              </div>
+              <p class="fw-bmi-note" id="fw-bmi-note"></p>
+            </div>
+
+            <div class="fw-calorie-panel" id="fw-calorie-manual" hidden>
+              <label class="fw-calorie-manual-label">Your daily calorie target <span class="toggle-hint">kcal</span>
+                <input type="number" id="fw-cal-manual-target" min="800" max="6000" step="10" placeholder="2000">
+              </label>
+            </div>
+
+            <div class="ica-results" style="margin-top:20px;">
+              <div class="result-card">
+                <span class="result-label">Estimated daily need</span>
+                <span class="result-value" id="fw-daily-need">—</span>
+              </div>
+              <div class="result-card" id="fw-calorie-share-card" style="grid-column: span 2;">
+                <span class="result-label">This meal</span>
+                <span class="fw-rating-badge" id="fw-calorie-share-badge">Fill in the fields above</span>
+              </div>
+            </div>
+          </div>
+        </details>
+
         <div class="fw-detail-grid">
-          <details class="fw-collapsible">
+          <details class="fw-collapsible fw-panel-box">
             <summary class="fw-collapsible-summary"><h2>Nutritional balance</h2></summary>
             <div class="fw-collapsible-body">
               <p class="structure-note">Share of calories from each macronutrient, summed across every dish. Fiber (below) is part of total carbs, not its own slice.</p>
@@ -347,7 +412,7 @@
             </div>
           </details>
 
-          <details class="fw-collapsible">
+          <details class="fw-collapsible fw-panel-box">
             <summary class="fw-collapsible-summary"><h2>Vitamins, minerals &amp; fiber</h2></summary>
             <div class="fw-collapsible-body">
               <div class="fw-standard-toggle no-print" role="tablist" aria-label="Reference standard">
@@ -355,72 +420,13 @@
                 <button type="button" class="fw-standard-tab is-active" data-standard="malaysia">Malaysia (NRV)</button>
                 <button type="button" class="fw-standard-tab" data-standard="usa">USA (FDA)</button>
               </div>
-              <p class="structure-note">What this meal covers, is light on, or runs high in — checked against the standard above, which also sets the BMI bands in "How this fits your day." General-purpose AI is genuinely worse at estimating micronutrients specifically, so treat any tag or suggestion as a rough signal, not a diet plan.</p>
+              <p class="structure-note">What this meal covers, is light on, or runs high in — checked against the standard above, which also sets the BMI bands in "How this fits your day" above. General-purpose AI is genuinely worse at estimating micronutrients specifically, so treat any tag or suggestion as a rough signal, not a diet plan.</p>
               <div id="fw-micronutrients"></div>
             </div>
           </details>
         </div>
       </div>
     </section>
-
-    <!-- ============ CALORIE FIT (BMR/TDEE + BMI, both standard-aware; independent Mifflin-St Jeor formula) — collapsible ============ -->
-    <details class="calc-panel fw-collapsible" id="fw-calorie-section" hidden>
-      <summary class="fw-collapsible-summary"><div class="wrap"><h2>How this fits your day</h2></div></summary>
-      <div class="wrap fw-collapsible-body">
-        <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
-
-        <div class="fw-calorie-toggle no-print" role="tablist">
-          <button type="button" class="fw-calorie-tab is-active" data-mode="calculate">Calculate my need</button>
-          <button type="button" class="fw-calorie-tab" data-mode="manual">I know my target</button>
-        </div>
-
-        <div class="fw-calorie-panel" id="fw-calorie-calculate">
-          <div class="fw-calorie-fields">
-            <label>Sex
-              <select id="fw-cal-sex">
-                <option value="female">Female</option>
-                <option value="male">Male</option>
-              </select>
-            </label>
-            <label>Age <span class="toggle-hint">years</span>
-              <input type="number" id="fw-cal-age" min="10" max="100" step="1" placeholder="30">
-            </label>
-            <label>Height <span class="toggle-hint">cm</span>
-              <input type="number" id="fw-cal-height" min="100" max="250" step="1" placeholder="165">
-            </label>
-            <label>Weight <span class="toggle-hint">kg</span>
-              <input type="number" id="fw-cal-weight" min="30" max="250" step="0.5" placeholder="60">
-            </label>
-            <label>Activity level
-              <select id="fw-cal-activity">
-                <option value="sedentary">Sedentary — little or no exercise</option>
-                <option value="light">Lightly active — 1–3 days/week</option>
-                <option value="active" selected>Active — 3–5 days/week</option>
-                <option value="very-active">Very active — 6–7 days/week</option>
-              </select>
-            </label>
-          </div>
-          <p class="fw-bmi-note" id="fw-bmi-note"></p>
-        </div>
-
-        <div class="fw-calorie-panel" id="fw-calorie-manual" hidden>
-          <label class="fw-calorie-manual-label">Your daily calorie target <span class="toggle-hint">kcal</span>
-            <input type="number" id="fw-cal-manual-target" min="800" max="6000" step="10" placeholder="2000">
-          </label>
-        </div>
-
-        <div class="ica-results" style="margin-top:20px;">
-          <div class="result-card">
-            <span class="result-label">Estimated daily need</span>
-            <span class="result-value" id="fw-daily-need">—</span>
-          </div>
-          <div class="result-card" id="fw-calorie-share-card" style="grid-column: span 2;">
-            <span class="result-label">This meal</span>
-            <span class="fw-rating-badge" id="fw-calorie-share-badge">Fill in the fields above</span>
-          </div>
-        </div>
-      </div>
-    </details>
 
   </main>
 
@@ -431,6 +437,6 @@
   </footer>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=12" defer></script>
+  <script src="food-worth-calculator.js?v=13" defer></script>
 </body>
 </html>

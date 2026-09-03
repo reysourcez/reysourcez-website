@@ -89,7 +89,7 @@
        runRecipeBreakdown().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-02-v9-ui-polish-donut-chart');
+console.info('[Food Worth Calculator] script build: 2026-09-03-v10-rating-fix-balanced-layout');
 
 /* ================= CONFIG ================= */
 
@@ -407,30 +407,57 @@ function computeTotals(rows) {
   return t;
 }
 
-function computeValueRating(totals, price, benchmarkPer100kcal) {
-  if (!(price > 0) || !(totals.calories > 0)) {
-    return { costPer100kcal: 0, costPer100g: 0, label: null, ratio: 0 };
-  }
-  const costPer100kcal = (price / totals.calories) * 100;
-  const costPer100g = totals.weight > 0 ? (price / totals.weight) * 100 : 0;
-  const ratio = benchmarkPer100kcal > 0 ? costPer100kcal / benchmarkPer100kcal : 1;
+// Still computed for the (currently hidden) per-100-unit cards —
+// useful normalized figures on their own, independent of any
+// reference/rating logic.
+function computeUnitCosts(totals, price) {
+  if (!(price > 0) || !(totals.calories > 0)) return { costPer100kcal: 0, costPer100g: 0 };
+  return {
+    costPer100kcal: (price / totals.calories) * 100,
+    costPer100g: totals.weight > 0 ? (price / totals.weight) * 100 : 0,
+  };
+}
+
+// The rating used to compare cost-per-100kcal against "Your
+// benchmark" — a user-adjustable RM/100kcal rate. Once that field
+// was hidden (2026-09-02), the rating kept working off its stuck
+// default value, silently comparing price against a number nobody
+// could see or set anymore. This replaces that with something
+// visible: the average of typical market price (demand-side — what
+// people usually pay) and the ingredient-cost fair price (supply-
+// side — what a healthy cost structure implies), whichever of the
+// two are actually available. Simple average, not a weighted one —
+// there's no principled reason to trust one signal over the other,
+// so this doesn't try to.
+function computeReferencePrice(typicalPrice, ingredientFairPrice) {
+  const hasTypical = typicalPrice && typicalPrice.high > 0;
+  const hasIngredient = ingredientFairPrice > 0;
+  const typicalMid = hasTypical ? (typicalPrice.low + typicalPrice.high) / 2 : 0;
+  if (hasTypical && hasIngredient) return (typicalMid + ingredientFairPrice) / 2;
+  if (hasTypical) return typicalMid;
+  if (hasIngredient) return ingredientFairPrice;
+  return 0;
+}
+
+function computeValueRating(price, referencePrice) {
+  if (!(price > 0) || !(referencePrice > 0)) return { label: null, ratio: 0 };
+  const ratio = price / referencePrice;
   let label;
   if (ratio <= 0.85) label = 'Great value';
   else if (ratio <= 1.25) label = 'Fair value';
   else label = 'Pricey';
-  return { costPer100kcal, costPer100g, label, ratio };
+  return { label, ratio };
 }
 
 
 // Grosses an ingredient cost up into an implied "fair" selling price
 // at the standard 30% ingredient-cost structure — a supply-side
-// estimate (what a healthily-run stall would need to charge),
-// deliberately kept separate from computeValueRating's own rating
-// (which is demand-side, benchmarked against the user's own sense of
-// fair value) and from Gemini's typical-market-price estimate
-// (also demand-side, benchmarked against what people actually pay).
-// All three are shown as independent reference points, not merged
-// into one score.
+// estimate (what a healthily-run stall would need to charge). As of
+// 2026-09-03 this DOES feed the rating (via computeReferencePrice,
+// below) alongside Gemini's typical-market-price estimate — the two
+// are still shown as their own independent cards, not merged into a
+// single number on screen, but the rating now draws on both rather
+// than an unrelated third figure.
 function computeImpliedFairPrice(ingredientCost) {
   return ingredientCost > 0 ? ingredientCost / INGREDIENT_COST_TARGET_PCT : 0;
 }
@@ -538,9 +565,12 @@ function renderTotals(totals) {
   document.getElementById('fw-total-calories').textContent = Math.round(totals.calories).toLocaleString() + ' kcal';
 }
 
+function renderUnitCosts(unitCosts) {
+  document.getElementById('fw-cost-per-kcal').textContent = formatRM(unitCosts.costPer100kcal);
+  document.getElementById('fw-cost-per-100g').textContent = formatRM(unitCosts.costPer100g);
+}
+
 function renderRating(rating) {
-  document.getElementById('fw-cost-per-kcal').textContent = formatRM(rating.costPer100kcal);
-  document.getElementById('fw-cost-per-100g').textContent = formatRM(rating.costPer100g);
   const badge = document.getElementById('fw-rating-badge');
   const card = document.getElementById('fw-rating-card');
   if (!rating.label) {
@@ -656,31 +686,39 @@ function renderCalorieFit(mealCalories, need) {
   card.classList.toggle('is-loss', pct > 100);
 }
 
-// The "read this in five seconds" strip at the top of the results —
-// value rating, calorie share, and the single most useful nutrient
-// note (whichever's more actionable: the top gap if there is one,
-// otherwise the top thing this meal already does well). Reuses the
-// same rating/coverage/need objects recalculateMeal already computed
-// once for the detailed sections below, rather than recomputing.
+// The "read this in five seconds" panel at the top of the results —
+// four small cards: value rating (with its percentage), calorie
+// share, the single most useful "could use more" note, and its
+// counterpart "could use less" for anything flagged as a caution
+// (currently just sodium). Reuses the same rating/coverage/need
+// objects recalculateMeal already computed once for the detailed
+// sections below, rather than recomputing.
 function renderSummaryStrip(rating, mealCalories, dailyNeed, coverage) {
   const el = document.getElementById('fw-summary-strip');
   if (!el) return;
 
+  const valueText = rating.label
+    ? `${escapeHTML(rating.label)} <span class="fw-summary-pct">${Math.round(rating.ratio * 100)}%</span>`
+    : '\u2014';
   const calorieText = (dailyNeed > 0 && mealCalories > 0) ? Math.round((mealCalories / dailyNeed) * 100) + '%' : '\u2014';
-  let noteLabel = 'nutrients';
-  let noteText = '\u2014';
+
+  let moreLabel = 'nutrients';
+  let moreText = '\u2014';
   if (coverage.lackingFlags.length) {
-    noteText = coverage.lackingFlags[0].label;
-    noteLabel = 'could use more';
+    moreText = coverage.lackingFlags[0].label;
+    moreLabel = 'could use more';
   } else if (coverage.goodSources.length) {
-    noteText = coverage.goodSources[0].label;
-    noteLabel = 'good source of';
+    moreText = coverage.goodSources[0].label;
+    moreLabel = 'good source of';
   }
 
+  const lessText = coverage.cautionFlags.length ? escapeHTML(coverage.cautionFlags[0].label) : '\u2014';
+
   el.innerHTML = `
-    <span class="fw-summary-item"><strong>${escapeHTML(rating.label || '\u2014')}</strong><small>value</small></span>
-    <span class="fw-summary-item"><strong>${escapeHTML(calorieText)}</strong><small>of your day</small></span>
-    <span class="fw-summary-item"><strong>${escapeHTML(noteText)}</strong><small>${escapeHTML(noteLabel)}</small></span>
+    <div class="fw-summary-item"><strong>${valueText}</strong><small>value</small></div>
+    <div class="fw-summary-item"><strong>${escapeHTML(calorieText)}</strong><small>of your day</small></div>
+    <div class="fw-summary-item"><strong>${escapeHTML(moreText)}</strong><small>${escapeHTML(moreLabel)}</small></div>
+    <div class="fw-summary-item"><strong>${lessText}</strong><small>could use less</small></div>
   `;
 }
 
@@ -856,7 +894,6 @@ async function runAnalysis(panel) {
       panel.querySelector('.fw-dish-results').hidden = false;
       document.getElementById('fw-meal-section').hidden = false;
       document.getElementById('fw-detail-section').hidden = false;
-      document.getElementById('fw-calorie-section').hidden = false;
       recalculateDish(panel);
       recalculateMeal();
       updateAddDishVisibility();
@@ -930,13 +967,16 @@ function recalculateMeal() {
   });
 
   const price = num(document.getElementById('fw-price'));
-  const benchmark = num(document.getElementById('fw-benchmark'), 1);
-  const rating = computeValueRating(mealTotals, price, benchmark);
+  const unitCosts = computeUnitCosts(mealTotals, price);
+  const ingredientFairPrice = computeImpliedFairPrice(mealIngredientCost);
+  const referencePrice = computeReferencePrice(mealPrice, ingredientFairPrice);
+  const rating = computeValueRating(price, referencePrice);
   const mix = computeMacroMix(mealTotals);
   const coverage = computeNutrientCoverage(mealMicros, mealTotals);
   const need = getDailyNeed();
 
   renderTotals(mealTotals);
+  renderUnitCosts(unitCosts);
   renderRating(rating);
   renderMarketPrice(mealPrice);
   renderIngredientFairPrice(mealIngredientCost);

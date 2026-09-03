@@ -10,8 +10,14 @@
 
    Contract with the browser:
      Browser sends  -> { image: "<base64>", mime_type: "image/jpeg" }
+                        optionally with mode: "recipe" for the
+                        ingredient-cost breakdown instead of the
+                        standard analysis (see RECIPE_SCHEMA below)
      Worker returns -> { items: [...], micronutrients: {...},
                           typical_price_myr: { low, high } }
+                        or, in recipe mode:
+                        { recognized: bool, recipe_name, ingredients: [...],
+                          total_ingredient_cost_myr }
                         or  { error: "..." }
    The browser doesn't need to know anything about Gemini's request
    shape or model name anymore — all of that lives here now, so
@@ -123,6 +129,52 @@ const PROMPT = 'You are analyzing a photo of a plate of food for an F&B costing 
   + 'than guessing at sub-ingredients. If nothing that looks like food is visible, return an empty '
   + 'items array, zeros for micronutrients, and zeros for the price range rather than guessing.';
 
+// Recipe mode is a deliberately separate call, not folded into the
+// schema/prompt above: it's a different kind of task (general recipe
+// knowledge -- what does a standard portion of this dish usually
+// contain and cost -- rather than precision-estimating this specific
+// photo), it doesn't apply to every dish, and running it on every
+// analysis would cost every visitor extra latency/tokens for a
+// feature most won't use. The browser only sends mode: "recipe" when
+// someone explicitly opts in from an already-analyzed dish.
+const RECIPE_SCHEMA = {
+  type: 'object',
+  properties: {
+    recognized: {
+      type: 'boolean',
+      description: 'True only if this photo clearly matches a common, well-known dish with a fairly standard set of ingredients (e.g. Chicken Rice, Nasi Lemak, Char Kway Teow). False for a one-off, mixed, buffet-style, or otherwise unclear plate -- do not force a match.',
+    },
+    recipe_name: { type: 'string', description: 'Common name of the matched dish. Empty string if not recognized.' },
+    ingredients: {
+      type: 'array',
+      description: 'The STANDARD ingredient list and quantities for ONE PORTION of this dish as it is typically made -- general recipe knowledge, not a re-measurement of this specific photo. Empty if not recognized.',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          quantity: { type: 'string', description: 'Amount for one portion in a natural unit, e.g. "150g", "2 cloves", "1 tbsp"' },
+          price_myr: { type: 'number', description: 'Estimated cost of that quantity at average Malaysian wet-market/grocery prices, in RM' },
+        },
+        required: ['name', 'quantity', 'price_myr'],
+      },
+    },
+    total_ingredient_cost_myr: { type: 'number', description: 'Sum of every ingredient\u2019s price_myr. Zero if not recognized.' },
+  },
+  required: ['recognized', 'recipe_name', 'ingredients', 'total_ingredient_cost_myr'],
+};
+
+const RECIPE_PROMPT = 'You are looking at a photo of a plate of food for an F&B costing tool used in Malaysia. '
+  + 'Decide whether this photo clearly matches a common, well-known dish that has a fairly standard set '
+  + 'of ingredients \u2014 for example Chicken Rice, Nasi Lemak, Char Kway Teow, Mee Goreng, a basic fried '
+  + 'rice, or similar. Only say yes if you\u2019re confident \u2014 a one-off combination, a buffet-style '
+  + 'plate, or anything you can\u2019t confidently name should be marked as not recognized rather than '
+  + 'forcing a guess. If it is recognized, name the dish and list the STANDARD ingredients and '
+  + 'quantities used to make ONE PORTION of it as typically prepared \u2014 general recipe knowledge, not '
+  + 'an attempt to re-measure this specific photo. For each ingredient, estimate its cost in Malaysian '
+  + 'Ringgit at average Malaysian wet-market or grocery prices for that quantity, and sum these into a '
+  + 'total ingredient cost. If not recognized, return false, an empty recipe name, an empty ingredients '
+  + 'array, and zero for the total.';
+
 function corsHeaders(origin) {
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
@@ -182,6 +234,48 @@ function extractAnalysis(data) {
   }
 }
 
+const EMPTY_RECIPE = { recognized: false, recipe_name: '', ingredients: [], total_ingredient_cost_myr: 0 };
+
+function sanitizeIngredients(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((i) => i && typeof i.name === 'string' && i.name.trim())
+    .map((i) => {
+      const price = Number(i.price_myr);
+      return {
+        name: i.name.trim(),
+        quantity: typeof i.quantity === 'string' ? i.quantity.trim() : '',
+        price_myr: isFinite(price) && price >= 0 ? price : 0,
+      };
+    });
+}
+
+// Same nested-response walk as extractAnalysis, for recipe mode.
+// Recomputes the total from the ingredient list rather than trusting
+// Gemini's stated total at face value \u2014 cheap to verify, and
+// keeps the number on screen always consistent with the list above it.
+function extractRecipe(data) {
+  const outputStep = (data.steps || []).find((s) => s.type === 'model_output');
+  const textBlock = outputStep && (outputStep.content || []).find((c) => c.type === 'text');
+  if (!textBlock) return { ...EMPTY_RECIPE };
+  let raw = textBlock.text.trim();
+  raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
+  try {
+    const parsed = JSON.parse(raw);
+    const ingredients = sanitizeIngredients(parsed.ingredients);
+    const recognized = !!parsed.recognized && ingredients.length > 0;
+    if (!recognized) return { ...EMPTY_RECIPE };
+    return {
+      recognized: true,
+      recipe_name: typeof parsed.recipe_name === 'string' && parsed.recipe_name.trim() ? parsed.recipe_name.trim() : 'This dish',
+      ingredients,
+      total_ingredient_cost_myr: ingredients.reduce((sum, i) => sum + i.price_myr, 0),
+    };
+  } catch (e) {
+    return { ...EMPTY_RECIPE };
+  }
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -201,6 +295,7 @@ export default {
       return json({ error: 'Missing image data' }, 400, origin);
     }
     const mimeType = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
+    const isRecipeMode = body.mode === 'recipe';
 
     if (!env.GEMINI_API_KEY) {
       return json({ error: 'Server is missing its Gemini key \u2014 add the GEMINI_API_KEY secret in this Worker\u2019s Settings.' }, 500, origin);
@@ -214,7 +309,7 @@ export default {
         body: JSON.stringify({
           model: GEMINI_MODEL,
           input: [
-            { type: 'text', text: PROMPT },
+            { type: 'text', text: isRecipeMode ? RECIPE_PROMPT : PROMPT },
             { type: 'image', data: body.image, mime_type: mimeType },
           ],
           // Gemini 3-series models default to thinking_level "high" if this
@@ -224,7 +319,7 @@ export default {
           // likely the actual cause of the 524s: the model was probably
           // taking well over a minute to even start responding.
           generation_config: { thinking_level: 'low' },
-          response_format: { type: 'text', mime_type: 'application/json', schema: ITEM_SCHEMA },
+          response_format: { type: 'text', mime_type: 'application/json', schema: isRecipeMode ? RECIPE_SCHEMA : ITEM_SCHEMA },
         }),
       });
     } catch (e) {
@@ -248,6 +343,9 @@ export default {
     }
 
     const data = await geminiResp.json();
+    if (isRecipeMode) {
+      return json(extractRecipe(data), 200, origin);
+    }
     const analysis = extractAnalysis(data);
     return json({ items: analysis.items, micronutrients: analysis.micronutrients, typical_price_myr: analysis.typical_price_myr }, 200, origin);
   },
