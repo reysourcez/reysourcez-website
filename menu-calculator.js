@@ -478,9 +478,21 @@ function createMenuBlock() {
   container.appendChild(block);
 
   block.querySelector('.add-menu-row-btn').addEventListener('click', () => createMenuRow(block));
-  block.querySelector('.remove-block-btn').addEventListener('click', () => block.remove());
+  block.querySelector('.remove-block-btn').addEventListener('click', () => {
+    const wasActive = !block.hidden;
+    block.remove();
+    if (wasActive) {
+      const remaining = document.querySelector('.menu-block');
+      if (remaining) switchToMenuBlock(remaining.dataset.blockId);
+    } else {
+      renderMenuTabs();
+    }
+  });
   block.querySelector('.target-food-cost').addEventListener('input', () => refreshMenuBlockRows(block));
-  block.querySelector('.menu-name-input').addEventListener('input', () => updateMenuBlockSummary(block));
+  block.querySelector('.menu-name-input').addEventListener('input', () => {
+    updateMenuBlockSummary(block);
+    renderMenuTabs();
+  });
   block.querySelector('.commission-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.commission-tax-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.sst-pct').addEventListener('input', () => updateMenuBlockSummary(block));
@@ -502,6 +514,43 @@ function createMenuBlock() {
 
   createMenuRow(block);
   updateMenuBlockSummary(block);
+  switchToMenuBlock(block.dataset.blockId);
+}
+
+// Only the active menu's full card is shown at a time; the tab row
+// beside "+ Add Menu" (see .menu-tabs, styled in styles.css) lets you
+// switch which one that is. Same "hide siblings, show one" pattern as
+// Food Worth's dish tabs and Printing Calculator's job tabs, just
+// styled as buttons here rather than an underlined tab strip.
+function switchToMenuBlock(blockId) {
+  document.querySelectorAll('.menu-block').forEach((b) => {
+    b.hidden = (b.dataset.blockId !== blockId);
+  });
+  renderMenuTabs();
+}
+
+// Tabs only appear once there's something to switch between — a
+// single menu just shows its card directly, no tab row overhead.
+function renderMenuTabs() {
+  const blocks = Array.from(document.querySelectorAll('.menu-block'));
+  const tabsContainer = document.getElementById('menu-tabs');
+  if (!tabsContainer) return;
+
+  if (blocks.length <= 1) {
+    tabsContainer.innerHTML = '';
+    if (blocks.length === 1) blocks[0].hidden = false;
+    return;
+  }
+
+  tabsContainer.innerHTML = blocks.map((b) => {
+    const name = b.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item';
+    const isActive = !b.hidden;
+    return `<button type="button" class="btn btn-secondary menu-tab-btn${isActive ? ' is-active' : ''}" data-block-id="${b.dataset.blockId}">${escapeHTML(name)}</button>`;
+  }).join('');
+
+  tabsContainer.querySelectorAll('.menu-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => switchToMenuBlock(btn.dataset.blockId));
+  });
 }
 
 /* ================= INIT ================= */
@@ -510,7 +559,7 @@ function createMenuBlock() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-08-24-cross-tab-sync');
+console.info('[Menu Calculator] script build: 2026-09-03-menu-tabs');
 
 let rzInitialized = false;
 
