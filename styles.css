@@ -516,6 +516,17 @@ th.sortable:hover { color: var(--accent-dark); }
 .calc-actions .btn { cursor: pointer; font-family: var(--font-body); }
 .calc-actions .btn-secondary { background: transparent; }
 
+/* ---- Menu/Job block tabs ----
+   Shared by Menu Portion Creator and Print Job Creator (both build
+   .menu-block instances the identical way — see printing-calculator's
+   own comments on why). Sits inside .calc-actions, beside the "+ Add"
+   button, so tabs queue horizontally as more blocks are added. Reuses
+   .btn/.btn-secondary as the base pill look — same family as the
+   "Pull from" connector buttons on Costing Analysis — rather than an
+   underlined tab strip, so only the active-state override is new. */
+.menu-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.menu-tab-btn.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
 .calc-note { padding: 32px 0 72px; }
 .calc-note p { color: var(--muted); font-size: 0.95rem; max-width: 75ch; margin: 0 0 10px; }
 .calc-note p:last-child { margin-bottom: 0; }

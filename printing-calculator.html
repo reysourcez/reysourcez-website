@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=15">
   <style>
     /* styles.css references .sr-only on every calculator page (table
        captions, "remove row" labels) but never actually defines it —
@@ -59,6 +59,7 @@
             <li><a href="printing-calculator.html" aria-current="page">Printing Calculator</a></li>
             <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
             <li><a href="food-worth-calculator.html">Food Worth</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Audit</a></li>
           </ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
@@ -124,6 +125,7 @@
         <p class="menu-builder-intro">Combine materials from the table above into one print job, and see what it costs per unit and for the whole run — plus a target price, your setup cost spread across the quantity, and what's left after marketplace commission or SST, if either applies. Uncheck a row to leave it out of a total without deleting it. Click a column heading to sort.</p>
 
         <div class="calc-actions no-print">
+          <div class="menu-tabs" id="menu-tabs"><!-- populated by JS once there's more than one job --></div>
           <button type="button" id="add-menu-block" class="btn btn-primary">+ Add Job</button>
         </div>
 
@@ -218,7 +220,7 @@
      rule already exists and is shared with the rest of the site.
      ============================================================ */
 
-  console.info('[Printing Calculator] script build: 2026-08-28');
+  console.info('[Printing Calculator] script build: 2026-09-03-job-tabs');
 
   /* ================= EDITABLE SETTINGS =================
      Change a number on the right of any line below — nothing else
@@ -727,7 +729,17 @@
     container.appendChild(block);
 
     block.querySelector('.add-menu-row-btn').addEventListener('click', () => createJobRow(block));
-    block.querySelector('.remove-block-btn').addEventListener('click', () => block.remove());
+    block.querySelector('.remove-block-btn').addEventListener('click', () => {
+      const wasActive = !block.hidden;
+      block.remove();
+      if (wasActive) {
+        const remaining = document.querySelector('.menu-block');
+        if (remaining) switchToJobBlock(remaining.dataset.blockId);
+      } else {
+        renderJobTabs();
+      }
+    });
+    block.querySelector('.menu-name-input').addEventListener('input', renderJobTabs);
     block.querySelector('.job-quantity').addEventListener('input', () => updateJobBlockSummary(block));
     block.querySelector('.job-setup-cost').addEventListener('input', () => updateJobBlockSummary(block));
     block.querySelector('.target-cost-pct').addEventListener('input', () => updateJobBlockSummary(block));
@@ -752,6 +764,43 @@
 
     createJobRow(block);
     updateJobBlockSummary(block);
+    switchToJobBlock(block.dataset.blockId);
+  }
+
+  // Only the active job's full card is shown at a time; the tab row
+  // above (see .menu-tabs, styled in styles.css) lets you switch
+  // which one that is. Same "hide siblings, show one" pattern as
+  // Food Worth's dish tabs, just styled as buttons here instead of
+  // an underlined tab strip.
+  function switchToJobBlock(blockId) {
+    document.querySelectorAll('.menu-block').forEach((b) => {
+      b.hidden = (b.dataset.blockId !== blockId);
+    });
+    renderJobTabs();
+  }
+
+  // Tabs only appear once there's something to switch between — a
+  // single job just shows its card directly, no tab row overhead.
+  function renderJobTabs() {
+    const blocks = Array.from(document.querySelectorAll('.menu-block'));
+    const tabsContainer = document.getElementById('menu-tabs');
+    if (!tabsContainer) return;
+
+    if (blocks.length <= 1) {
+      tabsContainer.innerHTML = '';
+      if (blocks.length === 1) blocks[0].hidden = false;
+      return;
+    }
+
+    tabsContainer.innerHTML = blocks.map((b) => {
+      const name = b.querySelector('.menu-name-input').value.trim() || 'Untitled Print Job';
+      const isActive = !b.hidden;
+      return `<button type="button" class="btn btn-secondary menu-tab-btn${isActive ? ' is-active' : ''}" data-block-id="${b.dataset.blockId}">${escapeHTML(name)}</button>`;
+    }).join('');
+
+    tabsContainer.querySelectorAll('.menu-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => switchToJobBlock(btn.dataset.blockId));
+    });
   }
 
   /* ================= INIT ================= */
