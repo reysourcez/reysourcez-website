@@ -51,7 +51,7 @@ console.info('[Margin Audit] script build: 2026-09-02-v1');
    this file needing to change to update it — same spirit as the
    settings reference table in FOOD_WORTH_CHANGE_NOTES.md. */
 
-const PROXY_ENDPOINT = 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE';
+const PROXY_ENDPOINT = 'https://margin-audit-proxy.reysourcez-ent.workers.dev/';
 
 // Popularity/CM quadrant thresholds and the four venue-type guide
 // ratios are copied from interactive-costing-analysis.js rather than
