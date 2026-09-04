@@ -5,26 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Margin Audit</title>
   <meta name="description" content="Enter what you already charge, and find out what your menu is actually earning — reverse-engineered from your real ingredient, overhead, utility, and labor costs.">
-<link rel="icon" href="favicon.ico" sizes="32x32">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="site.webmanifest">
-  
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=14">
 
-  <!-- Page-specific styles only. Everything else (buttons, tables, cards,
-       result pills, structure bars, wizard) is reused as-is from styles.css
-       per AI_BUILD_BRIEF.md — nothing new invented here that already has a
-       home there. What's genuinely new to this page: the cost-source tab
-       picker, the utility equipment table, the quadrant map, and the
-       insight/flag cards. Worth reviewing for promotion to styles.css once
-       this page is stable, same as Food Worth's page-scoped block was. -->
+  <!-- Page-specific styles only — everything else (buttons, tables,
+       cards, result pills, structure pies, wizard, connector panel,
+       tool dock, back-to-top) is reused as-is from styles.css per
+       AI_BUILD_BRIEF.md. New here: the cost-source tab picker, the
+       utility equipment table, the quadrant map, the insight/flag
+       cards, the true-cost breakdown table, and .ma-box — the boxed-
+       card treatment applied to every category on this page. -->
   <style>
-    /* ---- Cost-source picker (per dish: Sync / AI estimate / Manual) ---- */
+    /* ---- Boxed sections — every category gets the same card
+         treatment, matching .menu-block's existing recipe (border +
+         radius + surface bg) rather than inventing a new one. ---- */
+    .ma-box {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    .ma-box > h2, .ma-box > h3:first-child { margin-top: 0; }
+
+    /* ---- Cost-source picker (per dish: AI estimate / Manual) ---- */
     .ma-source-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
     .ma-source-tab {
       background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
@@ -36,9 +48,6 @@
     .ma-source-panel[hidden] { display: none; }
     .ma-source-panel { padding: 12px 14px; background: var(--paper); border-radius: 8px; margin-bottom: 14px; }
 
-    .ma-sync-status { font-size: 0.88rem; color: var(--muted); }
-    .ma-sync-status.is-synced { color: var(--accent-dark); font-weight: 600; }
-
     .ma-ai-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
     .ma-ai-row textarea {
       flex: 1 1 260px; min-height: 64px; padding: 8px 10px; border: 1px solid var(--line);
@@ -47,6 +56,7 @@
     .ma-ai-photo-btn { flex-shrink: 0; }
     .ma-ai-preview { max-width: 90px; max-height: 90px; border-radius: 6px; margin-top: 8px; }
     .ma-cost-range { font-family: "IBM Plex Mono", monospace; font-weight: 600; color: var(--accent-dark); margin-top: 8px; display: block; }
+    .ma-ai-status { min-height: 1.2em; }
 
     .ma-manual-row { display: flex; align-items: center; gap: 10px; }
     .ma-manual-row input { width: 100px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: "IBM Plex Mono", monospace; }
@@ -57,7 +67,8 @@
     .ma-dish-grid input[type="text"] { padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); min-width: 200px; }
 
     /* ---- Utility estimator ---- */
-    .ma-util-block { margin-bottom: 28px; }
+    .ma-util-block { margin-bottom: 20px; }
+    .ma-util-block:last-child { margin-bottom: 0; }
     .ma-util-block h4 { font-size: 0.95rem; margin: 0 0 10px; }
     #ma-elec-rows > tr td { padding: 8px 10px; }
     #ma-elec-rows input[type="text"] { min-width: 140px; font-family: var(--font-body); }
@@ -66,7 +77,7 @@
     .ma-gas-toggle { display: flex; gap: 16px; margin: 10px 0; font-size: 0.88rem; }
     .ma-gas-toggle label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
     .ma-util-note { font-size: 0.8rem; color: var(--muted); margin: 6px 0 0; }
-    .ma-util-summary { background: var(--accent-soft); border-radius: 8px; padding: 14px 18px; margin-top: 8px; font-size: 0.92rem; }
+    .ma-util-summary { background: var(--accent-soft); border-radius: 8px; padding: 14px 18px; margin-top: 4px; font-size: 0.92rem; }
 
     /* ---- Quadrant map ---- */
     #ma-quadrant-chart { width: 100%; height: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
@@ -79,7 +90,7 @@
     .ma-quad-dog { background: #C0392B; }
 
     /* ---- Insight / flag cards ---- */
-    .ma-insight-list { display: grid; gap: 10px; margin-top: 14px; }
+    .ma-insight-list { display: grid; gap: 10px; }
     .ma-insight-card { display: flex; gap: 12px; padding: 14px 16px; border-radius: 8px; background: var(--paper); border-left: 3px solid var(--accent); font-size: 0.92rem; }
     .ma-insight-card.is-warn { border-left-color: #D4A017; background: #FBF3E1; }
     .ma-insight-card.is-alert { border-left-color: #C0392B; background: #F7E6E2; }
@@ -89,19 +100,29 @@
     .ma-data-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
     .ma-data-bar .toggle-hint { flex-basis: 100%; }
 
-    @media (max-width: 800px) {
-      .ma-dish-grid { grid-template-columns: 1fr; }
-      .ma-dish-grid input[type="text"] { min-width: 0; width: 100%; }
-    }
+    /* ---- True cost breakdown ---- */
+    .ma-formula { background: var(--paper); border-radius: 8px; padding: 14px 18px; font-family: "IBM Plex Mono", monospace; font-size: 0.92rem; margin: 10px 0 18px; }
+    .ma-per-portion-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    #ma-true-cost-table { border-collapse: collapse; width: 100%; min-width: 520px; }
+    #ma-true-cost-table th, #ma-true-cost-table td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--line); font-size: 0.9rem; font-family: "IBM Plex Mono", monospace; }
+    #ma-true-cost-table th:first-child, #ma-true-cost-table td:first-child { text-align: left; font-family: var(--font-body); }
+    #ma-true-cost-table thead th { font-family: var(--font-body); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--paper); white-space: nowrap; }
+    #ma-true-cost-table td.ma-tc-total { font-weight: 700; color: var(--accent-dark); }
 
-    /* #ma-print-data-view is created and populated by JS only when "Save
-       data for next month" is clicked — hidden on screen always, and only
-       forced visible (with everything else hidden) during that specific
-       print pass. See saveDataSnapshot() in margin-audit-calculator.js. */
+    /* ---- Tool-dock feedback (this page creates/fills dishes rather
+         than one field, so pulls get a confirmation line here rather
+         than silently updating something far up the page) ---- */
+    .ma-dock-feedback { font-size: 0.88rem; color: var(--accent-dark); font-weight: 600; margin: 0 0 10px; min-height: 1.3em; }
+
     #ma-print-data-view { display: none; }
     @media print {
       body.ma-printing-data > *:not(#ma-print-data-view) { display: none !important; }
       body.ma-printing-data #ma-print-data-view { display: block !important; padding: 24px; font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: pre-wrap; }
+    }
+
+    @media (max-width: 800px) {
+      .ma-dish-grid { grid-template-columns: 1fr; }
+      .ma-dish-grid input[type="text"] { min-width: 0; width: 100%; }
     }
   </style>
 </head>
@@ -129,8 +150,8 @@
             <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
             <li><a href="printing-calculator.html">Printing Calculator</a></li>
             <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-            <li><a href="food-worth-calculator.html">Food Worth</a></li>
             <li><a href="margin-audit-calculator.html" aria-current="page">Margin Audit</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
           </ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
@@ -174,137 +195,231 @@
         <p class="ma-sync-status no-print" id="ma-compare-note" hidden></p>
 
         <!-- ============ DISHES ============ -->
-        <h2>Your menu, at today's prices</h2>
-        <p class="menu-builder-intro">Add each item, what you charge for it right now, and roughly how many you sell. For cost, sync it from Menu Calculator if you've already costed it there, describe it and let AI estimate, or just type what you think it costs — comparing your own guess against the estimate is itself useful.</p>
-        <div id="ma-dish-panels"></div>
-        <div class="calc-actions no-print">
-          <button type="button" id="ma-add-dish" class="btn btn-primary">+ Add menu item</button>
-        </div>
-
-        <!-- ============ OVERHEAD / MANPOWER / UTILITIES ============ -->
-        <h2 style="margin-top:40px;">Overhead, utilities &amp; labor</h2>
-        <p class="menu-builder-intro">Synced automatically if you've already set up Overhead &amp; Manpower Calculator in another tab. Electricity, water, and gas below are estimated from your equipment and usage — most vendors have never actually broken these down before.</p>
-
-        <p class="ma-sync-status no-print" id="ma-overhead-sync-status" hidden></p>
-
-        <div class="ica-grid" style="margin-bottom:8px;">
-          <div class="ica-inputs">
-            <h3>Fixed costs <span class="toggle-hint">(monthly, non-utility)</span></h3>
-            <label id="ma-rent-label"><span class="label-text">Rent, licenses, misc.</span> <input type="number" id="ma-rent" inputmode="decimal" min="0" step="10" value="900"></label>
-            <label id="ma-manpower-label"><span class="label-text">Manpower</span> <input type="number" id="ma-manpower" inputmode="decimal" min="0" step="10" value="1200"></label>
-          </div>
-          <div class="ica-inputs">
-            <h3>Operating volume</h3>
-            <label><span class="label-text">Operating days / month</span> <input type="number" id="ma-operating-days" min="1" max="31" value="26"></label>
+        <div class="ma-box">
+          <h2>Your menu, at today's prices</h2>
+          <p class="menu-builder-intro">Add each item, what you charge for it right now, and roughly how many you sell. For cost, describe it and let AI estimate, type what you think it costs, or pull it straight from Menu Calculator using the buttons near the bottom of this page.</p>
+          <div id="ma-dish-panels"></div>
+          <div class="calc-actions no-print">
+            <div class="menu-tabs" id="ma-dish-tabs"><!-- populated by JS once there's more than one item --></div>
+            <button type="button" id="ma-add-dish" class="btn btn-primary">+ Add menu item</button>
           </div>
         </div>
 
-        <div class="ma-util-block">
-          <h3>Electricity</h3>
-          <p class="structure-note">Pick your equipment, set hours used per day. Wattages are typical starting points — change any of them to match your actual equipment.</p>
+        <!-- ============ OVERHEAD / MANPOWER ============ -->
+        <div class="ma-box">
+          <h2>Overhead &amp; labor</h2>
+          <p class="menu-builder-intro">Rent, licenses, and staff costs. Pull these from Overhead &amp; Manpower Calculator near the bottom of this page, or enter them directly.</p>
+          <div class="ica-grid" style="margin-bottom:0;">
+            <div class="ica-inputs">
+              <h3>Fixed costs <span class="toggle-hint">(monthly, non-utility)</span></h3>
+              <label id="ma-rent-label"><span class="label-text">Rent, licenses, misc.</span> <input type="number" id="ma-rent" inputmode="decimal" min="0" step="10" value="900"></label>
+              <label id="ma-manpower-label"><span class="label-text">Manpower</span> <input type="number" id="ma-manpower" inputmode="decimal" min="0" step="10" value="1200"></label>
+            </div>
+            <div class="ica-inputs">
+              <h3>Operating volume</h3>
+              <label><span class="label-text">Operating days / month</span> <input type="number" id="ma-operating-days" min="1" max="31" value="26"></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ UTILITIES ============ -->
+        <div class="ma-box">
+          <h2>Utilities</h2>
+          <p class="menu-builder-intro">Most vendors have never actually broken these down — estimated from your equipment and usage below, or type an actual bill directly where noted.</p>
+
+          <div class="ma-util-block">
+            <h3>Electricity</h3>
+            <p class="structure-note">Pick your equipment, set hours used per day. Wattages are typical starting points — change any of them to match your actual equipment.</p>
+            <div class="table-scroll">
+              <table id="ma-elec-table">
+                <caption class="sr-only">Electricity equipment — wattage and daily hours used, to estimate monthly cost</caption>
+                <thead><tr>
+                  <th scope="col">Equipment</th>
+                  <th scope="col">Watts</th>
+                  <th scope="col">Hours / day</th>
+                  <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+                </tr></thead>
+                <tbody id="ma-elec-rows"></tbody>
+              </table>
+            </div>
+            <div class="calc-actions no-print"><button type="button" id="ma-add-elec-row" class="btn btn-secondary">+ Add equipment</button></div>
+            <p class="ma-util-note">Rate used: Sarawak Energy's current stated average, RM<span id="ma-elec-rate-display">0.28</span>/kWh<span class="tooltip-icon" data-tooltip="Sarawak Energy's commercial tariff is tiered; this average is a starting point — edit it if you know your actual band">?</span> — <label>edit rate <input type="number" id="ma-elec-rate" value="0.28" step="0.01" min="0" style="width:60px;"></label></p>
+            <p>Estimated electricity: <span class="ma-util-result" id="ma-elec-cost">RM0.00</span>/month</p>
+          </div>
+
+          <div class="ma-util-block">
+            <h3>Water</h3>
+            <div class="slider-row">
+              <label for="ma-water-liters">Estimated liters / day</label>
+              <input type="range" id="ma-water-liters" min="0" max="3000" step="50" value="500">
+              <input type="number" class="slider-num" id="ma-water-liters-num" min="0" step="50" value="500">
+            </div>
+            <p class="ma-util-note">Sarawak commercial (W3) rate<span class="tooltip-icon" data-tooltip="Restaurants, coffee-shops, and similar F&amp;B premises fall under the W3 Commercial Rate category">?</span>: RM22.00 minimum, then RM0.97 per 1,000L up to 25,000L, RM1.06 beyond. Have a bill instead? Just type the total.</p>
+            <label>Or enter your actual bill directly (RM) <input type="number" id="ma-water-actual" min="0" step="0.01" placeholder="optional" style="width:100px;"></label>
+            <p>Estimated water: <span class="ma-util-result" id="ma-water-cost">RM0.00</span>/month</p>
+          </div>
+
+          <div class="ma-util-block">
+            <h3>Gas <span class="toggle-hint">(cylinder / "tong gas")</span></h3>
+            <div class="ica-grid" style="grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-bottom:8px;">
+              <label>Burners in use <input type="number" id="ma-gas-burners" min="0" step="1" value="1" style="width:70px;"></label>
+              <label>Active hours / day <input type="number" id="ma-gas-hours" min="0" step="0.5" value="4" style="width:70px;"></label>
+              <label>kg used / hour <input type="number" id="ma-gas-rate" min="0" step="0.1" value="0.4" style="width:70px;"></label>
+            </div>
+            <div class="ma-gas-toggle">
+              <label><input type="radio" name="ma-gas-tier" value="household" checked> Household / subsidised cylinder</label>
+              <label><input type="radio" name="ma-gas-tier" value="commercial"> Commercial (purple) cylinder</label>
+            </div>
+            <label>Household price/14kg <input type="number" id="ma-gas-price-household" value="26.60" step="0.10" style="width:80px;"></label>
+            <label style="margin-left:16px;">Commercial price/14kg <input type="number" id="ma-gas-price-commercial" value="70.00" step="0.10" style="width:80px;"></label>
+            <p class="ma-util-note">Micro/small F&amp;B traders can typically still access the subsidised rate up to 42kg (three 14kg cylinders) without a permit — this is a live, evolving policy area, worth confirming your current status rather than assuming.</p>
+            <p>Estimated gas: <span class="ma-util-result" id="ma-gas-cost">RM0.00</span>/month <span id="ma-gas-threshold-flag"></span></p>
+          </div>
+
+          <div class="ma-util-summary">
+            Total overhead + utilities: <strong id="ma-total-overhead">RM0.00</strong>/month &middot;
+            Total manpower: <strong id="ma-total-manpower">RM0.00</strong>/month
+          </div>
+        </div>
+
+        <!-- ============ TRUE COST EXPLAINED ============ -->
+        <div class="ma-box">
+          <h2>How your true cost is calculated</h2>
+          <p class="menu-builder-intro">Every portion's true cost has three parts: its own ingredients, plus a fair share of overhead &amp; utilities, plus a fair share of manpower. The two "fair share" pieces are <em>the same for every dish</em> — your total overhead+utilities and total manpower, each divided by how many portions you sell across your whole menu in a month. Only the ingredient cost varies dish to dish.</p>
+          <div class="ma-formula">true cost&nbsp;=&nbsp;ingredient cost&nbsp;+&nbsp;(overhead &amp; utilities &divide; total monthly portions)&nbsp;+&nbsp;(manpower &divide; total monthly portions)</div>
+          <p class="structure-note">Right now, every portion — whichever dish it is — absorbs:</p>
+          <div class="ma-per-portion-cards">
+            <div class="result-card">
+              <span class="result-label">Overhead + utilities / portion</span>
+              <span class="result-value" id="ma-tc-overhead-portion">RM0.00</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Manpower / portion</span>
+              <span class="result-value" id="ma-tc-manpower-portion">RM0.00</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Added to every dish's ingredient cost</span>
+              <span class="result-value" id="ma-tc-fixed-portion">RM0.00</span>
+            </div>
+          </div>
           <div class="table-scroll">
-            <table id="ma-elec-table">
-              <caption class="sr-only">Electricity equipment — wattage and daily hours used, to estimate monthly cost</caption>
-              <thead><tr>
-                <th scope="col">Equipment</th>
-                <th scope="col">Watts</th>
-                <th scope="col">Hours / day</th>
-                <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
-              </tr></thead>
-              <tbody id="ma-elec-rows"></tbody>
+            <table id="ma-true-cost-table">
+              <caption class="sr-only">True cost breakdown per dish</caption>
+              <thead><tr><th scope="col">Dish</th><th scope="col">Ingredient</th><th scope="col">+ Overhead/portion</th><th scope="col">+ Manpower/portion</th><th scope="col">= True cost</th></tr></thead>
+              <tbody id="ma-true-cost-rows"></tbody>
             </table>
           </div>
-          <div class="calc-actions no-print"><button type="button" id="ma-add-elec-row" class="btn btn-secondary">+ Add equipment</button></div>
-          <p class="ma-util-note">Rate used: Sarawak Energy's current stated average, RM<span id="ma-elec-rate-display">0.28</span>/kWh<span class="tooltip-icon" data-tooltip="Sarawak Energy's commercial tariff is tiered; this average is a starting point — edit it if you know your actual band">?</span> — <label>edit rate <input type="number" id="ma-elec-rate" value="0.28" step="0.01" min="0" style="width:60px;"></label></p>
-          <p>Estimated electricity: <span class="ma-util-result" id="ma-elec-cost">RM0.00</span>/month</p>
-        </div>
-
-        <div class="ma-util-block">
-          <h3>Water</h3>
-          <div class="slider-row">
-            <label for="ma-water-liters">Estimated liters / day</label>
-            <input type="range" id="ma-water-liters" min="0" max="3000" step="50" value="500">
-            <input type="number" class="slider-num" id="ma-water-liters-num" min="0" step="50" value="500">
-          </div>
-          <p class="ma-util-note">Sarawak commercial (W3) rate<span class="tooltip-icon" data-tooltip="Restaurants, coffee-shops, and similar F&amp;B premises fall under the W3 Commercial Rate category">?</span>: RM22.00 minimum, then RM0.97 per 1,000L up to 25,000L, RM1.06 beyond. Have a bill instead? Just type the total.</p>
-          <label>Or enter your actual bill directly (RM) <input type="number" id="ma-water-actual" min="0" step="0.01" placeholder="optional" style="width:100px;"></label>
-          <p>Estimated water: <span class="ma-util-result" id="ma-water-cost">RM0.00</span>/month</p>
-        </div>
-
-        <div class="ma-util-block">
-          <h3>Gas <span class="toggle-hint">(cylinder / "tong gas")</span></h3>
-          <div class="ica-grid" style="grid-template-columns: 1fr 1fr 1fr; gap:16px; margin-bottom:8px;">
-            <label>Burners in use <input type="number" id="ma-gas-burners" min="0" step="1" value="1" style="width:70px;"></label>
-            <label>Active hours / day <input type="number" id="ma-gas-hours" min="0" step="0.5" value="4" style="width:70px;"></label>
-            <label>kg used / hour <input type="number" id="ma-gas-rate" min="0" step="0.1" value="0.4" style="width:70px;"></label>
-          </div>
-          <div class="ma-gas-toggle">
-            <label><input type="radio" name="ma-gas-tier" value="household" checked> Household / subsidised cylinder</label>
-            <label><input type="radio" name="ma-gas-tier" value="commercial"> Commercial (purple) cylinder</label>
-          </div>
-          <label>Household price/14kg <input type="number" id="ma-gas-price-household" value="26.60" step="0.10" style="width:80px;"></label>
-          <label style="margin-left:16px;">Commercial price/14kg <input type="number" id="ma-gas-price-commercial" value="70.00" step="0.10" style="width:80px;"></label>
-          <p class="ma-util-note">Micro/small F&amp;B traders can typically still access the subsidised rate up to 42kg (three 14kg cylinders) without a permit — this is a live, evolving policy area, worth confirming your current status rather than assuming.</p>
-          <p>Estimated gas: <span class="ma-util-result" id="ma-gas-cost">RM0.00</span>/month <span id="ma-gas-threshold-flag"></span></p>
-        </div>
-
-        <div class="ma-util-summary">
-          Total overhead + utilities: <strong id="ma-total-overhead">RM0.00</strong>/month &middot;
-          Total manpower: <strong id="ma-total-manpower">RM0.00</strong>/month
         </div>
 
         <!-- ============ RESULTS ============ -->
-        <h2 style="margin-top:44px;">What your menu is actually earning</h2>
+        <div class="ma-box">
+          <h2>What your menu is actually earning</h2>
+          <div class="ica-results" id="ma-summary-cards" style="margin-bottom:20px;">
+            <div class="result-card">
+              <span class="result-label">Monthly revenue</span>
+              <span class="result-value" id="ma-total-revenue">RM0.00</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Monthly net profit</span>
+              <span class="result-value" id="ma-net-profit">RM0.00</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Overall margin</span>
+              <span class="result-value" id="ma-overall-margin">0%</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Target margin gap</span>
+              <span class="result-value" id="ma-target-gap">Set a target below</span>
+            </div>
+          </div>
 
-        <div class="ica-results" id="ma-summary-cards" style="margin-bottom:28px;">
-          <div class="result-card">
-            <span class="result-label">Monthly revenue</span>
-            <span class="result-value" id="ma-total-revenue">RM0.00</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Monthly net profit</span>
-            <span class="result-value" id="ma-net-profit">RM0.00</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Overall margin</span>
-            <span class="result-value" id="ma-overall-margin">0%</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Target margin gap</span>
-            <span class="result-value" id="ma-target-gap">Set a target below</span>
+          <label style="display:inline-flex; gap:10px; align-items:center;">
+            <span class="label-text" style="font-weight:600;">Your target margin %</span>
+            <input type="number" id="ma-target-margin" min="0" max="100" step="1" placeholder="e.g. 30" style="width:80px; padding:7px 9px; border:1px solid var(--line); border-radius:4px; font-family:'IBM Plex Mono',monospace;">
+          </label>
+          <p class="ma-util-note">Compares against your actual numbers above — it doesn't change your prices or costs, only this gap and the note below.</p>
+        </div>
+
+        <div class="ma-box">
+          <h2>Per-item breakdown</h2>
+          <div id="ma-dish-results"></div>
+        </div>
+
+        <div class="ma-box">
+          <h2>Where each item lands</h2>
+          <p class="structure-note">Popularity (how much of your volume) against contribution margin (how much RM profit per portion, before overhead) — the standard menu-engineering view. A high margin <em>percentage</em> and a high margin in <em>ringgit</em> aren't always the same item.</p>
+          <svg id="ma-quadrant-chart" viewBox="0 0 640 420" role="img" aria-label="Menu items plotted by popularity against contribution margin"></svg>
+          <div class="ma-quad-legend">
+            <span><i class="ma-quad-swatch ma-quad-star"></i>Star — popular &amp; profitable</span>
+            <span><i class="ma-quad-swatch ma-quad-plow"></i>Plowhorse — popular, thin margin</span>
+            <span><i class="ma-quad-swatch ma-quad-puzzle"></i>Puzzle — profitable, rarely ordered</span>
+            <span><i class="ma-quad-swatch ma-quad-dog"></i>Dog — neither</span>
           </div>
         </div>
 
-        <label style="display:inline-flex; gap:10px; align-items:center; margin-bottom:20px;">
-          <span class="label-text" style="font-weight:600;">Your target margin %</span>
-          <input type="number" id="ma-target-margin" min="0" max="100" step="1" placeholder="e.g. 30" style="width:80px; padding:7px 9px; border:1px solid var(--line); border-radius:4px; font-family:'IBM Plex Mono',monospace;">
-        </label>
-
-        <h3>Per-item breakdown</h3>
-        <div id="ma-dish-results"></div>
-
-        <h3 style="margin-top:32px;">Where each item lands</h3>
-        <p class="structure-note">Popularity (how much of your volume) against contribution margin (how much RM profit per portion, before overhead) — the standard menu-engineering view. A high margin <em>percentage</em> and a high margin in <em>ringgit</em> aren't always the same item.</p>
-        <svg id="ma-quadrant-chart" viewBox="0 0 640 420" role="img" aria-label="Menu items plotted by popularity against contribution margin"></svg>
-        <div class="ma-quad-legend">
-          <span><i class="ma-quad-swatch ma-quad-star"></i>Star — popular &amp; profitable</span>
-          <span><i class="ma-quad-swatch ma-quad-plow"></i>Plowhorse — popular, thin margin</span>
-          <span><i class="ma-quad-swatch ma-quad-puzzle"></i>Puzzle — profitable, rarely ordered</span>
-          <span><i class="ma-quad-swatch ma-quad-dog"></i>Dog — neither</span>
+        <div class="ma-box">
+          <h2>Cost structure: your numbers vs. guide</h2>
+          <div class="structure-layout">
+            <div class="structure-info">
+              <p class="structure-key">
+                <span><i class="legend-swatch legend-ingredients"></i>Ingredients</span>
+                <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
+                <span><i class="legend-swatch legend-manpower"></i>Manpower</span>
+                <span><i class="legend-swatch legend-margin"></i>Margin</span>
+              </p>
+              <p class="structure-note">Reflects your whole menu's blended cost structure at today's prices and volumes.</p>
+            </div>
+            <div class="structure-charts">
+              <div class="structure-pie-card">
+                <div class="structure-pie-card-header">
+                  <span class="structure-pie-title">Your numbers</span>
+                  <span class="loss-flag" id="structure-loss-flag" hidden>LOSING MONEY</span>
+                </div>
+                <div class="structure-pie-body" id="structure-pie-yours"><!-- populated by JS: pie + value list --></div>
+              </div>
+              <div class="structure-pie-card">
+                <div class="structure-pie-card-header">
+                  <select id="guide-venue-select" class="structure-pie-select" aria-label="Guide venue type">
+                    <option value="home">Home-based</option>
+                    <option value="stall">Stall / hawker</option>
+                    <option value="truck">Food truck</option>
+                    <option value="store">Store / restaurant</option>
+                  </select>
+                </div>
+                <div class="structure-pie-body" id="structure-pie-guide"><!-- populated by JS: pie + value list --></div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <h3 style="margin-top:32px;">Cost structure vs. guide</h3>
-        <p class="structure-key">
-          <span><i class="legend-swatch legend-ingredients"></i>Ingredients</span>
-          <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
-          <span><i class="legend-swatch legend-manpower"></i>Manpower</span>
-          <span><i class="legend-swatch legend-margin"></i>Margin</span>
-        </p>
-        <div class="structure-bars" id="ma-structure-bars"></div>
+        <div class="ma-box">
+          <h2>What stands out</h2>
+          <div class="ma-insight-list" id="ma-insights"></div>
+        </div>
 
-        <h3 style="margin-top:32px;">What stands out</h3>
-        <div class="ma-insight-list" id="ma-insights"></div>
+        <!-- ============ CONNECTOR + TOOL DOCK ============
+             Kept together (not split top/bottom like Costing
+             Analysis) since pulling here creates/fills dishes and
+             overhead fields rather than one pair of boxes — easier
+             to follow with button and result in the same place. -->
+        <div class="connector-panel no-print">
+          <div class="calc-actions">
+            <span class="connector-label">Pull from<span class="tooltip-icon" data-tooltip="Loads right here — nothing is saved either way">?</span></span>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-menu" data-open-tool="menu-calculator">Menu Portion Creator</button>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-overhead" data-open-tool="overhead-manpower-calculator">Overhead &amp; Manpower</button>
+            <button type="button" class="btn btn-secondary connector-btn connector-btn-printing" data-open-tool="printing-calculator">Printing Calculator</button>
+            <button type="button" id="tool-dock-hide-btn" class="btn btn-secondary" hidden>Hide</button>
+          </div>
+        </div>
+        <p class="ma-dock-feedback no-print" id="ma-dock-feedback"></p>
 
+        <div class="tool-dock no-print" id="tool-dock" hidden>
+          <div class="tool-dock-header">
+            <span class="tool-dock-title" id="tool-dock-title"></span>
+            <button type="button" class="tool-dock-close" id="tool-dock-close" aria-label="Close this panel">&times;</button>
+          </div>
+          <div class="tool-dock-body" id="tool-dock-body"></div>
+        </div>
       </div>
     </section>
 
@@ -316,8 +431,10 @@
     </div>
   </footer>
 
-  <script src="costing-sync.js?v=3" defer></script>
+  <button type="button" id="rz-back-to-top" class="no-print" hidden>&uarr; Back to analysis</button>
+
+  <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="margin-audit-calculator.js?v=1" defer></script>
+  <script src="margin-audit-calculator.js?v=2" defer></script>
 </body>
 </html>

@@ -20,43 +20,58 @@
    JS below, same as the EPF/SOCSO tables in
    overhead-manpower-calculator.js — auditable, never guessed.
 
-   DATA MODEL: one or more "dishes" (same repeatable-block pattern
-   as food-worth-calculator.js's dish panels / menu-calculator.js's
-   .menu-block — createDishPanel(), scope every lookup to that
-   instance via panel.querySelector(), never a page-wide id). Each
-   dish has a cost SOURCE: sync (pulled live from Menu Calculator —
-   see the note on costingSync below), ai (Gemini estimates from a
-   description and/or photo), or manual (vendor just types a
-   number). All three ultimately resolve to one number per dish;
-   everything downstream (true margin, structure %, quadrant) reads
-   that number the same way regardless of where it came from.
+   DATA MODEL: one or more "dishes", same repeatable-block pattern
+   as menu-calculator.js's .menu-block, INCLUDING its tab-queue
+   behavior — only the active dish's card is visible at a time,
+   switched via .ma-dish-tabs, exactly matching switchToMenuBlock/
+   renderMenuTabs there (and Food Worth's dish tabs, and Printing
+   Calculator's job tabs — same pattern, three places already,
+   this makes four). createDishPanel()/switchToDish()/
+   renderDishTabs() below are that pattern ported, not reinvented.
+   collectDishes() and every render function still reads ALL dish
+   panels via querySelectorAll regardless of which tab is showing —
+   hidden only affects display, never what gets calculated.
 
-   SYNC LIMITATION, inherited and worth stating plainly: Menu
-   Calculator currently only broadcasts its FIRST menu block (see
-   the comment in menu-calculator.js's updateMenuBlockSummary — Cost
-   Analysis has the same limitation). So "Sync" here reflects
-   whichever ONE dish is currently broadcasting, not a whole menu.
-   If more than one dish is set to Sync, they'll all show that same
-   single value — not wrong, just a visible reminder of a real
-   limitation rather than a silent one. Fixing this for real is the
-   same multi-menu protocol redesign already KIV'd in
-   ROADMAP_SONNET5MAX.md, not something to solve from this file.
+   Each dish has a cost SOURCE: ai (Gemini estimates from a
+   description and/or photo) or manual (vendor just types a
+   number) — no per-dish "sync" tab anymore. Pulling a dish in from
+   Menu Calculator or Printing Calculator now goes through the
+   connector panel + tool dock near the bottom of the page instead
+   (see TOOL DOCK section) — it CREATES a new dish panel pre-filled
+   as a manual entry, rather than a dish "watching" for a broadcast
+   forever. See handleSyncPayload().
+
+   TOOL DOCK: ported from interactive-costing-analysis.js's
+   rzLoadToolIntoDock/rzRunIsolated/rzExtractInlineScript almost
+   verbatim — same fetch-inject-execute approach (load the other
+   tool's real page and real script into a dock on this page,
+   shadow rzBroadcast inside an IIFE so its calls land directly on
+   handleSyncPayload here instead of going out over a channel this
+   page's own listener can't hear itself on). Kept together with
+   the connector buttons near the footer (not split top/bottom like
+   Costing Analysis) since a pull here creates/fills dishes and
+   overhead fields rather than one pair of boxes — easier to follow
+   with the button and the result in the same place. Relies on
+   RZ_TOOLS from costing-sync.js for each tool's real URL/label; if
+   that's ever missing or reshaped, every touch point already
+   guards for it (typeof RZ_TOOLS === 'undefined' etc.) and simply
+   no-ops rather than breaking anything else on the page.
+
+   STRUCTURE COMPARISON: pie-chart based, ported from
+   interactive-costing-analysis.js's renderStructurePie/
+   describePieSlice/polarPoint — generic pie math, not page-
+   specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Audit] script build: 2026-09-02-v1');
+console.info('[Margin Audit] script build: 2026-09-04-v2-toolDock-pies-tabs');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
    here, with the current value on the left and nothing else in
-   this file needing to change to update it — same spirit as the
-   settings reference table in FOOD_WORTH_CHANGE_NOTES.md. */
+   this file needing to change to update it. */
 
-const PROXY_ENDPOINT = 'https://margin-audit-proxy.reysourcez-ent.workers.dev/';
+const PROXY_ENDPOINT = 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE';
 
-// Popularity/CM quadrant thresholds and the four venue-type guide
-// ratios are copied from interactive-costing-analysis.js rather than
-// shared at runtime, matching this site's one-file-per-page,
-// no-build-step approach — each page stays independently hostable.
 const GUIDE_RATIOS = {
   home:  { ingredients: 55, overhead: 15, manpower: 15, margin: 15 },
   stall: { ingredients: 50, overhead: 20, manpower: 15, margin: 15 },
@@ -64,37 +79,16 @@ const GUIDE_RATIOS = {
   store: { ingredients: 35, overhead: 20, manpower: 30, margin: 15 },
 };
 
-// Reasonable starting wattages for common F&B equipment — NOT a
-// hard fact, a starting point the vendor edits per row. General
-// appliance-engineering ballparks, not sourced to a specific meter.
 const ELECTRICITY_DEFAULTS = [
   { name: 'Rice cooker', watts: 800, hours: 3 },
   { name: 'Exhaust fan', watts: 200, hours: 8 },
   { name: 'Fridge', watts: 250, hours: 24 },
   { name: 'Lighting', watts: 100, hours: 10 },
 ];
-// Sarawak Energy states this as its current average across all
-// account types; the real commercial (C1) schedule is tiered, so
-// treat this as a starting rate to confirm against Sarawak Energy's
-// live tariff page, same spirit as the EPF/SOCSO tables being
-// sourced from the real gov schedule rather than approximated.
-const ELECTRICITY_RATE_DEFAULT = 0.28; // RM/kWh
+const ELECTRICITY_RATE_DEFAULT = 0.28; // RM/kWh, Sarawak Energy's current stated average — verify against their live tariff page for exact tiered bands
 
-// Sarawak's water utilities (Kuching/Sibu/LAKU) classify restaurants,
-// coffee-shops, and similar premises under a specific "W3 Commercial
-// Rate" category. Figures below are LAKU's current published Miri/
-// Limbang schedule — worth re-checking if serving a different area,
-// since the three utilities have historically shared one structure
-// but that's not guaranteed to stay true forever.
-const WATER_TARIFF = { minimum: 22.00, tier1Limit: 25000, tier1Rate: 0.97, tier2Rate: 1.06 }; // RM, liters, RM/1000L
+const WATER_TARIFF = { minimum: 22.00, tier1Limit: 25000, tier1Rate: 0.97, tier2Rate: 1.06 }; // RM, liters, RM/1000L — Sarawak W3 Commercial Rate
 
-// Gas: Malaysia moved F&B businesses toward commercial-grade (purple)
-// cylinders in 2025, at roughly triple the household price — though
-// later guidance kept the subsidised rate available to micro/small
-// F&B traders up to 42kg (three 14kg cylinders) at a time without a
-// permit. This is a genuinely live, still-settling policy area —
-// treat the toggle below as the honest way to handle that, not a
-// bug. Re-verify both prices and the threshold periodically.
 const GAS_CYLINDER_KG = 14;
 const GAS_SUBSIDISED_THRESHOLD_KG = 42;
 const GAS_PRICE_HOUSEHOLD_DEFAULT = 26.60;
@@ -126,10 +120,25 @@ function numOrZero(v) {
   return isFinite(v) ? v : 0;
 }
 
-/* ================= WIZARD (same 3-step pattern as
-   interactive-costing-analysis.js, reused verbatim for
-   consistency — cuisine is captured later, near where it's
-   actually used, rather than as a fourth wizard step) ================= */
+// Shows a small "synced from X" badge next to a field label — ported
+// from interactive-costing-analysis.js verbatim. Used for overhead/
+// manpower (their labels are real <label> wrappers, matching what
+// this expects); dish syncing shows its own confirmation instead
+// via #ma-dock-feedback, since a dish name input isn't wrapped in a
+// label the same way.
+function markSynced(labelSelector, sourceLabel) {
+  const label = document.querySelector(labelSelector);
+  if (!label) return;
+  let badge = label.querySelector('.synced-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'synced-badge';
+    label.appendChild(badge);
+  }
+  badge.textContent = '\u2190 ' + sourceLabel;
+}
+
+/* ================= WIZARD ================= */
 
 const WIZARD_STEPS = [
   {
@@ -186,6 +195,8 @@ function finishWizard() {
   document.querySelector('#ma-manpower-label .label-text').textContent = wizardAnswers.manpower === 'solo'
     ? "Manpower (include your own wage, even if it's just you)"
     : 'Manpower';
+  const guideSelect = document.getElementById('guide-venue-select');
+  if (guideSelect && wizardAnswers.venue) guideSelect.value = wizardAnswers.venue;
   if (!document.querySelector('.ma-dish-panel')) createDishPanel();
   recalculateAll();
 }
@@ -197,11 +208,10 @@ function editAnswers() {
   renderWizardStep();
 }
 
-/* ================= DISH PANELS ================= */
+/* ================= DISH PANELS (tab-queue pattern) ================= */
 
 const dishAiCost = new WeakMap();   // panel -> {low, high} from Gemini
 const dishAiImage = new WeakMap();  // panel -> base64 (for the estimate request only, never stored)
-let lastSyncedPayload = null;       // shared single-slot sync value — see file-header note on the sync limitation
 let dishIdCounter = 0;
 
 function createDishPanel() {
@@ -210,28 +220,23 @@ function createDishPanel() {
   const panel = document.createElement('div');
   panel.className = 'ma-dish-panel menu-block';
   panel.dataset.dishId = id;
+  panel.dataset.costSource = 'ai';
   panel.innerHTML = `
     <div class="menu-block-header">
       <input type="text" class="menu-name-input ma-dish-name" value="Dish ${dishIdCounter}" aria-label="Dish name">
       <button type="button" class="remove-block-btn ma-remove-dish no-print" aria-label="Remove this item">Remove item</button>
     </div>
     <div class="ma-dish-grid">
-      <label>Item name <input type="text" class="ma-dish-name-mirror" placeholder="e.g. Nasi Lemak Ayam"></label>
       <label>Current price (RM) <input type="number" class="ma-dish-price" inputmode="decimal" min="0" step="0.01" value="0.00"></label>
       <label>Sold / day <input type="number" class="ma-dish-volume" inputmode="decimal" min="0" step="1" value="0"></label>
     </div>
 
     <div class="ma-source-tabs" role="tablist">
-      <button type="button" class="ma-source-tab is-active" data-source="sync">Sync from Menu Calculator</button>
-      <button type="button" class="ma-source-tab" data-source="ai">AI estimate</button>
+      <button type="button" class="ma-source-tab is-active" data-source="ai">AI estimate</button>
       <button type="button" class="ma-source-tab" data-source="manual">I'll enter it myself</button>
     </div>
 
-    <div class="ma-source-panel ma-source-sync" data-source-panel="sync">
-      <p class="ma-sync-status ma-sync-cost-status">No Menu Calculator data received yet — open it in another tab and cost a dish there, or pick a different source.</p>
-    </div>
-
-    <div class="ma-source-panel ma-source-ai" data-source-panel="ai" hidden>
+    <div class="ma-source-panel ma-source-ai" data-source-panel="ai">
       <div class="ma-ai-row">
         <textarea class="ma-ai-desc" placeholder="Describe the dish — main ingredients and rough portions (e.g. 200g rice, fried chicken thigh, sambal, egg, cucumber)"></textarea>
         <label class="btn btn-secondary ma-ai-photo-btn" style="cursor:pointer;">Or snap a photo<input type="file" accept="image/*" class="sr-only ma-ai-photo-input"></label>
@@ -240,7 +245,7 @@ function createDishPanel() {
       <div class="calc-actions no-print" style="padding-top:10px;">
         <button type="button" class="btn btn-primary ma-ai-estimate-btn">Estimate cost</button>
       </div>
-      <p class="ma-sync-status ma-ai-status"></p>
+      <p class="ma-ai-status"></p>
       <span class="ma-cost-range" hidden></span>
     </div>
 
@@ -251,16 +256,8 @@ function createDishPanel() {
     </div>
   `;
   document.getElementById('ma-dish-panels').appendChild(panel);
-  panel.dataset.costSource = 'sync'; // matches the tab marked is-active in the template above
 
-  // Keep the visible header name and the grid's name field mirrored —
-  // two inputs, one value, same trick menu-calculator.js doesn't need
-  // but food-worth-calculator.js's dish tabs do (see its renderDishTabs).
-  const headerName = panel.querySelector('.ma-dish-name');
-  const mirrorName = panel.querySelector('.ma-dish-name-mirror');
-  headerName.addEventListener('input', () => { mirrorName.value = headerName.value; recalculateAll(); });
-  mirrorName.addEventListener('input', () => { headerName.value = mirrorName.value; recalculateAll(); });
-
+  panel.querySelector('.ma-dish-name').addEventListener('input', () => { renderDishTabs(); recalculateAll(); });
   panel.querySelectorAll('.ma-dish-price, .ma-dish-volume, .ma-manual-cost').forEach((el) => {
     el.addEventListener('input', recalculateAll);
   });
@@ -271,10 +268,58 @@ function createDishPanel() {
 
   panel.querySelector('.ma-ai-photo-input').addEventListener('change', (e) => handleDishPhoto(e, panel));
   panel.querySelector('.ma-ai-estimate-btn').addEventListener('click', () => estimateDishCost(panel));
-  panel.querySelector('.ma-remove-dish').addEventListener('click', () => { panel.remove(); recalculateAll(); });
 
-  applySyncedCostIfWaiting(panel);
+  panel.querySelector('.ma-remove-dish').addEventListener('click', () => {
+    const wasActive = !panel.hidden;
+    panel.remove();
+    if (wasActive) {
+      const remaining = document.querySelector('.ma-dish-panel');
+      if (remaining) switchToDish(remaining.dataset.dishId);
+      else renderDishTabs();
+    } else {
+      renderDishTabs();
+    }
+    recalculateAll();
+  });
+
+  switchToDish(id);
   return panel;
+}
+
+// Only the active dish's full card is shown at a time; the tab row
+// beside "+ Add menu item" lets you switch which one that is. Same
+// "hide siblings, show one" pattern already used by Menu Calculator's
+// menu blocks, Food Worth's dish tabs, and Printing Calculator's job
+// tabs — ported here rather than reinvented as vertical stacking.
+function switchToDish(dishId) {
+  document.querySelectorAll('.ma-dish-panel').forEach((p) => {
+    p.hidden = (p.dataset.dishId !== dishId);
+  });
+  renderDishTabs();
+}
+
+// Tabs only appear once there's something to switch between — a
+// single item just shows its card directly, no tab row overhead.
+function renderDishTabs() {
+  const panels = Array.from(document.querySelectorAll('.ma-dish-panel'));
+  const tabsContainer = document.getElementById('ma-dish-tabs');
+  if (!tabsContainer) return;
+
+  if (panels.length <= 1) {
+    tabsContainer.innerHTML = '';
+    if (panels.length === 1) panels[0].hidden = false;
+    return;
+  }
+
+  tabsContainer.innerHTML = panels.map((p) => {
+    const name = p.querySelector('.ma-dish-name').value.trim() || 'Untitled item';
+    const isActive = !p.hidden;
+    return `<button type="button" class="btn btn-secondary menu-tab-btn${isActive ? ' is-active' : ''}" data-dish-id="${p.dataset.dishId}">${escapeHTML(name)}</button>`;
+  }).join('');
+
+  tabsContainer.querySelectorAll('.menu-tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => switchToDish(btn.dataset.dishId));
+  });
 }
 
 function switchDishSource(panel, source) {
@@ -284,10 +329,8 @@ function switchDishSource(panel, source) {
   recalculateAll();
 }
 
-/* ---- AI estimate (Gemini via Cloudflare Worker) ----
-   Same resize-then-base64 approach as food-worth-calculator.js's
-   resizeImageToBase64 — copied rather than imported, since this site
-   has no build step and each page stays independently hostable. */
+/* ---- AI estimate (Gemini via Cloudflare Worker) ---- */
+
 function resizeImageToBase64(file) {
   return new Promise((resolve, reject) => {
     if (!file.type.startsWith('image/')) { reject(new Error("That file doesn't look like an image.")); return; }
@@ -331,13 +374,6 @@ async function handleDishPhoto(e, panel) {
   }
 }
 
-// Request/response contract this expects from the Worker, for
-// whenever it's built: POST { type: 'dish_cost_estimate',
-// description, image?, mime_type?, venue_context } -> JSON
-// { cost_low_myr, cost_high_myr }. A RANGE, deliberately, not one
-// confident figure — same honesty food-worth-calculator.js already
-// applies to its own price estimate rather than pretending
-// precision Gemini doesn't actually have for a single photo/description.
 async function estimateDishCost(panel) {
   const statusEl = panel.querySelector('.ma-ai-status');
   const rangeEl = panel.querySelector('.ma-cost-range');
@@ -349,7 +385,7 @@ async function estimateDishCost(panel) {
     return;
   }
   if (!PROXY_ENDPOINT || PROXY_ENDPOINT === 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE') {
-    statusEl.textContent = 'This tool needs its proxy URL set \u2014 see PROXY_ENDPOINT near the top of margin-audit-calculator.js. Use manual entry or sync for now.';
+    statusEl.textContent = 'This tool needs its proxy URL set \u2014 see PROXY_ENDPOINT near the top of margin-audit-calculator.js. Use manual entry for now.';
     return;
   }
 
@@ -387,53 +423,156 @@ async function estimateDishCost(panel) {
   }
 }
 
-/* ---- Cross-tool sync (listen only — this tool is an analysis
-   endpoint like Costing Analysis, not a broadcaster) ---- */
-function applySyncedCostIfWaiting(panel) {
-  if (lastSyncedPayload && panel.dataset.costSource === 'sync') {
-    const statusEl = panel.querySelector('.ma-sync-cost-status');
-    statusEl.textContent = `Synced: ${formatRM(lastSyncedPayload.cost)}/portion from ${lastSyncedPayload.label}`;
-    statusEl.classList.add('is-synced');
+/* ================= CROSS-TOOL SYNC (dishes: created via tool
+   dock pulls; overhead/manpower: filled directly) ================= */
+
+function handleSyncPayload(data) {
+  if ((data.source === 'menu-calculator' || data.source === 'printing-calculator') && typeof data.costPerPortion === 'number') {
+    const sourceLabel = data.source === 'menu-calculator' ? 'Menu Portion Creator' : 'Printing Calculator';
+    const panel = createDishPanel();
+    panel.querySelector('.ma-dish-name').value = data.dishName || 'Synced item';
+    if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
+      panel.querySelector('.ma-dish-price').value = data.sellingPrice.toFixed(2);
+    }
+    switchDishSource(panel, 'manual');
+    panel.querySelector('.ma-manual-cost').value = data.costPerPortion.toFixed(2);
+    renderDishTabs();
+    const feedback = document.getElementById('ma-dock-feedback');
+    if (feedback) {
+      feedback.textContent = `\u2713 Added "${panel.querySelector('.ma-dish-name').value}" to your menu from ${sourceLabel} \u2014 ${formatRM(data.costPerPortion)}/portion. Scroll up to see it in Your Menu.`;
+    }
+    recalculateAll();
+  }
+  if (data.source === 'overhead-manpower-calculator') {
+    const parts = [];
+    if (typeof data.overheadMonthly === 'number') {
+      document.getElementById('ma-rent').value = data.overheadMonthly.toFixed(2);
+      markSynced('#ma-rent-label', 'Overhead & Manpower');
+      parts.push('rent/overhead');
+    }
+    if (typeof data.manpowerMonthly === 'number') {
+      document.getElementById('ma-manpower').value = data.manpowerMonthly.toFixed(2);
+      markSynced('#ma-manpower-label', 'Overhead & Manpower');
+      parts.push('manpower');
+    }
+    if (parts.length) {
+      const feedback = document.getElementById('ma-dock-feedback');
+      if (feedback) feedback.textContent = `\u2713 Synced ${parts.join(' & ')} from Overhead & Manpower Calculator.`;
+    }
+    recalculateAll();
   }
 }
 
 function initSync() {
-  if (typeof rzListen !== 'function') return; // costing-sync.js not present or an old version — everything else still works
-  rzListen((data) => {
-    if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
-      lastSyncedPayload = { cost: data.costPerPortion, label: 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : '') };
-      document.querySelectorAll('.ma-dish-panel').forEach((p) => {
-        if (p.dataset.costSource === 'sync') applySyncedCostIfWaiting(p);
-      });
-      recalculateAll();
-    }
-    if (data.source === 'overhead-manpower-calculator') {
-      const statusEl = document.getElementById('ma-overhead-sync-status');
-      let parts = [];
-      if (typeof data.overheadMonthly === 'number') {
-        document.getElementById('ma-rent').value = data.overheadMonthly.toFixed(2);
-        parts.push('overhead');
-      }
-      if (typeof data.manpowerMonthly === 'number') {
-        document.getElementById('ma-manpower').value = data.manpowerMonthly.toFixed(2);
-        parts.push('manpower');
-      }
-      if (parts.length) {
-        statusEl.hidden = false;
-        statusEl.textContent = `Synced ${parts.join(' & ')} from Overhead & Manpower Calculator. Utilities below are still estimated separately.`;
-        statusEl.classList.add('is-synced');
-      }
-      recalculateAll();
-    }
+  if (typeof rzListen !== 'function') return; // costing-sync.js missing/reshaped — everything else still works
+  rzListen(handleSyncPayload);
+}
+
+/* ================= TOOL DOCK (fetch-inject-execute) =================
+   Ported from interactive-costing-analysis.js almost verbatim — see
+   that file's own long comment on WHY this exists (two real problems:
+   duplicate top-level declarations across pages, and BroadcastChannel
+   never delivering a message back to its own sender) for the full
+   explanation. Nothing about the mechanism itself changes here, only
+   which tools are configured and where results land (handleSyncPayload
+   above, tuned for this page's dish-based model instead of one pair
+   of fields). ============================================================ */
+
+const TOOL_DOCK_CONFIG = {
+  'menu-calculator': { scriptUrl: 'menu-calculator.js', theme: 'theme-menu' },
+  'overhead-manpower-calculator': { scriptUrl: 'overhead-manpower-calculator.js', theme: 'theme-overhead' },
+  'printing-calculator': { inlineScript: true, theme: 'theme-printing' },
+};
+
+function rzExtractInlineScript(doc) {
+  const found = Array.from(doc.querySelectorAll('script')).find((s) => !s.src);
+  return found ? found.textContent : '';
+}
+
+function rzRunIsolated(scriptText, sourceKey) {
+  const scriptEl = document.createElement('script');
+  scriptEl.textContent =
+    '(function() {\n' +
+    '  const rzBroadcast = function(payload) { handleSyncPayload(Object.assign({ source: "' + sourceKey + '" }, payload)); };\n' +
+    scriptText + '\n' +
+    '  if (typeof init === "function") init();\n' +
+    '})();';
+  document.getElementById('tool-dock-body').appendChild(scriptEl);
+}
+
+function setDockVisible(visible) {
+  document.getElementById('tool-dock').hidden = !visible;
+  document.getElementById('rz-back-to-top').hidden = !visible;
+  document.getElementById('tool-dock-hide-btn').hidden = !visible;
+  if (!visible) updateConnectorActiveState(null);
+}
+
+function updateConnectorActiveState(activeKey) {
+  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
+    btn.classList.toggle('is-active', btn.dataset.openTool === activeKey);
   });
+}
+
+async function rzLoadToolIntoDock(key) {
+  if (typeof RZ_TOOLS === 'undefined' || !RZ_TOOLS[key]) return;
+  const dockConfig = TOOL_DOCK_CONFIG[key];
+  const tool = RZ_TOOLS[key];
+  const dock = document.getElementById('tool-dock');
+  const body = document.getElementById('tool-dock-body');
+  const titleEl = document.getElementById('tool-dock-title');
+  const feedback = document.getElementById('ma-dock-feedback');
+  if (feedback) feedback.textContent = '';
+
+  if (dock.dataset.openTool === key) {
+    setDockVisible(true);
+    updateConnectorActiveState(key);
+    dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+
+  dock.className = 'tool-dock ' + dockConfig.theme;
+  dock.dataset.openTool = key;
+  titleEl.textContent = tool.label;
+  body.innerHTML = '<p class="tool-dock-status">Loading\u2026</p>';
+  setDockVisible(true);
+  updateConnectorActiveState(key);
+  dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const html = await fetch(tool.url).then((r) => {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    });
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const main = doc.querySelector('main');
+    if (!main) throw new Error('couldn\u2019t find that page\u2019s content');
+
+    main.querySelectorAll('.rz-embed-hide').forEach((el) => { el.hidden = true; });
+    main.querySelectorAll('#rz-switcher').forEach((el) => el.remove());
+
+    const scriptText = dockConfig.inlineScript
+      ? rzExtractInlineScript(doc)
+      : await fetch(dockConfig.scriptUrl).then((r) => r.text());
+
+    body.innerHTML = '';
+    Array.from(main.children).forEach((section) => {
+      const wrap = section.querySelector(':scope > .wrap');
+      if (wrap) {
+        while (wrap.firstChild) section.insertBefore(wrap.firstChild, wrap);
+        wrap.remove();
+      }
+      body.appendChild(section);
+    });
+
+    rzRunIsolated(scriptText, key);
+  } catch (err) {
+    body.innerHTML = '<p class="tool-dock-status is-error">Couldn\u2019t load this here (' + err.message + '). <a href="' + tool.url + '" target="_blank" rel="noopener">Open ' + tool.label + ' in a new tab instead</a>.</p>';
+  }
 }
 
 /* ================= UTILITY ESTIMATOR ================= */
 
-let elecRowIdCounter = 0;
-
 function createElecRow(preset) {
-  elecRowIdCounter++;
   const tbody = document.getElementById('ma-elec-rows');
   const tr = document.createElement('tr');
   tr.innerHTML = `
@@ -495,14 +634,13 @@ function computeGasCost() {
 /* ================= MATH ENGINE (pure functions, no DOM) ================= */
 
 function getDishCost(panel) {
-  const source = panel.dataset.costSource || 'sync';
-  if (source === 'manual') return num(panel.querySelector('.ma-manual-cost'));
+  const source = panel.dataset.costSource || 'manual';
   if (source === 'ai') {
     const est = dishAiCost.get(panel);
     if (!est) return 0;
     return est.low && est.high ? (est.low + est.high) / 2 : (est.high || est.low || 0);
   }
-  return lastSyncedPayload ? lastSyncedPayload.cost : 0;
+  return num(panel.querySelector('.ma-manual-cost'));
 }
 
 function collectDishes() {
@@ -514,7 +652,7 @@ function collectDishes() {
       panel,
       name: panel.querySelector('.ma-dish-name').value.trim() || 'Untitled item',
       price, volumeDay, ingredientCost,
-      cmPerPortion: price - ingredientCost, // standard contribution margin, pre-overhead
+      cmPerPortion: price - ingredientCost,
     };
   }).filter((d) => d.price > 0 || d.volumeDay > 0);
 }
@@ -523,9 +661,6 @@ function computeQuadrant(dishes, totalVolumeDay) {
   if (!dishes.length || !totalVolumeDay) return dishes.map((d) => ({ ...d, quadrant: null }));
   const fairShare = (1 / dishes.length) * 100;
   const popThreshold = fairShare * 0.70;
-  // Volume-weighted average CM per portion. Deliberately computed from
-  // daily figures on both sides (not monthly) so operating-days cancels
-  // out cleanly regardless of what the vendor sets that field to.
   const avgCm = dishes.reduce((sum, d) => sum + d.cmPerPortion * d.volumeDay, 0) / totalVolumeDay;
   return dishes.map((d) => {
     const popPct = (d.volumeDay / totalVolumeDay) * 100;
@@ -540,11 +675,6 @@ function computeQuadrant(dishes, totalVolumeDay) {
   });
 }
 
-// Same shape as interactive-costing-analysis.js's structureMix() —
-// ingredients/overhead/manpower never negative, margin can go
-// negative, all four always sum to exactly 100% of price by
-// construction, which is what lets "yours" and "guide" compare on
-// the same scale.
 function structureMixFromTotals(ingredientTotal, overheadTotal, manpowerTotal, revenueTotal) {
   const rev = revenueTotal > 0 ? revenueTotal : 1;
   const margin = revenueTotal - ingredientTotal - overheadTotal - manpowerTotal;
@@ -554,6 +684,74 @@ function structureMixFromTotals(ingredientTotal, overheadTotal, manpowerTotal, r
     manpower: (manpowerTotal / rev) * 100,
     margin: (margin / rev) * 100,
   };
+}
+
+/* ================= PIE CHART (ported from
+   interactive-costing-analysis.js — generic pie math, reused as-is) ================= */
+
+function polarPoint(cx, cy, r, angleDeg) {
+  const rad = (angleDeg - 90) * (Math.PI / 180);
+  return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
+}
+
+function describePieSlice(cx, cy, r, startAngle, endAngle) {
+  const cappedEnd = Math.min(endAngle, startAngle + 359.98);
+  const startPt = polarPoint(cx, cy, r, startAngle);
+  const endPt = polarPoint(cx, cy, r, cappedEnd);
+  const largeArcFlag = (cappedEnd - startAngle) > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${startPt.x.toFixed(2)} ${startPt.y.toFixed(2)} `
+       + `A ${r} ${r} 0 ${largeArcFlag} 1 ${endPt.x.toFixed(2)} ${endPt.y.toFixed(2)} Z`;
+}
+
+const PIE_SETTINGS = { viewBoxSize: 120, radius: 52 };
+
+function renderStructurePie(ariaTitle, mix) {
+  const segs = [
+    { key: 'ingredients', name: 'Ingredients', pct: mix.ingredients },
+    { key: 'overhead', name: 'Overhead', pct: mix.overhead },
+    { key: 'manpower', name: 'Manpower', pct: mix.manpower },
+    { key: 'margin', name: 'Margin', pct: mix.margin },
+  ];
+  const { viewBoxSize: SIZE, radius: R } = PIE_SETTINGS;
+  const CX = SIZE / 2, CY = SIZE / 2;
+  const drawTotal = segs.reduce((sum, s) => sum + Math.max(0, s.pct), 0) || 1;
+
+  let cumAngle = 0;
+  const slices = segs.map((s) => {
+    const sweep = (Math.max(0, s.pct) / drawTotal) * 360;
+    if (sweep <= 0) return '';
+    const startAngle = cumAngle;
+    const endAngle = cumAngle + sweep;
+    cumAngle = endAngle;
+    return `<path d="${describePieSlice(CX, CY, R, startAngle, endAngle)}" class="pie-seg seg-${s.key}"><title>${s.name} ${Math.round(s.pct)}%</title></path>`;
+  }).join('');
+
+  const ariaSummary = segs.map((s) => `${Math.round(s.pct)}% ${s.name}`).join(', ');
+  const valueRows = segs.map((s) => {
+    const negativeCls = s.pct < 0 ? ' class="is-negative"' : '';
+    return `<li><i class="legend-swatch seg-${s.key}"></i>${s.name}<strong${negativeCls}>${Math.round(s.pct)}%</strong></li>`;
+  }).join('');
+
+  return `
+    <svg viewBox="0 0 ${SIZE} ${SIZE}" class="structure-pie" role="img" aria-label="${ariaTitle}: ${ariaSummary}">${slices}</svg>
+    <ul class="structure-pie-legend">${valueRows}</ul>
+  `;
+}
+
+function renderStructureComparison(mix, guideVenue) {
+  const guide = GUIDE_RATIOS[guideVenue] || GUIDE_RATIOS.stall;
+  const isLosing = mix.margin < 0;
+  document.getElementById('structure-loss-flag').hidden = !isLosing;
+
+  const guideSelect = document.getElementById('guide-venue-select');
+  const guideLabel = guideSelect.options[guideSelect.selectedIndex].textContent;
+
+  document.getElementById('structure-pie-yours').innerHTML =
+    renderStructurePie('Your numbers' + (isLosing ? ' (losing money)' : ''), mix);
+  document.getElementById('structure-pie-guide').innerHTML =
+    renderStructurePie('Guide, ' + guideLabel, {
+      ingredients: guide.ingredients, overhead: guide.overhead, manpower: guide.manpower, margin: guide.margin,
+    });
 }
 
 /* ================= RENDER ================= */
@@ -577,6 +775,32 @@ function renderDishResults(dishes, fixedPerPortion) {
   }).join('');
 }
 
+// The "how true cost is calculated" section — the live per-portion
+// figures plus a full per-dish breakdown table, so the formula is
+// never just a claim in chat, it's always visible on the page itself.
+function renderTrueCostSection(dishes, overheadPerPortion, manpowerPerPortion) {
+  const fixedPerPortion = overheadPerPortion + manpowerPerPortion;
+  document.getElementById('ma-tc-overhead-portion').textContent = formatRM(overheadPerPortion);
+  document.getElementById('ma-tc-manpower-portion').textContent = formatRM(manpowerPerPortion);
+  document.getElementById('ma-tc-fixed-portion').textContent = formatRM(fixedPerPortion);
+
+  const rowsEl = document.getElementById('ma-true-cost-rows');
+  if (!dishes.length) {
+    rowsEl.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); font-family:var(--font-body);">Add an item above to see its breakdown here.</td></tr>';
+    return;
+  }
+  rowsEl.innerHTML = dishes.map((d) => {
+    const trueCost = d.ingredientCost + fixedPerPortion;
+    return `<tr>
+      <td>${escapeHTML(d.name)}</td>
+      <td>${formatRM(d.ingredientCost)}</td>
+      <td>${formatRM(overheadPerPortion)}</td>
+      <td>${formatRM(manpowerPerPortion)}</td>
+      <td class="ma-tc-total">${formatRM(trueCost)}</td>
+    </tr>`;
+  }).join('');
+}
+
 function renderQuadrantChart(dishes) {
   const svg = document.getElementById('ma-quadrant-chart');
   const W = 640, H = 420, M = { top: 20, right: 24, bottom: 44, left: 60 };
@@ -592,7 +816,7 @@ function renderQuadrantChart(dishes) {
 
   const quadColor = { star: 'var(--accent)', plowhorse: '#2E5FA3', puzzle: '#D4A017', dog: '#C0392B' };
 
-  let points = dishes.map((d) => `
+  const points = dishes.map((d) => `
     <circle cx="${x(d.popPct).toFixed(1)}" cy="${y(d.cmPerPortion).toFixed(1)}" r="7" fill="${quadColor[d.quadrant]}" stroke="#fff" stroke-width="2"/>
     <text x="${x(d.popPct).toFixed(1)}" y="${(y(d.cmPerPortion) - 12).toFixed(1)}" text-anchor="middle" class="chart-point-label">${escapeHTML(d.name)}</text>
   `).join('');
@@ -607,28 +831,6 @@ function renderQuadrantChart(dishes) {
     <text x="${(W / 2).toFixed(1)}" y="${H - 4}" class="chart-axis-title" text-anchor="middle">Popularity (% of your volume)</text>
     <text x="14" y="${(M.top + plotH / 2).toFixed(1)}" class="chart-axis-title" text-anchor="middle" transform="rotate(-90 14 ${(M.top + plotH / 2).toFixed(1)})">Contribution margin (RM/portion)</text>
   `;
-}
-
-function renderStructureComparison(mix, guideVenue) {
-  const guide = GUIDE_RATIOS[guideVenue] || GUIDE_RATIOS.stall;
-  const bar = (label, m, isLosing) => {
-    const segs = [
-      { key: 'ingredients', name: 'Ingredients', pct: m.ingredients },
-      { key: 'overhead', name: 'Overhead', pct: m.overhead },
-      { key: 'manpower', name: 'Manpower', pct: m.manpower },
-      { key: 'margin', name: 'Margin', pct: Math.max(0, m.margin) },
-    ];
-    const html = segs.map((s) => {
-      let inner = '';
-      if (s.pct >= 15) inner = `${Math.round(s.pct)}% ${s.name}`;
-      else if (s.pct >= 6) inner = `${Math.round(s.pct)}%`;
-      return `<span class="seg seg-${s.key}" style="width:${Math.max(0, s.pct)}%" title="${s.name} ${s.pct.toFixed(0)}%">${inner ? `<span class="seg-label">${inner}</span>` : ''}</span>`;
-    }).join('');
-    return `<div class="structure-row"><span class="structure-label">${label}${isLosing ? ' <span class="loss-flag">LOSING MONEY</span>' : ''}</span><div class="structure-bar">${html}</div></div>`;
-  };
-  document.getElementById('ma-structure-bars').innerHTML =
-    bar('Your numbers', mix, mix.margin < 0) +
-    bar(`Guide: ${guideVenue}`, guide, false);
 }
 
 function renderInsights(dishes, mix, guideVenue, gasKgPerMonth, targetMarginPct, overallMarginPct) {
@@ -687,64 +889,74 @@ function renderInsights(dishes, mix, guideVenue, gasKgPerMonth, targetMarginPct,
 
 /* ================= CONTROLLER ================= */
 
+// Wrapped in try/catch, phase by phase — if one computation ever
+// throws on some edge-case input, the rest of the page still updates
+// instead of silently freezing (which is what "I changed a value and
+// nothing happened" almost always actually is: not the target field
+// itself failing, but something else upstream in the same function
+// throwing before execution ever reached it).
 function recalculateAll() {
-  const dishes = collectDishes();
-  const totalVolumeDay = dishes.reduce((s, d) => s + d.volumeDay, 0);
-  const days = num(document.getElementById('ma-operating-days'), 26);
-  const totalVolumeMonth = totalVolumeDay * days;
+  try {
+    const dishes = collectDishes();
+    const totalVolumeDay = dishes.reduce((s, d) => s + d.volumeDay, 0);
+    const days = num(document.getElementById('ma-operating-days'), 26);
+    const totalVolumeMonth = totalVolumeDay * days;
 
-  const elecCost = computeElectricityCost();
-  const waterCost = computeWaterCost();
-  const gasResult = computeGasCost();
-  const rent = num(document.getElementById('ma-rent'));
-  const manpower = num(document.getElementById('ma-manpower'));
-  const utilitiesTotal = elecCost + waterCost + gasResult.cost;
-  const overheadTotal = rent + utilitiesTotal;
+    const elecCost = computeElectricityCost();
+    const waterCost = computeWaterCost();
+    const gasResult = computeGasCost();
+    const rent = num(document.getElementById('ma-rent'));
+    const manpower = num(document.getElementById('ma-manpower'));
+    const utilitiesTotal = elecCost + waterCost + gasResult.cost;
+    const overheadTotal = rent + utilitiesTotal;
 
-  document.getElementById('ma-elec-cost').textContent = formatRM(elecCost);
-  document.getElementById('ma-water-cost').textContent = formatRM(waterCost);
-  document.getElementById('ma-gas-cost').textContent = formatRM(gasResult.cost);
-  document.getElementById('ma-total-overhead').textContent = formatRM(overheadTotal);
-  document.getElementById('ma-total-manpower').textContent = formatRM(manpower);
+    document.getElementById('ma-elec-cost').textContent = formatRM(elecCost);
+    document.getElementById('ma-water-cost').textContent = formatRM(waterCost);
+    document.getElementById('ma-gas-cost').textContent = formatRM(gasResult.cost);
+    document.getElementById('ma-total-overhead').textContent = formatRM(overheadTotal);
+    document.getElementById('ma-total-manpower').textContent = formatRM(manpower);
 
-  const overheadPerPortion = totalVolumeMonth > 0 ? overheadTotal / totalVolumeMonth : 0;
-  const manpowerPerPortion = totalVolumeMonth > 0 ? manpower / totalVolumeMonth : 0;
-  const fixedPerPortion = overheadPerPortion + manpowerPerPortion;
+    const overheadPerPortion = totalVolumeMonth > 0 ? overheadTotal / totalVolumeMonth : 0;
+    const manpowerPerPortion = totalVolumeMonth > 0 ? manpower / totalVolumeMonth : 0;
+    const fixedPerPortion = overheadPerPortion + manpowerPerPortion;
 
-  const classified = computeQuadrant(dishes, totalVolumeDay);
+    const classified = computeQuadrant(dishes, totalVolumeDay);
 
-  const revenueTotal = dishes.reduce((s, d) => s + d.price * d.volumeDay * days, 0);
-  const ingredientTotal = dishes.reduce((s, d) => s + d.ingredientCost * d.volumeDay * days, 0);
-  const netProfit = revenueTotal - ingredientTotal - overheadTotal - manpower;
-  const overallMarginPct = revenueTotal > 0 ? (netProfit / revenueTotal) * 100 : 0;
+    const revenueTotal = dishes.reduce((s, d) => s + d.price * d.volumeDay * days, 0);
+    const ingredientTotal = dishes.reduce((s, d) => s + d.ingredientCost * d.volumeDay * days, 0);
+    const netProfit = revenueTotal - ingredientTotal - overheadTotal - manpower;
+    const overallMarginPct = revenueTotal > 0 ? (netProfit / revenueTotal) * 100 : 0;
 
-  document.getElementById('ma-total-revenue').textContent = formatRM(revenueTotal);
-  document.getElementById('ma-net-profit').textContent = formatRM(netProfit);
-  document.getElementById('ma-overall-margin').textContent = overallMarginPct.toFixed(1) + '%';
+    document.getElementById('ma-total-revenue').textContent = formatRM(revenueTotal);
+    document.getElementById('ma-net-profit').textContent = formatRM(netProfit);
+    document.getElementById('ma-overall-margin').textContent = overallMarginPct.toFixed(1) + '%';
 
-  const targetInput = document.getElementById('ma-target-margin');
-  const targetPct = parseFloat(targetInput.value);
-  const gapEl = document.getElementById('ma-target-gap');
-  if (isFinite(targetPct) && targetPct > 0) {
-    const gap = overallMarginPct - targetPct;
-    gapEl.textContent = (gap >= 0 ? '+' : '') + gap.toFixed(1) + ' pts';
-    gapEl.closest('.result-card').classList.toggle('is-loss', gap < 0);
-  } else {
-    gapEl.textContent = 'Set a target below';
-    gapEl.closest('.result-card').classList.remove('is-loss');
+    const targetInput = document.getElementById('ma-target-margin');
+    const targetPct = parseFloat(targetInput.value);
+    const gapEl = document.getElementById('ma-target-gap');
+    if (isFinite(targetPct) && targetPct > 0) {
+      const gap = overallMarginPct - targetPct;
+      gapEl.textContent = (gap >= 0 ? '+' : '') + gap.toFixed(1) + ' pts';
+      gapEl.closest('.result-card').classList.toggle('is-loss', gap < 0);
+    } else {
+      gapEl.textContent = 'Set a target below';
+      gapEl.closest('.result-card').classList.remove('is-loss');
+    }
+
+    renderDishResults(classified, fixedPerPortion);
+    renderTrueCostSection(classified, overheadPerPortion, manpowerPerPortion);
+    renderQuadrantChart(classified);
+
+    const guideVenue = document.getElementById('guide-venue-select').value || wizardAnswers.venue || 'stall';
+    const mix = structureMixFromTotals(ingredientTotal, overheadTotal, manpower, revenueTotal);
+    renderStructureComparison(mix, guideVenue);
+    renderInsights(classified, mix, guideVenue, gasResult.kgPerMonth, targetPct, overallMarginPct);
+  } catch (err) {
+    console.error('[Margin Audit] recalculateAll failed partway through:', err);
   }
-
-  renderDishResults(classified, fixedPerPortion);
-  renderQuadrantChart(classified);
-
-  const guideVenue = wizardAnswers.venue || 'stall';
-  const mix = structureMixFromTotals(ingredientTotal, overheadTotal, manpower, revenueTotal);
-  renderStructureComparison(mix, guideVenue);
-  renderInsights(classified, mix, guideVenue, gasResult.kgPerMonth, targetPct, overallMarginPct);
 }
 
-/* ================= EXPORT / IMPORT (client-side only — see
-   file header; nothing here ever reaches a server) ================= */
+/* ================= EXPORT / IMPORT ================= */
 
 function gatherExportData() {
   return {
@@ -764,9 +976,10 @@ function gatherExportData() {
       tier: document.querySelector('[name="ma-gas-tier"]:checked').value,
     },
     targetMargin: document.getElementById('ma-target-margin').value,
+    guideVenue: document.getElementById('guide-venue-select').value,
     dishes: Array.from(document.querySelectorAll('.ma-dish-panel')).map((p) => ({
       name: p.querySelector('.ma-dish-name').value, price: num(p.querySelector('.ma-dish-price')), volumeDay: num(p.querySelector('.ma-dish-volume')),
-      costSource: p.dataset.costSource || 'sync', manualCost: num(p.querySelector('.ma-manual-cost')),
+      costSource: p.dataset.costSource || 'manual', manualCost: num(p.querySelector('.ma-manual-cost')),
     })),
     resultSummary: {
       revenueMonth: document.getElementById('ma-total-revenue').textContent,
@@ -781,7 +994,7 @@ function exportData() {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const stamp = new Date().toISOString().slice(0, 7);
   a.href = url; a.download = `margin-audit-${stamp}.json`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
@@ -818,17 +1031,18 @@ function importData(file) {
       if (radio) radio.checked = true;
     }
     document.getElementById('ma-target-margin').value = data.targetMargin || '';
+    if (data.guideVenue) document.getElementById('guide-venue-select').value = data.guideVenue;
 
     document.getElementById('ma-dish-panels').innerHTML = '';
     (data.dishes || []).forEach((d) => {
       const panel = createDishPanel();
       panel.querySelector('.ma-dish-name').value = d.name || '';
-      panel.querySelector('.ma-dish-name-mirror').value = d.name || '';
       panel.querySelector('.ma-dish-price').value = d.price || 0;
       panel.querySelector('.ma-dish-volume').value = d.volumeDay || 0;
       panel.querySelector('.ma-manual-cost').value = d.manualCost || 0;
-      switchDishSource(panel, d.costSource || 'sync');
+      switchDishSource(panel, d.costSource === 'ai' ? 'ai' : 'manual');
     });
+    renderDishTabs();
 
     finishWizard();
     recalculateAll();
@@ -902,7 +1116,8 @@ function init() {
     if (e.target.files[0]) importData(e.target.files[0]);
   });
 
-  document.getElementById('ma-add-dish').addEventListener('click', () => { createDishPanel(); recalculateAll(); });
+  document.getElementById('ma-add-dish').addEventListener('click', () => createDishPanel());
+  document.getElementById('guide-venue-select').addEventListener('change', recalculateAll);
 
   ['ma-rent', 'ma-manpower', 'ma-operating-days', 'ma-elec-rate', 'ma-water-actual',
    'ma-gas-burners', 'ma-gas-hours', 'ma-gas-rate', 'ma-gas-price-household', 'ma-gas-price-commercial',
@@ -916,6 +1131,15 @@ function init() {
 
   document.getElementById('ma-add-elec-row').addEventListener('click', () => createElecRow());
   ELECTRICITY_DEFAULTS.forEach((preset) => createElecRow(preset));
+
+  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
+    btn.addEventListener('click', () => rzLoadToolIntoDock(btn.dataset.openTool));
+  });
+  document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
+  document.getElementById('tool-dock-hide-btn').addEventListener('click', () => setDockVisible(false));
+  document.getElementById('rz-back-to-top').addEventListener('click', () => {
+    document.getElementById('ma-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   initSync();
   recalculateAll();
