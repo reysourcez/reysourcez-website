@@ -1,5 +1,25 @@
 # Food Worth Calculator — change notes
 
+## 2026-09-03 (later same day) — Star rating built, major relayout, renames, nav standard sync
+
+**Nav**: added Margin Audit per the updated `NAV_ORDER_STANDARD.md` (6 tools now, not 5) — Food Worth's dropdown was out of sync with the other pages.
+
+**Star rating / "Worth it?" — the KIV idea from earlier today, now built.** A clickable 1–5 star taste rating (meal-level, not per-dish — one rating for the eating experience as a whole, same as price paid), combined with the value rating into a single verdict via `computeWorthiness()`. Verified against the full 5×3 matrix (every star count × every value tier) before shipping — it's monotonic in both directions and the two reference points given (5★+cheap=best, 1★+expensive=worst) land exactly where specified.
+
+**Branded/franchise items** (McDonald's, KFC, etc.) no longer just fail recipe breakdown — the Worker's `RECIPE_PROMPT` now asks Gemini to identify the closest generic cooking-method equivalent (a McDonald's fried chicken item becomes "deep-fried marinated chicken, McDonald's-style") and break that down instead, rather than giving up because there's no public recipe for a specific branded product. Still returns "not recognized" for genuinely one-off or buffet-style plates with no reasonable equivalent.
+
+**Major relayout**:
+- Top row is now **Worth it?** (star rating + worthiness) beside **Price & value** (renamed from "What did it cost") — both `<details>`, both default *open* since they hold primary inputs (stars, price paid), both stretched to equal height.
+- **Total food value** is gone as its own box — merged into **Macros** (renamed from "Nutritional balance") as a single line, since its calorie figure was already repeating what the donut chart's center label shows.
+- **Calorie needs & BMI** (renamed from "How this fits your day") is a full-width box above **Macros** | **Micros** (renamed from "Vitamins, minerals & fiber"), both now collapsible and default *closed*.
+- BMI is a proper result card now, not an easy-to-miss inline note — same treatment as Estimated daily need and This meal.
+- The 5 calorie-need fields (sex/age/height/weight/activity) now use a real 5-column grid instead of flex-wrap, which was letting Activity level wrap onto its own row unpredictably depending on container width.
+- **"+ Add another dish"** moved above the dish tabs/panels instead of below them.
+- A floating **back-to-top** button appears once scrolled about a page-height down — same idea as `interactive-costing-analysis.html`'s button, adapted to scroll position since this page has no tool-dock open/close event to key off.
+- Summary strip: "of your day" → "kcal of your day" (was ambiguous out of context); empty value/calorie cards now say "Add price paid" / "Fill in your info" instead of a bare dash.
+
+**On "the whole calculation fails" for unrecognized dishes**: worth clarifying — the *value rating* itself was never actually failing in that case; `computeReferencePrice()` already falls back to typical market price alone when ingredient cost isn't available. What was genuinely missing was the *recipe breakdown itself* refusing branded items, which the prompt change above addresses directly.
+
 ## 2026-09-03 — Fixed the value-rating percentage bug, rebalanced layout, redesigned summary
 
 **The important one first — a real bug, not a style tweak.** The rating percentage (e.g. "Fair value 117%" in the screenshot that caught this) was being computed against "Your benchmark," which got hidden from the UI on 2026-09-02 but never stopped silently driving the calculation from its stuck default of RM1.00/100kcal. So the percentage was comparing cost-per-100kcal against an invisible number nobody could see or set — not against typical market price, not against the ingredient-cost fair price, not against anything on screen at all. Traced the exact math against the screenshot (RM8 paid, RM1.17/100kcal, hidden benchmark defaulting to RM1.00 → 1.17 ÷ 1.00 = 117%, confirmed exact match) before touching anything.
@@ -103,6 +123,9 @@ Everything below lives inside the code (this site has no separate settings file)
 | Ingredient-cost-structure target | 30% | `INGREDIENT_COST_TARGET_PCT`, `food-worth-calculator.js` |
 | Which dishes qualify for recipe breakdown | Gemini's judgment call each time | `RECIPE_PROMPT` text in `food-worth-proxy-worker.js` |
 | Where recipe ingredient prices are calibrated to | "average Malaysian wet-market or grocery prices" | `RECIPE_PROMPT` text in `food-worth-proxy-worker.js` |
+| Branded/franchise items approximated via generic equivalent | Yes, since 2026-09-03 (was: marked unrecognized) | `RECIPE_PROMPT` text in `food-worth-proxy-worker.js` |
+| Worthiness verdict thresholds | ≥85% Excellent, ≥65% Good, ≥45% Fair, ≥25% Poor, below Not worth it | `computeWorthiness()`, `food-worth-calculator.js` |
+| How taste stars and price rating are weighted in worthiness | Equal (simple average, both normalized 0–1) | `computeWorthiness()`, `food-worth-calculator.js` |
 | Where typical price is calibrated to | "Malaysian hawker stall, kopitiam, or casual eatery" | `PROMPT` text in `food-worth-proxy-worker.js` |
 | Daily analysis limit (shared by both the main analysis and recipe breakdown) | 20 calls/day per browser | `MAX_ANALYSES_PER_DAY`, `food-worth-calculator.js` |
 | Cloudflare Worker URL the browser calls | `food-worth-proxy.reysourcez-ent.workers.dev` | `PROXY_ENDPOINT`, `food-worth-calculator.js` |
@@ -111,5 +134,5 @@ Everything below lives inside the code (this site has no separate settings file)
 ## Deploy checklist
 
 - [ ] `food-worth-calculator.html` and `food-worth-calculator.js` → push to GitHub Pages as usual.
-- [ ] `food-worth-proxy-worker.js` → **needs redeploying this time** — the recipe-mode branch (schema, prompt, and the `mode` request field) is new as of 2026-09-02. Paste the whole file into the Cloudflare dashboard and redeploy.
-- [ ] Confirm `nav-dropdown.js` already exists in the repo (it should, since `interactive-costing-analysis.html` already depends on it).
+- [ ] `food-worth-proxy-worker.js` → **needs redeploying this time** — `RECIPE_PROMPT` changed (branded-item handling). Paste the whole file into the Cloudflare dashboard and redeploy.
+- [ ] Confirm `nav-dropdown.js` and `margin-audit-calculator.html` already exist in the repo (the nav now links to Margin Audit, matching the other pages).

@@ -62,13 +62,25 @@
    market price, and the ingredient-cost fair price are three
    independent reference points, not one combined score.
 
-   Nutritional balance, Vitamins/minerals/fiber, and How this fits
-   your day are <details> elements, not <section>s — they start
-   collapsed once revealed (see runAnalysis()'s reveal block), since
-   the summary strip at the top already carries the headline. Total
-   food value and What did it cost stay always-expanded as the
-   primary, most-wanted numbers. See the .fw-collapsible CSS comment
-   in the HTML for why print gets its own override.
+   Worth it? (computeWorthiness()) combines the one genuinely
+   subjective input on this page — a 1-5 star taste rating, meal-
+   level, in-memory only via the tasteRating variable — with the
+   value rating above into a single verdict. Simple average of two
+   normalized scores; verified against the full 5x3 matrix before
+   shipping, same spirit as computeReferencePrice not weighting one
+   signal over another without a principled reason to.
+
+   Section names as of 2026-09-03: "Price & value" (was "What did it
+   cost"), "Macros" (was "Nutritional balance" — now also carries the
+   merged total weight/calories line, since that used to be its own
+   box with data repeating what the donut chart already shows),
+   "Micros" (was "Vitamins, minerals & fiber"), "Calorie needs & BMI"
+   (was "How this fits your day"). "Worth it?" and "Price & value"
+   are <details> elements that default OPEN (they hold primary
+   inputs — taste stars, price paid); Calorie needs & BMI, Macros,
+   and Micros default closed, since the summary strip at the top
+   already carries their headline numbers. See the .fw-collapsible
+   CSS comment in the HTML for why print gets its own override.
 
    FUTURE (KIV, architected for but not built):
      - Confirm current Malaysian NRV for Vitamin C/D against the
@@ -89,7 +101,7 @@
        runRecipeBreakdown().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-03-v10-rating-fix-balanced-layout');
+console.info('[Food Worth Calculator] script build: 2026-09-03-v11-star-rating-relayout-renames');
 
 /* ================= CONFIG ================= */
 
@@ -159,6 +171,11 @@ const NUTRIENT_STANDARDS = {
 // persists" rule. Defaults to Malaysia since that's this site's
 // actual audience; USA is one click away for anyone who wants it.
 let activeStandard = 'malaysia';
+
+// Meal-level (not per-dish) — one taste rating for the eating
+// experience as a whole, same as price paid. In-memory only, resets
+// on reload same as everything else. 0 = not yet rated.
+let tasteRating = 0;
 
 // Standard TDEE activity multipliers against Mifflin-St Jeor BMR —
 // the same multiplier set used by essentially every calorie
@@ -449,6 +466,27 @@ function computeValueRating(price, referencePrice) {
   return { label, ratio };
 }
 
+// Combines the one genuinely subjective input on this whole page
+// (taste, 1-5 stars) with the objective value rating above into a
+// single "worth it?" verdict. 5 stars + Great value = best possible
+// combination; 1 star + Pricey = worst — matches the reference points
+// this was specified against exactly (verified against the full 5x3
+// matrix before this went into the page). Simple average of two
+// normalized scores, not a weighted formula — no more principled
+// reason to weight taste over price or vice versa than there was to
+// weight typical-price over ingredient-cost in computeReferencePrice.
+function computeWorthiness(stars, ratingLabel) {
+  if (!(stars > 0) || !ratingLabel) return null;
+  const tasteNorm = stars / 5;
+  const priceNorm = ratingLabel === 'Great value' ? 1.0 : ratingLabel === 'Fair value' ? 0.55 : 0.15;
+  const score = (tasteNorm + priceNorm) / 2;
+  if (score >= 0.85) return 'Excellent worth';
+  if (score >= 0.65) return 'Good worth';
+  if (score >= 0.45) return 'Fair worth';
+  if (score >= 0.25) return 'Poor worth';
+  return 'Not worth it';
+}
+
 
 // Grosses an ingredient cost up into an implied "fair" selling price
 // at the standard 30% ingredient-cost structure — a supply-side
@@ -560,9 +598,16 @@ function calorieShareLabel(pct) {
 
 /* ================= VIEW: meal-level render functions ================= */
 
+// Total food value used to be its own box with two result-cards;
+// merged into Macros (2026-09-03, repeating data — the donut chart
+// already carries total calories, this just adds weight alongside
+// it in one compact line rather than a whole separate section).
 function renderTotals(totals) {
-  document.getElementById('fw-total-weight').textContent = Math.round(totals.weight).toLocaleString() + ' g';
-  document.getElementById('fw-total-calories').textContent = Math.round(totals.calories).toLocaleString() + ' kcal';
+  const el = document.getElementById('fw-meal-totals-line');
+  if (!el) return;
+  el.textContent = (totals.weight > 0 || totals.calories > 0)
+    ? `Meal total: ${Math.round(totals.weight).toLocaleString()} g, ${Math.round(totals.calories).toLocaleString()} kcal`
+    : '';
 }
 
 function renderUnitCosts(unitCosts) {
@@ -580,6 +625,24 @@ function renderRating(rating) {
     const pct = Math.round(rating.ratio * 100);
     badge.innerHTML = `${escapeHTML(rating.label)}<span class="fw-rating-pct">${pct}%</span>`;
     card.classList.toggle('is-loss', rating.label === 'Pricey');
+  }
+}
+
+function renderTasteStars() {
+  document.querySelectorAll('.fw-star').forEach((btn) => {
+    btn.classList.toggle('is-filled', Number(btn.dataset.star) <= tasteRating);
+  });
+}
+
+function renderWorthiness(stars, rating) {
+  const badge = document.getElementById('fw-worthiness-badge');
+  if (!badge) return;
+  if (!(stars > 0)) {
+    badge.textContent = 'Rate the taste above';
+  } else if (!rating.label) {
+    badge.textContent = 'Add a price above';
+  } else {
+    badge.textContent = computeWorthiness(stars, rating.label);
   }
 }
 
@@ -628,7 +691,7 @@ function renderRecipePanel(el, result, errorMessage) {
   const fairPrice = computeImpliedFairPrice(result.totalCost);
   el.innerHTML = `
     <h3 class="fw-recipe-title">${escapeHTML(result.recipeName || 'This dish')} \u2014 standard recipe</h3>
-    <p class="fw-recipe-disclaimer">A rough breakdown based on how this dish is typically made and average Malaysian ingredient prices \u2014 not this specific plate's actual recipe or sourcing, so treat these as a ballpark for comparison, not an exact figure.</p>
+    <p class="fw-recipe-disclaimer">A rough breakdown based on how this dish is typically made (or its closest generic equivalent, for a branded item) and average Malaysian ingredient prices \u2014 not this specific plate's actual recipe or sourcing, so treat these as a ballpark for comparison, not an exact figure.</p>
     <ul class="fw-recipe-ingredients">${rows}</ul>
     <p class="fw-recipe-total">Ingredient cost: <strong>${formatRM(result.totalCost)}</strong> \u00b7 Implied fair price at a ${Math.round(INGREDIENT_COST_TARGET_PCT * 100)}% ingredient-cost structure: <strong>${formatRM(fairPrice)}</strong></p>
   `;
@@ -661,12 +724,16 @@ function renderCalorieFit(mealCalories, need) {
   const needEl = document.getElementById('fw-daily-need');
   const badge = document.getElementById('fw-calorie-share-badge');
   const card = document.getElementById('fw-calorie-share-card');
-  const bmiNote = document.getElementById('fw-bmi-note');
+  const bmiCard = document.getElementById('fw-bmi-card');
+  const bmiValueEl = document.getElementById('fw-bmi-value');
 
-  if (bmiNote) {
-    bmiNote.textContent = bmi > 0
-      ? `BMI ${bmi.toFixed(1)} (${NUTRIENT_STANDARDS[activeStandard].shortLabel} bands) \u2014 ${bmiCategory(bmi)}. A general screening figure, not a diagnosis; it doesn't account for muscle mass or individual differences.`
-      : '';
+  if (bmiCard && bmiValueEl) {
+    if (bmi > 0) {
+      bmiCard.hidden = false;
+      bmiValueEl.textContent = `${bmi.toFixed(1)} \u2014 ${bmiCategory(bmi)}`;
+    } else {
+      bmiCard.hidden = true;
+    }
   }
 
   if (!(dailyNeed > 0)) {
@@ -699,8 +766,10 @@ function renderSummaryStrip(rating, mealCalories, dailyNeed, coverage) {
 
   const valueText = rating.label
     ? `${escapeHTML(rating.label)} <span class="fw-summary-pct">${Math.round(rating.ratio * 100)}%</span>`
-    : '\u2014';
-  const calorieText = (dailyNeed > 0 && mealCalories > 0) ? Math.round((mealCalories / dailyNeed) * 100) + '%' : '\u2014';
+    : 'Add price paid';
+  const calorieText = (dailyNeed > 0 && mealCalories > 0)
+    ? Math.round((mealCalories / dailyNeed) * 100) + '%'
+    : 'Fill in your info';
 
   let moreLabel = 'nutrients';
   let moreText = '\u2014';
@@ -716,7 +785,7 @@ function renderSummaryStrip(rating, mealCalories, dailyNeed, coverage) {
 
   el.innerHTML = `
     <div class="fw-summary-item"><strong>${valueText}</strong><small>value</small></div>
-    <div class="fw-summary-item"><strong>${escapeHTML(calorieText)}</strong><small>of your day</small></div>
+    <div class="fw-summary-item"><strong>${escapeHTML(calorieText)}</strong><small>kcal of your day</small></div>
     <div class="fw-summary-item"><strong>${escapeHTML(moreText)}</strong><small>${escapeHTML(moreLabel)}</small></div>
     <div class="fw-summary-item"><strong>${lessText}</strong><small>could use less</small></div>
   `;
@@ -978,6 +1047,8 @@ function recalculateMeal() {
   renderTotals(mealTotals);
   renderUnitCosts(unitCosts);
   renderRating(rating);
+  renderTasteStars();
+  renderWorthiness(tasteRating, rating);
   renderMarketPrice(mealPrice);
   renderIngredientFairPrice(mealIngredientCost);
   renderMacroChart(mix, mealTotals.calories);
@@ -1183,6 +1254,26 @@ function init() {
       el.addEventListener('input', recalculateMeal);
       el.addEventListener('change', recalculateMeal);
     });
+
+    document.querySelectorAll('.fw-star').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        tasteRating = Number(btn.dataset.star);
+        const live = document.getElementById('fw-taste-live');
+        if (live) live.textContent = `Rated ${tasteRating} out of 5 stars`;
+        recalculateMeal();
+      });
+    });
+
+    // Same idea as interactive-costing-analysis.html's back-to-top
+    // button, keyed off scroll position here since this page has no
+    // tool-dock open/close event to hook into instead.
+    const backToTop = document.getElementById('fw-back-to-top');
+    if (backToTop) {
+      window.addEventListener('scroll', () => {
+        backToTop.hidden = window.scrollY < window.innerHeight * 0.75;
+      }, { passive: true });
+      backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+    }
 
     createDishPanel(); // every session starts with one dish, single or meal mode alike
     console.log('[Food Worth] init complete, all listeners attached');

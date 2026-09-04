@@ -166,14 +166,19 @@ const RECIPE_SCHEMA = {
 const RECIPE_PROMPT = 'You are looking at a photo of a plate of food for an F&B costing tool used in Malaysia. '
   + 'Decide whether this photo clearly matches a common, well-known dish that has a fairly standard set '
   + 'of ingredients \u2014 for example Chicken Rice, Nasi Lemak, Char Kway Teow, Mee Goreng, a basic fried '
-  + 'rice, or similar. Only say yes if you\u2019re confident \u2014 a one-off combination, a buffet-style '
-  + 'plate, or anything you can\u2019t confidently name should be marked as not recognized rather than '
-  + 'forcing a guess. If it is recognized, name the dish and list the STANDARD ingredients and '
-  + 'quantities used to make ONE PORTION of it as typically prepared \u2014 general recipe knowledge, not '
-  + 'an attempt to re-measure this specific photo. For each ingredient, estimate its cost in Malaysian '
-  + 'Ringgit at average Malaysian wet-market or grocery prices for that quantity, and sum these into a '
-  + 'total ingredient cost. If not recognized, return false, an empty recipe name, an empty ingredients '
-  + 'array, and zero for the total.';
+  + 'rice, or similar. If the food is a specific branded or franchise product without a public recipe '
+  + '(a McDonald\u2019s, KFC, or similar item), don\u2019t mark it unrecognized just for that \u2014 instead identify '
+  + 'the closest generic dish by cooking method and main ingredients (treat a branded fried chicken '
+  + 'product as generic deep-fried marinated chicken, for example) and break that down instead, naming '
+  + 'it in a way that makes the approximation clear, e.g. "Deep-fried marinated chicken (McDonald\u2019s-style)". '
+  + 'Only mark something unrecognized if you genuinely can\u2019t identify a reasonable standard or generic '
+  + 'equivalent at all \u2014 a one-off combination or a buffet-style plate with no clear cooking-method '
+  + 'analog. If it is recognized (standard or approximated), name the dish and list the STANDARD '
+  + 'ingredients and quantities used to make ONE PORTION of it as typically prepared \u2014 general recipe '
+  + 'knowledge, not an attempt to re-measure this specific photo. For each ingredient, estimate its cost '
+  + 'in Malaysian Ringgit at average Malaysian wet-market or grocery prices for that quantity, and sum '
+  + 'these into a total ingredient cost. If not recognized, return false, an empty recipe name, an empty '
+  + 'ingredients array, and zero for the total.';
 
 function corsHeaders(origin) {
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];

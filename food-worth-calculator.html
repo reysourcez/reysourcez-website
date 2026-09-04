@@ -5,11 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Food Worth Calculator</title>
   <meta name="description" content="Upload a photo of a meal and get an instant breakdown — item by item weight, calories, and nutrition — plus a value-for-money rating against the price you paid.">
-<link rel="icon" href="favicon.ico" sizes="32x32">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="site.webmanifest">
-  
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -89,7 +85,27 @@
        per row, with .fw-panel-box giving each column its own border. */
     .fw-panel-box { border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px 20px; min-width: 0; }
     .fw-panel-box.fw-full-box { margin-bottom: 24px; }
-    .fw-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+    .fw-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: stretch; }
+    .fw-detail-grid > * { display: flex; flex-direction: column; }
+    .fw-detail-grid .fw-collapsible-body { flex: 1; display: flex; flex-direction: column; }
+
+    .fw-taste-rating { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 16px 0 4px; }
+    .fw-taste-label { font-weight: 600; font-size: 0.9rem; }
+    .fw-stars { display: flex; gap: 2px; }
+    .fw-star { background: none; border: none; cursor: pointer; font-size: 1.6rem; line-height: 1; padding: 2px 3px; color: var(--line); transition: color 0.1s ease; }
+    .fw-star.is-filled { color: #D4A017; }
+    .fw-star:hover { color: #D4A017; opacity: 0.65; }
+    .fw-star:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+    #fw-back-to-top {
+      position: fixed; bottom: 24px; right: 24px; z-index: 50;
+      background: var(--accent); color: #fff; border: none; border-radius: 999px;
+      padding: 12px 18px; font-family: var(--font-body); font-weight: 600; font-size: 0.88rem;
+      cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    }
+    #fw-back-to-top:hover { background: var(--accent-dark); }
+    #fw-back-to-top:focus-visible { outline: 3px solid var(--accent-dark); outline-offset: 2px; }
+    @media print { #fw-back-to-top { display: none !important; } }
     @media (max-width: 800px) {
       .fw-detail-grid { grid-template-columns: 1fr; }
     }
@@ -145,9 +161,12 @@
     .fw-standard-tab:focus-visible, .fw-calorie-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 
     .fw-calorie-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
-    .fw-calorie-fields { display: flex; flex-wrap: wrap; gap: 16px; }
+    .fw-calorie-fields { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; align-items: end; }
+    @media (max-width: 700px) {
+      .fw-calorie-fields { grid-template-columns: repeat(2, 1fr); }
+    }
     .fw-calorie-fields label, .fw-calorie-manual-label {
-      display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 0.88rem; color: var(--text); min-width: 140px;
+      display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 0.88rem; color: var(--text); min-width: 0;
     }
     .fw-calorie-manual-label { max-width: 220px; }
     .fw-calorie-fields input, .fw-calorie-fields select, .fw-calorie-manual-label input {
@@ -155,7 +174,6 @@
       font-family: var(--font-body); font-size: 0.95rem; font-weight: 400; color: var(--text);
     }
     .fw-calorie-fields input:focus-visible, .fw-calorie-fields select:focus-visible, .fw-calorie-manual-label input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    .fw-bmi-note { font-size: 0.82rem; color: var(--muted); margin: 12px 0 0; }
 
     .fw-dish-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 20px; border-bottom: 2px solid var(--line); }
     .fw-tab-item { display: inline-flex; align-items: center; gap: 5px; padding-left: 10px; }
@@ -236,6 +254,7 @@
             <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
             <li><a href="printing-calculator.html">Printing Calculator</a></li>
             <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Audit</a></li>
             <li><a href="food-worth-calculator.html" aria-current="page">Food Worth</a></li>
           </ul>
         </li>
@@ -257,11 +276,11 @@
     <!-- ============ DISHES (JS-generated, one .fw-dish-panel per dish) ============ -->
     <section class="calc-panel">
       <div class="wrap">
-        <div class="fw-dish-tabs no-print" id="fw-dish-tabs" hidden></div>
-        <div id="fw-dish-panels"></div>
         <div class="calc-actions no-print">
           <button type="button" id="fw-add-dish" class="btn btn-secondary" hidden>+ Add another dish</button>
         </div>
+        <div class="fw-dish-tabs no-print" id="fw-dish-tabs" hidden></div>
+        <div id="fw-dish-panels"></div>
       </div>
     </section>
 
@@ -273,24 +292,33 @@
           <button type="button" id="fw-save-pdf" class="btn btn-secondary">Save as PDF</button>
         </div>
         <div class="fw-detail-grid">
-          <div class="fw-panel-box">
-        <h2>Total food value</h2>
-        <p class="menu-builder-intro">Summed across every dish above, excluding any unchecked items. Edit anything in a dish and this updates automatically.</p>
+          <details class="fw-collapsible fw-panel-box" open>
+            <summary class="fw-collapsible-summary"><h2>Worth it?</h2></summary>
+            <div class="fw-collapsible-body">
+              <p class="menu-builder-intro">How it tasted, weighed against the value rating alongside — five stars at a cheap price is the best combination there is.</p>
+              <div class="fw-taste-rating">
+                <span class="fw-taste-label">How did it taste?</span>
+                <div class="fw-stars" id="fw-taste-stars">
+                  <button type="button" class="fw-star" data-star="1" aria-label="Rate 1 star">★</button>
+                  <button type="button" class="fw-star" data-star="2" aria-label="Rate 2 stars">★</button>
+                  <button type="button" class="fw-star" data-star="3" aria-label="Rate 3 stars">★</button>
+                  <button type="button" class="fw-star" data-star="4" aria-label="Rate 4 stars">★</button>
+                  <button type="button" class="fw-star" data-star="5" aria-label="Rate 5 stars">★</button>
+                </div>
+                <span class="sr-only" role="status" aria-live="polite" id="fw-taste-live"></span>
+              </div>
+              <div class="ica-results" style="margin-top:20px;">
+                <div class="result-card" style="grid-column: span 2;">
+                  <span class="result-label">Worth it?<span class="tooltip-icon" data-tooltip="Combines your taste rating with the value rating alongside — 5 stars at a cheap price is the best combination, 1 star at an expensive price is the worst.">?</span></span>
+                  <span class="fw-rating-badge" id="fw-worthiness-badge">Rate the taste above</span>
+                </div>
+              </div>
+            </div>
+          </details>
 
-        <div class="ica-results" style="margin-top:20px;">
-          <div class="result-card">
-            <span class="result-label">Total weight</span>
-            <span class="result-value" id="fw-total-weight">0 g</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Total calories</span>
-            <span class="result-value" id="fw-total-calories">0 kcal</span>
-          </div>
-        </div>
-          </div>
-
-          <div class="fw-panel-box">
-        <h2>What did it cost?</h2>
+          <details class="fw-collapsible fw-panel-box" open>
+            <summary class="fw-collapsible-summary"><h2>Price &amp; value</h2></summary>
+            <div class="fw-collapsible-body">
         <div class="fw-price-row">
           <div class="fw-price-field">
             <label for="fw-price">Price paid (RM)</label>
@@ -337,16 +365,17 @@
             <span class="fw-rating-badge" id="fw-rating-badge">Add a price above</span>
           </div>
         </div>
-          </div>
+            </div>
+          </details>
         </div>
       </div>
     </section>
 
-    <!-- ============ HOW THIS FITS YOUR DAY (full-width box) + NUTRITIONAL BALANCE / VITAMINS (side by side below it) ============ -->
+    <!-- ============ CALORIE NEEDS & BMI (full-width box) + MACROS / MICROS (side by side below it) ============ -->
     <section class="calc-panel" id="fw-detail-section" hidden>
       <div class="wrap">
         <details class="fw-collapsible fw-panel-box fw-full-box">
-          <summary class="fw-collapsible-summary"><h2>How this fits your day</h2></summary>
+          <summary class="fw-collapsible-summary"><h2>Calorie needs &amp; BMI</h2></summary>
           <div class="fw-collapsible-body">
             <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
 
@@ -381,7 +410,6 @@
                   </select>
                 </label>
               </div>
-              <p class="fw-bmi-note" id="fw-bmi-note"></p>
             </div>
 
             <div class="fw-calorie-panel" id="fw-calorie-manual" hidden>
@@ -395,6 +423,10 @@
                 <span class="result-label">Estimated daily need</span>
                 <span class="result-value" id="fw-daily-need">—</span>
               </div>
+              <div class="result-card" id="fw-bmi-card" hidden>
+                <span class="result-label">BMI<span class="tooltip-icon" data-tooltip="A general screening figure, not a diagnosis — doesn't account for muscle mass or individual differences.">?</span></span>
+                <span class="result-value" id="fw-bmi-value">—</span>
+              </div>
               <div class="result-card" id="fw-calorie-share-card" style="grid-column: span 2;">
                 <span class="result-label">This meal</span>
                 <span class="fw-rating-badge" id="fw-calorie-share-badge">Fill in the fields above</span>
@@ -405,7 +437,7 @@
 
         <div class="fw-detail-grid">
           <details class="fw-collapsible fw-panel-box">
-            <summary class="fw-collapsible-summary"><h2>Nutritional balance</h2></summary>
+            <summary class="fw-collapsible-summary"><h2>Macros</h2></summary>
             <div class="fw-collapsible-body">
               <p class="structure-note">Share of calories from each macronutrient, summed across every dish. Fiber (below) is part of total carbs, not its own slice.</p>
               <div class="fw-macro-chart-wrap">
@@ -413,18 +445,19 @@
                 <div class="fw-macro-legend" id="fw-macro-legend"></div>
               </div>
               <p class="fw-macro-note" id="fw-macro-fiber-note"></p>
+              <p class="fw-dish-subtotal" id="fw-meal-totals-line"></p>
             </div>
           </details>
 
           <details class="fw-collapsible fw-panel-box">
-            <summary class="fw-collapsible-summary"><h2>Vitamins, minerals &amp; fiber</h2></summary>
+            <summary class="fw-collapsible-summary"><h2>Micros</h2></summary>
             <div class="fw-collapsible-body">
               <div class="fw-standard-toggle no-print" role="tablist" aria-label="Reference standard">
                 <span class="fw-standard-toggle-label">Standard:</span>
                 <button type="button" class="fw-standard-tab is-active" data-standard="malaysia">Malaysia (NRV)</button>
                 <button type="button" class="fw-standard-tab" data-standard="usa">USA (FDA)</button>
               </div>
-              <p class="structure-note">What this meal covers, is light on, or runs high in — checked against the standard above, which also sets the BMI bands in "How this fits your day" above. General-purpose AI is genuinely worse at estimating micronutrients specifically, so treat any tag or suggestion as a rough signal, not a diet plan.</p>
+              <p class="structure-note">What this meal covers, is light on, or runs high in — checked against the standard above, which also sets the BMI bands in "Calorie needs &amp; BMI" above. General-purpose AI is genuinely worse at estimating micronutrients specifically, so treat any tag or suggestion as a rough signal, not a diet plan.</p>
               <div id="fw-micronutrients"></div>
             </div>
           </details>
@@ -440,7 +473,14 @@
     </div>
   </footer>
 
+  <!-- Same idea as interactive-costing-analysis.html's back-to-top
+       button, adapted since this page has no tool-dock open/close
+       event to key off — shown once scrolled a page-height down,
+       hidden near the top. Jumps to the dish photos, since that's
+       "the start" here the way the results area is "the start" there. -->
+  <button type="button" id="fw-back-to-top" class="no-print" hidden>&uarr; Back to top</button>
+
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=13" defer></script>
+  <script src="food-worth-calculator.js?v=14" defer></script>
 </body>
 </html>
