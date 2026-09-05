@@ -20,42 +20,78 @@
    JS below, same as the EPF/SOCSO tables in
    overhead-manpower-calculator.js — auditable, never guessed.
 
+   ------------------------------------------------------------
+   PAGE STRUCTURE (2026-09-05 rewrite):
+   The page is now two clearly separate sections instead of one
+   long stack of boxes:
+
+     MARGIN ANALYSIS (#ma-analysis, top) — read-only output. True
+     cost breakdown, earnings summary, per-item breakdown, the
+     quadrant chart, cost-structure pies, insights. Nothing here
+     is a cost input; "Your target margin %" and the guide-venue
+     dropdown only change how results are COMPARED or labeled.
+
+     MARGIN CALCULATION (#ma-calculation, near the footer) — every
+     actual cost input, including the dish list that used to be a
+     separate box up top called "Your menu, at today's prices".
+     Split into four tabs — Menu / Fixed Overhead / Variable
+     Overhead / Manpower — each an INDEPENDENT show/hide toggle
+     (see toggleCalcTab), not a mutually-exclusive switcher: opening
+     one does not close another, and closing one never clears what
+     was typed into it, same idea as a native <details> element,
+     just styled as pill buttons. Reset All is the one control here
+     that actually clears data, and needs a confirm() first.
+
+   This replaces the previous design, where "Your menu, at today's
+   prices" lived in its own always-visible box up top AND a
+   separate "Pull from Menu Portion Creator" button near the footer
+   could ALSO create dishes into that same box — two different
+   places to manage the same list. Now there's exactly one: the
+   Menu tab in Margin Calculation, which both the native AI-
+   estimate/manual entry form AND the "pull from" button feed into.
+
    DATA MODEL: one or more "dishes", same repeatable-block pattern
    as menu-calculator.js's .menu-block, INCLUDING its tab-queue
    behavior — only the active dish's card is visible at a time,
    switched via .ma-dish-tabs, exactly matching switchToMenuBlock/
    renderMenuTabs there (and Food Worth's dish tabs, and Printing
-   Calculator's job tabs — same pattern, three places already,
-   this makes four). createDishPanel()/switchToDish()/
+   Calculator's job tabs). createDishPanel()/switchToDish()/
    renderDishTabs() below are that pattern ported, not reinvented.
    collectDishes() and every render function still reads ALL dish
    panels via querySelectorAll regardless of which tab is showing —
-   hidden only affects display, never what gets calculated.
+   hidden only affects display, never what gets calculated. This is
+   a DIFFERENT toggle mechanism from the outer Menu/Fixed/Variable/
+   Manpower tabs above it — dish tabs are mutually exclusive
+   (switch between dishes), the outer calc-tabs are independent
+   (accordion-style, several can be open at once). Don't confuse
+   toggleCalcTab (outer) with switchToDish (inner, dish-level).
 
    Each dish has a cost SOURCE: ai (Gemini estimates from a
    description and/or photo) or manual (vendor just types a
-   number) — no per-dish "sync" tab anymore. Pulling a dish in from
-   Menu Calculator or Printing Calculator now goes through the
-   connector panel + tool dock near the bottom of the page instead
+   number). Pulling a dish in from Menu Calculator now goes through
+   the "Pull from Menu Portion Creator" button inside the Menu tab
    (see TOOL DOCK section) — it CREATES a new dish panel pre-filled
-   as a manual entry, rather than a dish "watching" for a broadcast
-   forever. See handleSyncPayload().
+   as a manual entry. Printing Calculator is intentionally NOT
+   offered as a pull source on this page (see TOOL_DOCK_CONFIG
+   below) — printing isn't a food cost, so it doesn't belong in a
+   food margin tool; revisit if/when a services-margin sibling tool
+   is built (see KIV list in the change notes). Overhead & Manpower
+   Calculator is reachable from both the Fixed Overhead tab AND the
+   Manpower tab, since that one external tool computes both figures
+   together and broadcasts them together — see handleSyncPayload().
 
-   TOOL DOCK: ported from interactive-costing-analysis.js's
-   rzLoadToolIntoDock/rzRunIsolated/rzExtractInlineScript almost
-   verbatim — same fetch-inject-execute approach (load the other
-   tool's real page and real script into a dock on this page,
-   shadow rzBroadcast inside an IIFE so its calls land directly on
-   handleSyncPayload here instead of going out over a channel this
-   page's own listener can't hear itself on). Kept together with
-   the connector buttons near the footer (not split top/bottom like
-   Costing Analysis) since a pull here creates/fills dishes and
-   overhead fields rather than one pair of boxes — easier to follow
-   with the button and the result in the same place. Relies on
+   TOOL DOCK: fetch-inject-execute — load another tool's real page
+   and real script into a dock on this page, shadowing rzBroadcast
+   inside an IIFE so its calls land directly on handleSyncPayload
+   here instead of going out over a BroadcastChannel this page's own
+   listener can't hear itself on (see rzRunIsolated). Relies on
    RZ_TOOLS from costing-sync.js for each tool's real URL/label; if
-   that's ever missing or reshaped, every touch point already
-   guards for it (typeof RZ_TOOLS === 'undefined' etc.) and simply
-   no-ops rather than breaking anything else on the page.
+   that's ever missing or reshaped, every touch point already guards
+   for it (typeof RZ_TOOLS === 'undefined' etc.) and simply no-ops
+   rather than breaking anything else on the page. The dock itself
+   now lives inside Margin Calculation (it used to sit under a
+   separate connector-panel row) — "pull from" buttons are embedded
+   directly in the tab whose data they fill instead.
 
    STRUCTURE COMPARISON: pie-chart based, ported from
    interactive-costing-analysis.js's renderStructurePie/
@@ -63,7 +99,7 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Audit] script build: 2026-09-04-v2-toolDock-pies-tabs');
+console.info('[Margin Audit] script build: 2026-09-05-v3-analysis-calc-split');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
@@ -88,11 +124,19 @@ const ELECTRICITY_DEFAULTS = [
 const ELECTRICITY_RATE_DEFAULT = 0.28; // RM/kWh, Sarawak Energy's current stated average — verify against their live tariff page for exact tiered bands
 
 const WATER_TARIFF = { minimum: 22.00, tier1Limit: 25000, tier1Rate: 0.97, tier2Rate: 1.06 }; // RM, liters, RM/1000L — Sarawak W3 Commercial Rate
+const WATER_LITERS_DEFAULT = 500;
 
 const GAS_CYLINDER_KG = 14;
 const GAS_SUBSIDISED_THRESHOLD_KG = 42;
 const GAS_PRICE_HOUSEHOLD_DEFAULT = 26.60;
 const GAS_PRICE_COMMERCIAL_DEFAULT = 70.00;
+const GAS_BURNERS_DEFAULT = 1;
+const GAS_HOURS_DEFAULT = 4;
+const GAS_RATE_DEFAULT = 0.4;
+
+const RENT_DEFAULT = 900;
+const MANPOWER_DEFAULT = 1200;
+const OPERATING_DAYS_DEFAULT = 26;
 
 /* ================= SHARED UTILITIES ================= */
 
@@ -120,12 +164,11 @@ function numOrZero(v) {
   return isFinite(v) ? v : 0;
 }
 
-// Shows a small "synced from X" badge next to a field label — ported
-// from interactive-costing-analysis.js verbatim. Used for overhead/
-// manpower (their labels are real <label> wrappers, matching what
-// this expects); dish syncing shows its own confirmation instead
-// via #ma-dock-feedback, since a dish name input isn't wrapped in a
-// label the same way.
+// Shows a small "synced from X" badge next to a field label — used
+// for overhead/manpower (their labels are real <label> wrappers,
+// matching what this expects); dish syncing shows its own
+// confirmation instead via #ma-dock-feedback, since a dish name
+// input isn't wrapped in a label the same way.
 function markSynced(labelSelector, sourceLabel) {
   const label = document.querySelector(labelSelector);
   if (!label) return;
@@ -189,9 +232,14 @@ function goBack() {
   if (wizardStepIndex > 0) { wizardStepIndex--; renderWizardStep(); }
 }
 
+// Unhides BOTH halves of the page now (Margin Analysis and Margin
+// Calculation used to be one section) and reveals the floating nav,
+// which only makes sense once there's somewhere for it to jump to.
 function finishWizard() {
   document.getElementById('wizard').hidden = true;
   document.getElementById('ma-analysis').hidden = false;
+  document.getElementById('ma-calculation').hidden = false;
+  document.getElementById('rz-float-nav').hidden = false;
   document.querySelector('#ma-manpower-label .label-text').textContent = wizardAnswers.manpower === 'solo'
     ? "Manpower (include your own wage, even if it's just you)"
     : 'Manpower';
@@ -203,9 +251,86 @@ function finishWizard() {
 
 function editAnswers() {
   document.getElementById('ma-analysis').hidden = true;
+  document.getElementById('ma-calculation').hidden = true;
+  document.getElementById('rz-float-nav').hidden = true;
   document.getElementById('wizard').hidden = false;
   wizardStepIndex = 0;
   renderWizardStep();
+}
+
+/* ================= MARGIN CALCULATION TABS =================
+   Four independent show/hide toggles (Menu / Fixed Overhead /
+   Variable Overhead / Manpower) — NOT a mutually-exclusive
+   switcher. Clicking a tab a second time closes just that tab;
+   clicking a different one does not close whatever's already open.
+   Nothing in a closed panel is ever cleared or rebuilt — it's a
+   plain `hidden` toggle on a DOM node that already exists, so every
+   input inside keeps its value and its event listeners the whole
+   time, identical in spirit to a native <details> element (see
+   Food Worth's collapsible sections for the same idea elsewhere on
+   this site). This is deliberately a DIFFERENT mechanism from the
+   dish tabs inside the Menu panel (switchToDish, further down),
+   which ARE mutually exclusive — don't conflate the two. */
+
+function setCalcTabOpen(key, open) {
+  const btn = document.querySelector(`.ma-calc-tab[data-calc-tab="${key}"]`);
+  const panel = document.querySelector(`.ma-calc-panel[data-calc-panel="${key}"]`);
+  if (!btn || !panel) return;
+  panel.hidden = !open;
+  btn.classList.toggle('is-active', open);
+  btn.setAttribute('aria-expanded', String(open));
+}
+
+function toggleCalcTab(key) {
+  const panel = document.querySelector(`.ma-calc-panel[data-calc-panel="${key}"]`);
+  if (!panel) return;
+  setCalcTabOpen(key, panel.hidden);
+}
+
+// The only control in Margin Calculation that actually clears data
+// (every calc-tab toggle above only shows/hides, never resets).
+// Confirms first since this can't be undone — same instinct as any
+// destructive action elsewhere (e.g. removing a dish already asks
+// nothing, but this affects everything at once, so it gets an
+// explicit guard the individual remove buttons don't need).
+function resetAllCalculationData() {
+  const ok = confirm('Clear every menu item, and reset overhead, utilities, and manpower back to their starting defaults? This can\u2019t be undone.');
+  if (!ok) return;
+
+  document.getElementById('ma-dish-panels').innerHTML = '';
+  dishIdCounter = 0;
+  createDishPanel();
+  renderDishTabs();
+
+  document.getElementById('ma-rent').value = RENT_DEFAULT;
+  document.getElementById('ma-manpower').value = MANPOWER_DEFAULT;
+  document.getElementById('ma-operating-days').value = OPERATING_DAYS_DEFAULT;
+
+  document.getElementById('ma-elec-rows').innerHTML = '';
+  ELECTRICITY_DEFAULTS.forEach((preset) => createElecRow(preset));
+  document.getElementById('ma-elec-rate').value = ELECTRICITY_RATE_DEFAULT;
+
+  document.getElementById('ma-water-liters').value = WATER_LITERS_DEFAULT;
+  document.getElementById('ma-water-liters-num').value = WATER_LITERS_DEFAULT;
+  document.getElementById('ma-water-actual').value = '';
+
+  document.getElementById('ma-gas-burners').value = GAS_BURNERS_DEFAULT;
+  document.getElementById('ma-gas-hours').value = GAS_HOURS_DEFAULT;
+  document.getElementById('ma-gas-rate').value = GAS_RATE_DEFAULT;
+  const householdRadio = document.querySelector('[name="ma-gas-tier"][value="household"]');
+  if (householdRadio) householdRadio.checked = true;
+  document.getElementById('ma-gas-price-household').value = GAS_PRICE_HOUSEHOLD_DEFAULT;
+  document.getElementById('ma-gas-price-commercial').value = GAS_PRICE_COMMERCIAL_DEFAULT;
+
+  setCalcTabOpen('menu', true);
+  setCalcTabOpen('fixed', false);
+  setCalcTabOpen('variable', false);
+  setCalcTabOpen('manpower', false);
+
+  const feedback = document.getElementById('ma-dock-feedback');
+  if (feedback) feedback.textContent = '\u2713 Cleared \u2014 Margin Calculation is back to its starting defaults.';
+
+  recalculateAll();
 }
 
 /* ================= DISH PANELS (tab-queue pattern) ================= */
@@ -291,6 +416,9 @@ function createDishPanel() {
 // "hide siblings, show one" pattern already used by Menu Calculator's
 // menu blocks, Food Worth's dish tabs, and Printing Calculator's job
 // tabs — ported here rather than reinvented as vertical stacking.
+// This is dish-level switching, separate from the outer Menu/Fixed/
+// Variable/Manpower calc-tabs (see toggleCalcTab above), which are
+// independent toggles, not a switcher.
 function switchToDish(dishId) {
   document.querySelectorAll('.ma-dish-panel').forEach((p) => {
     p.hidden = (p.dataset.dishId !== dishId);
@@ -427,8 +555,7 @@ async function estimateDishCost(panel) {
    dock pulls; overhead/manpower: filled directly) ================= */
 
 function handleSyncPayload(data) {
-  if ((data.source === 'menu-calculator' || data.source === 'printing-calculator') && typeof data.costPerPortion === 'number') {
-    const sourceLabel = data.source === 'menu-calculator' ? 'Menu Portion Creator' : 'Printing Calculator';
+  if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
     const panel = createDishPanel();
     panel.querySelector('.ma-dish-name').value = data.dishName || 'Synced item';
     if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
@@ -437,9 +564,10 @@ function handleSyncPayload(data) {
     switchDishSource(panel, 'manual');
     panel.querySelector('.ma-manual-cost').value = data.costPerPortion.toFixed(2);
     renderDishTabs();
+    setCalcTabOpen('menu', true);
     const feedback = document.getElementById('ma-dock-feedback');
     if (feedback) {
-      feedback.textContent = `\u2713 Added "${panel.querySelector('.ma-dish-name').value}" to your menu from ${sourceLabel} \u2014 ${formatRM(data.costPerPortion)}/portion. Scroll up to see it in Your Menu.`;
+      feedback.textContent = `\u2713 Added "${panel.querySelector('.ma-dish-name').value}" to your menu from Menu Portion Creator \u2014 ${formatRM(data.costPerPortion)}/portion.`;
     }
     recalculateAll();
   }
@@ -448,7 +576,7 @@ function handleSyncPayload(data) {
     if (typeof data.overheadMonthly === 'number') {
       document.getElementById('ma-rent').value = data.overheadMonthly.toFixed(2);
       markSynced('#ma-rent-label', 'Overhead & Manpower');
-      parts.push('rent/overhead');
+      parts.push('fixed overhead');
     }
     if (typeof data.manpowerMonthly === 'number') {
       document.getElementById('ma-manpower').value = data.manpowerMonthly.toFixed(2);
@@ -456,6 +584,12 @@ function handleSyncPayload(data) {
       parts.push('manpower');
     }
     if (parts.length) {
+      // Fills both fields at once regardless of which tab's "Pull
+      // from" button triggered it (Fixed Overhead and Manpower share
+      // the one external tool) — open both so nothing that just got
+      // filled in is sitting behind a closed tab.
+      setCalcTabOpen('fixed', true);
+      setCalcTabOpen('manpower', true);
       const feedback = document.getElementById('ma-dock-feedback');
       if (feedback) feedback.textContent = `\u2713 Synced ${parts.join(' & ')} from Overhead & Manpower Calculator.`;
     }
@@ -469,19 +603,27 @@ function initSync() {
 }
 
 /* ================= TOOL DOCK (fetch-inject-execute) =================
-   Ported from interactive-costing-analysis.js almost verbatim — see
-   that file's own long comment on WHY this exists (two real problems:
-   duplicate top-level declarations across pages, and BroadcastChannel
-   never delivering a message back to its own sender) for the full
-   explanation. Nothing about the mechanism itself changes here, only
-   which tools are configured and where results land (handleSyncPayload
-   above, tuned for this page's dish-based model instead of one pair
-   of fields). ============================================================ */
+   Same fetch-inject-execute approach used by interactive-costing-
+   analysis.js — see that file's own long comment for the full
+   explanation of the two real problems this solves (duplicate
+   top-level declarations across pages if a tool's script were
+   pasted in raw, and BroadcastChannel never delivering a message
+   back to its own sender). Nothing about the mechanism changes
+   here, only WHICH tools are offered and where their trigger
+   buttons live: printing-calculator has no entry below (see the
+   note at the top of this file for why), and each "Pull from"
+   button now sits inside the specific calc-tab whose data it fills,
+   rather than a single shared connector row. ============================================================ */
 
 const TOOL_DOCK_CONFIG = {
   'menu-calculator': { scriptUrl: 'menu-calculator.js', theme: 'theme-menu' },
   'overhead-manpower-calculator': { scriptUrl: 'overhead-manpower-calculator.js', theme: 'theme-overhead' },
-  'printing-calculator': { inlineScript: true, theme: 'theme-printing' },
+  // Printing Calculator intentionally excluded: printing isn't a
+  // food cost, so it has no place in a FOOD margin tool. The page
+  // itself (printing-calculator.html) is untouched and still fully
+  // reachable directly, and from Interactive Costing Analysis. If a
+  // services-margin sibling tool gets built later (see KIV list),
+  // it can add this entry back for itself.
 };
 
 function rzExtractInlineScript(doc) {
@@ -502,20 +644,12 @@ function rzRunIsolated(scriptText, sourceKey) {
 
 function setDockVisible(visible) {
   document.getElementById('tool-dock').hidden = !visible;
-  document.getElementById('rz-back-to-top').hidden = !visible;
-  document.getElementById('tool-dock-hide-btn').hidden = !visible;
-  if (!visible) updateConnectorActiveState(null);
-}
-
-function updateConnectorActiveState(activeKey) {
-  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.openTool === activeKey);
-  });
 }
 
 async function rzLoadToolIntoDock(key) {
   if (typeof RZ_TOOLS === 'undefined' || !RZ_TOOLS[key]) return;
   const dockConfig = TOOL_DOCK_CONFIG[key];
+  if (!dockConfig) return; // e.g. printing-calculator — not offered from this page
   const tool = RZ_TOOLS[key];
   const dock = document.getElementById('tool-dock');
   const body = document.getElementById('tool-dock-body');
@@ -525,7 +659,6 @@ async function rzLoadToolIntoDock(key) {
 
   if (dock.dataset.openTool === key) {
     setDockVisible(true);
-    updateConnectorActiveState(key);
     dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
     return;
   }
@@ -535,7 +668,6 @@ async function rzLoadToolIntoDock(key) {
   titleEl.textContent = tool.label;
   body.innerHTML = '<p class="tool-dock-status">Loading\u2026</p>';
   setDockVisible(true);
-  updateConnectorActiveState(key);
   dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
@@ -589,7 +721,7 @@ function createElecRow(preset) {
 function computeElectricityCost() {
   const rate = num(document.getElementById('ma-elec-rate'), ELECTRICITY_RATE_DEFAULT);
   document.getElementById('ma-elec-rate-display').textContent = rate.toFixed(2);
-  const days = num(document.getElementById('ma-operating-days'), 26);
+  const days = num(document.getElementById('ma-operating-days'), OPERATING_DAYS_DEFAULT);
   let dailyKwh = 0;
   document.querySelectorAll('#ma-elec-rows > tr').forEach((tr) => {
     const watts = num(tr.querySelector('.ma-elec-watts'));
@@ -602,17 +734,17 @@ function computeElectricityCost() {
 function computeWaterCost() {
   const actual = document.getElementById('ma-water-actual').value;
   if (actual !== '' && isFinite(parseFloat(actual))) return parseFloat(actual);
-  const days = num(document.getElementById('ma-operating-days'), 26);
+  const days = num(document.getElementById('ma-operating-days'), OPERATING_DAYS_DEFAULT);
   const liters = num(document.getElementById('ma-water-liters'), 0) * days;
   const usageCharge = (liters / 1000) * (liters <= WATER_TARIFF.tier1Limit ? WATER_TARIFF.tier1Rate : WATER_TARIFF.tier2Rate);
   return Math.max(WATER_TARIFF.minimum, usageCharge);
 }
 
 function computeGasCost() {
-  const days = num(document.getElementById('ma-operating-days'), 26);
+  const days = num(document.getElementById('ma-operating-days'), OPERATING_DAYS_DEFAULT);
   const burners = num(document.getElementById('ma-gas-burners'), 0);
   const hours = num(document.getElementById('ma-gas-hours'), 0);
-  const rate = num(document.getElementById('ma-gas-rate'), 0.4);
+  const rate = num(document.getElementById('ma-gas-rate'), GAS_RATE_DEFAULT);
   const kgPerMonth = burners * hours * rate * days;
   const cylinders = kgPerMonth / GAS_CYLINDER_KG;
   const tier = document.querySelector('[name="ma-gas-tier"]:checked').value;
@@ -758,7 +890,7 @@ function renderStructureComparison(mix, guideVenue) {
 
 function renderDishResults(dishes, fixedPerPortion) {
   const container = document.getElementById('ma-dish-results');
-  if (!dishes.length) { container.innerHTML = '<p class="structure-note">Add an item above to see its breakdown here.</p>'; return; }
+  if (!dishes.length) { container.innerHTML = '<p class="structure-note">Add an item in Margin Calculation to see its breakdown here.</p>'; return; }
   container.innerHTML = dishes.map((d) => {
     const trueCost = d.ingredientCost + fixedPerPortion;
     const trueMargin = d.price - trueCost;
@@ -786,7 +918,7 @@ function renderTrueCostSection(dishes, overheadPerPortion, manpowerPerPortion) {
 
   const rowsEl = document.getElementById('ma-true-cost-rows');
   if (!dishes.length) {
-    rowsEl.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); font-family:var(--font-body);">Add an item above to see its breakdown here.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); font-family:var(--font-body);">Add an item in Margin Calculation to see its breakdown here.</td></tr>';
     return;
   }
   rowsEl.innerHTML = dishes.map((d) => {
@@ -876,7 +1008,7 @@ function renderInsights(dishes, mix, guideVenue, gasKgPerMonth, targetMarginPct,
     });
   }
 
-  if (!insights.length) insights.push({ level: 'info', text: 'Nothing stands out yet \u2014 add items and costs above to see where your margin actually sits.' });
+  if (!insights.length) insights.push({ level: 'info', text: 'Nothing stands out yet \u2014 add items and costs in Margin Calculation to see where your margin actually sits.' });
 
   const iconFor = { alert: '\u26A0\uFE0F', warn: '\uD83D\uDD0D', info: '\uD83D\uDCA1' };
   document.getElementById('ma-insights').innerHTML = insights.map((i) => `
@@ -899,7 +1031,7 @@ function recalculateAll() {
   try {
     const dishes = collectDishes();
     const totalVolumeDay = dishes.reduce((s, d) => s + d.volumeDay, 0);
-    const days = num(document.getElementById('ma-operating-days'), 26);
+    const days = num(document.getElementById('ma-operating-days'), OPERATING_DAYS_DEFAULT);
     const totalVolumeMonth = totalVolumeDay * days;
 
     const elecCost = computeElectricityCost();
@@ -908,12 +1040,17 @@ function recalculateAll() {
     const rent = num(document.getElementById('ma-rent'));
     const manpower = num(document.getElementById('ma-manpower'));
     const utilitiesTotal = elecCost + waterCost + gasResult.cost;
-    const overheadTotal = rent + utilitiesTotal;
+    const overheadTotal = rent + utilitiesTotal; // fixed overhead + utilities combined, used internally for per-portion allocation and the structure pies
 
     document.getElementById('ma-elec-cost').textContent = formatRM(elecCost);
     document.getElementById('ma-water-cost').textContent = formatRM(waterCost);
     document.getElementById('ma-gas-cost').textContent = formatRM(gasResult.cost);
-    document.getElementById('ma-total-overhead').textContent = formatRM(overheadTotal);
+    // Displayed as three separate live figures now (Fixed Overhead,
+    // Utilities, Manpower — matching the three-way tab split) rather
+    // than one combined "overhead" total, even though overheadTotal
+    // above still combines rent+utilities for the actual math.
+    document.getElementById('ma-total-fixed').textContent = formatRM(rent);
+    document.getElementById('ma-total-utilities').textContent = formatRM(utilitiesTotal);
     document.getElementById('ma-total-manpower').textContent = formatRM(manpower);
 
     const overheadPerPortion = totalVolumeMonth > 0 ? overheadTotal / totalVolumeMonth : 0;
@@ -963,7 +1100,7 @@ function gatherExportData() {
     savedAt: new Date().toISOString(),
     tool: 'margin-audit-calculator',
     wizardAnswers,
-    operatingDays: num(document.getElementById('ma-operating-days'), 26),
+    operatingDays: num(document.getElementById('ma-operating-days'), OPERATING_DAYS_DEFAULT),
     rent: num(document.getElementById('ma-rent')),
     manpower: num(document.getElementById('ma-manpower')),
     electricity: Array.from(document.querySelectorAll('#ma-elec-rows > tr')).map((tr) => ({
@@ -1015,7 +1152,7 @@ function importData(file) {
     const previousMarginText = data.resultSummary ? data.resultSummary.overallMarginPct : null;
 
     Object.assign(wizardAnswers, data.wizardAnswers || {});
-    document.getElementById('ma-operating-days').value = data.operatingDays || 26;
+    document.getElementById('ma-operating-days').value = data.operatingDays || OPERATING_DAYS_DEFAULT;
     document.getElementById('ma-rent').value = data.rent || 0;
     document.getElementById('ma-manpower').value = data.manpower || 0;
     document.getElementById('ma-elec-rows').innerHTML = '';
@@ -1026,7 +1163,7 @@ function importData(file) {
     if (data.gas) {
       document.getElementById('ma-gas-burners').value = data.gas.burners || 0;
       document.getElementById('ma-gas-hours').value = data.gas.hours || 0;
-      document.getElementById('ma-gas-rate').value = data.gas.rate || 0.4;
+      document.getElementById('ma-gas-rate').value = data.gas.rate || GAS_RATE_DEFAULT;
       const radio = document.querySelector(`[name="ma-gas-tier"][value="${data.gas.tier}"]`);
       if (radio) radio.checked = true;
     }
@@ -1046,6 +1183,15 @@ function importData(file) {
 
     finishWizard();
     recalculateAll();
+
+    // Loaded data touches every tab in Margin Calculation, so open
+    // all four to confirm at a glance that everything came in —
+    // easier to close ones you don't need than to go hunting for
+    // silently-updated fields behind a closed tab.
+    setCalcTabOpen('menu', true);
+    setCalcTabOpen('fixed', true);
+    setCalcTabOpen('variable', true);
+    setCalcTabOpen('manpower', true);
 
     if (previousMarginText) {
       const note = document.getElementById('ma-compare-note');
@@ -1132,13 +1278,31 @@ function init() {
   document.getElementById('ma-add-elec-row').addEventListener('click', () => createElecRow());
   ELECTRICITY_DEFAULTS.forEach((preset) => createElecRow(preset));
 
+  // Margin Calculation's four independent tab toggles + Reset All —
+  // see setCalcTabOpen/toggleCalcTab/resetAllCalculationData above.
+  document.querySelectorAll('.ma-calc-tab[data-calc-tab]').forEach((btn) => {
+    btn.addEventListener('click', () => toggleCalcTab(btn.dataset.calcTab));
+  });
+  document.getElementById('ma-reset-all').addEventListener('click', resetAllCalculationData);
+  setCalcTabOpen('menu', true);
+  setCalcTabOpen('fixed', false);
+  setCalcTabOpen('variable', false);
+  setCalcTabOpen('manpower', false);
+
+  // "Pull from" buttons now live inside their relevant tab instead
+  // of a shared connector row, but they all still just carry
+  // data-open-tool and feed the same rzLoadToolIntoDock — no per-
+  // button special-casing needed.
   document.querySelectorAll('[data-open-tool]').forEach((btn) => {
     btn.addEventListener('click', () => rzLoadToolIntoDock(btn.dataset.openTool));
   });
   document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
-  document.getElementById('tool-dock-hide-btn').addEventListener('click', () => setDockVisible(false));
-  document.getElementById('rz-back-to-top').addEventListener('click', () => {
+
+  document.getElementById('rz-back-to-analysis').addEventListener('click', () => {
     document.getElementById('ma-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.getElementById('rz-back-to-calc').addEventListener('click', () => {
+    document.getElementById('ma-calculation').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
 
   initSync();
