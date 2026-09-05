@@ -106,7 +106,7 @@ console.info('[Margin Audit] script build: 2026-09-05-v3-analysis-calc-split');
    here, with the current value on the left and nothing else in
    this file needing to change to update it. */
 
-const PROXY_ENDPOINT = 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE';
+const PROXY_ENDPOINT = 'https://margin-audit-proxy.reysourcez-ent.workers.dev';
 
 const GUIDE_RATIOS = {
   home:  { ingredients: 55, overhead: 15, manpower: 15, margin: 15 },
