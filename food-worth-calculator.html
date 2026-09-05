@@ -17,12 +17,34 @@
        page stays visually identical to the rest of the site. Fold these
        into styles.css later if you'd rather keep all CSS in one file. -->
   <style>
-    .fw-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; text-align: center; background: var(--surface); }
-    .fw-upload-zone.has-image { border-style: solid; padding: 20px; text-align: left; }
+    .fw-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; background: var(--surface); }
+    .fw-upload-zone.has-image { border-style: solid; padding: 20px; }
+    /* Two-column layout once there's a photo: photo + stacked action
+       buttons on the left, the (opt-in) recipe breakdown box on the
+       right \u2014 using up what used to be a lot of empty space next
+       to a photo capped at 240px wide. Collapses to one column on
+       small screens so the recipe panel never gets squeezed unreadably. */
+    .fw-dish-top-grid { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 20px; align-items: start; }
+    .fw-photo-col { text-align: center; min-width: 0; }
+    .fw-upload-zone.has-image .fw-photo-col { text-align: left; }
     .fw-preview-img { max-width: 240px; max-height: 240px; border-radius: 8px; display: block; margin: 0 auto 16px; }
     .fw-upload-zone.has-image .fw-preview-img { margin: 0 0 16px; }
-    .fw-upload-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: center; }
-    .fw-upload-zone.has-image .fw-upload-row { justify-content: flex-start; }
+    /* Choose photo -> Analyze photo -> Break down as a recipe, stacked
+       in that order (was a side-by-side row) so the workflow reads
+       top-to-bottom, and the photo's right-hand margin stays free for
+       .fw-recipe-col alongside it instead of empty space. */
+    .fw-upload-row { display: flex; flex-direction: column; gap: 10px; }
+    .fw-upload-row > .btn { display: flex; width: 100%; align-items: center; justify-content: center; }
+    /* The recipe button's arrow is a ::after, not a real child element
+       \u2014 runRecipeBreakdown() swaps btn.textContent to "Breaking
+       down\u2026" mid-flow, which would wipe out a nested <span> but
+       leaves a CSS-generated icon untouched. */
+    .fw-recipe-btn.btn { justify-content: space-between; }
+    .fw-recipe-btn::after { content: '\25B8'; font-size: 0.8em; opacity: 0.8; margin-left: 8px; }
+    .fw-recipe-col { min-width: 0; }
+    @media (max-width: 700px) {
+      .fw-dish-top-grid { grid-template-columns: 1fr; }
+    }
     .fw-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 12px; }
     .fw-status.is-error { color: #C0392B; font-weight: 600; }
 
@@ -35,6 +57,58 @@
     .fw-summary-item strong { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; color: var(--text); }
     .fw-summary-pct { font-size: 0.75rem; font-weight: 600; color: var(--muted); }
     .fw-summary-item small { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+    /* Save as PDF, top right of the results — matches the other
+       Business Analysis pages' convention of a right-aligned action
+       row above the results (assumed from that pattern; that page
+       wasn't part of this session's files to copy the exact class
+       from, so swap this selector for its real one if it differs). */
+    .fw-top-actions { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+
+    /* The "Worth it" hero banner — sits above the 4-cell summary
+       strip, giving the one genuinely subjective+combined verdict on
+       this page (taste \u00d7 value) its own prominent, thick-gold-
+       bordered spot rather than being just one of five equal cells.
+       Stars mirror the input row's fill logic (renderTasteStars) but
+       bigger/bolder since this is a readout, not a control; the
+       verdict text's color is computed in JS (colorForScore) on a
+       continuous red\u2192gold scale driven by the same 0\u20131
+       worthiness score computeWorthiness() already buckets into its
+       5 text labels \u2014 so the color reads as an extension of that
+       label, not a separate measure. */
+    .fw-worth-banner { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; border: 3px solid #D4A017; border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; background: #FFFBF0; }
+    .fw-worth-banner-stars { display: flex; gap: 3px; line-height: 1; }
+    .fw-worth-star { font-size: 2rem; font-weight: 900; color: var(--line); }
+    .fw-worth-star.is-filled { color: #D4A017; }
+    .fw-worth-banner-text { display: flex; flex-direction: column; gap: 2px; }
+    .fw-worth-banner-text strong { font-family: var(--font-display); font-size: 1.3rem; font-weight: 700; }
+    .fw-worth-banner-text small { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+    @media (max-width: 480px) {
+      .fw-worth-star { font-size: 1.6rem; }
+      .fw-worth-banner-text strong { font-size: 1.1rem; }
+    }
+
+    /* Tooltip line-wrap fix, page-scoped: the shared .tooltip-icon
+       rule itself lives in styles.css, which isn't part of this
+       session's files, so this is a defensive override assuming the
+       common content:attr(data-tooltip) + ::after pattern (covers
+       ::before too just in case). Every tooltip's text below was also
+       manually split onto its own line per sentence, via a literal
+       line-feed entity (&#10;) inside each data-tooltip — white-space:
+       pre-line here honors that break while still letting a long
+       sentence wrap normally within max-width. */
+    .tooltip-icon::after,
+    .tooltip-icon::before {
+      white-space: pre-line !important;
+      max-width: min(230px, calc(100vw - 40px)) !important;
+      text-align: left !important;
+    }
+    @media (max-width: 480px) {
+      .tooltip-icon::after,
+      .tooltip-icon::before {
+        max-width: min(190px, calc(100vw - 32px)) !important;
+      }
+    }
 
     .fw-items-table td input[type="text"] { font-family: var(--font-body); min-width: 130px; }
     .fw-items-table td input[type="number"] { width: 72px; }
@@ -97,15 +171,21 @@
     .fw-star:hover { color: #D4A017; opacity: 0.65; }
     .fw-star:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
 
-    #fw-back-to-top {
-      position: fixed; bottom: 24px; right: 24px; z-index: 50;
-      background: var(--accent); color: #fff; border: none; border-radius: 999px;
-      padding: 12px 18px; font-family: var(--font-body); font-weight: 600; font-size: 0.88rem;
-      cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    /* Floating quick-nav: jump-to-section links stacked above the
+       back-to-top button in one shared fixed-position cluster (was
+       just the single back-to-top button) so there's one corner
+       anchor, not several competing ones. */
+    #fw-quick-nav { position: fixed; bottom: 24px; right: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .fw-quick-nav-btn {
+      background: #fff; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-dark);
+      padding: 8px 14px; font-family: var(--font-body); font-weight: 600; font-size: 0.78rem;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.14); white-space: nowrap;
     }
-    #fw-back-to-top:hover { background: var(--accent-dark); }
-    #fw-back-to-top:focus-visible { outline: 3px solid var(--accent-dark); outline-offset: 2px; }
-    @media print { #fw-back-to-top { display: none !important; } }
+    .fw-quick-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .fw-quick-nav-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    #fw-back-to-top { background: var(--accent); color: #fff; border: none; padding: 12px 18px; font-size: 0.88rem; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
+    #fw-back-to-top:hover { background: var(--accent-dark); color: #fff; }
+    @media print { #fw-quick-nav { display: none !important; } }
     @media (max-width: 800px) {
       .fw-detail-grid { grid-template-columns: 1fr; }
     }
@@ -124,27 +204,35 @@
       border: 1px solid var(--line); background: var(--surface);
       font-family: var(--font-body); font-size: 0.85rem; font-weight: 600; color: var(--text);
     }
-    /* "High" = cleared 20% DV, the FDA's own "excellent source" bar.
-       .is-caution is sodium specifically (see MICRONUTRIENT_FIELDS in
-       food-worth-calculator.js) — same amber/red already used on this
-       page for the fat macro segment and the error status, so a
-       flagged nutrient reads as "worth noting", not another green tick. */
+    /* "High" = cleared 20% DV, the FDA's own "excellent source" bar. */
     .fw-micro-tag.is-high { border-color: var(--accent); color: var(--accent-dark); }
-    .fw-micro-tag.is-caution { border-color: #D4A017; color: #9C7A12; }
-    .fw-micro-tag.is-caution.is-high { border-color: #C0392B; color: #C0392B; }
     .fw-micro-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
 
-    /* "Could use more" gets its own warmer card rather than sitting
-       as plain text under the same style as everything else — this
-       is the group meant to feel like a genuine, friendly suggestion
-       rather than a data readout, so it earns a bit more visual
-       weight: a soft tint, a filled (not just outlined) tag, and a
-       small sparkle mark instead of nothing. */
+    /* "Could use more" / "Could use less" are mirrored treatments —
+       each gets a warmer boxed card instead of sitting as plain text,
+       so both read as a genuine suggestion rather than a data readout:
+       a soft tint, a filled (not outlined) tag, and a small icon.
+       Green for "more" (a positive food-gap suggestion); for "less"
+       (sodium running high — see MICRONUTRIENT_FIELDS's caution:true
+       in food-worth-calculator.js) the site's existing error/caution
+       red (#C0392B, already on .fw-status.is-error), with an amber
+       step for the "some" tier and red for "high" — the same two-tier
+       split the old outlined version used, just filled now instead of
+       outlined. Same shape, opposite color, so the pairing reads as
+       two sides of one idea rather than unrelated components. */
     .fw-micro-group.fw-micro-care { background: #F0F7F4; border: 1px solid #CFE6DD; border-radius: 10px; padding: 12px 14px 14px; }
     .fw-micro-care .fw-micro-group-label { display: inline-flex; align-items: center; gap: 6px; color: var(--accent-dark); }
     .fw-micro-care-icon { width: 14px; height: 14px; color: var(--accent); flex-shrink: 0; }
     .fw-micro-tag.is-care { background: var(--accent); border-color: var(--accent); color: #fff; }
     .fw-micro-care .fw-micro-suggestions li { font-size: 0.88rem; }
+
+    .fw-micro-group.fw-micro-caution-card { background: #FBEAE8; border: 1px solid #F0C2B8; border-radius: 10px; padding: 12px 14px 14px; }
+    .fw-micro-caution-card .fw-micro-group-label { display: inline-flex; align-items: center; gap: 6px; color: #C0392B; }
+    .fw-micro-caution-icon { width: 14px; height: 14px; color: #C0392B; flex-shrink: 0; }
+    .fw-micro-tag.is-caution-strong { background: #D4A017; border-color: #D4A017; color: #fff; }
+    .fw-micro-tag.is-caution-strong.is-high { background: #C0392B; border-color: #C0392B; color: #fff; }
+    .fw-micro-caution-card .fw-micro-suggestions li { font-size: 0.88rem; }
+
     .fw-micro-suggestions { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
     .fw-micro-suggestions li { font-size: 0.85rem; color: var(--text); }
 
@@ -189,9 +277,10 @@
 
     .fw-dish-subtotal { font-size: 0.9rem; color: var(--muted); margin: 10px 0 0; font-family: "IBM Plex Mono", monospace; }
 
-    /* Per-dish recipe breakdown — opt-in, read-only, sits under the
-       item table once someone clicks "Break down as a recipe". */
-    .fw-recipe-panel:not(:empty) { margin-top: 16px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    /* Per-dish recipe breakdown — opt-in, read-only, now sits to the
+       right of the photo in its own column (was under the item table)
+       once someone clicks "Break down as a recipe". */
+    .fw-recipe-panel:not(:empty) { padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
     .fw-recipe-title { font-family: var(--font-display); font-size: 1.05rem; margin: 0 0 6px; }
     .fw-recipe-disclaimer { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
     .fw-recipe-ingredients { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -287,11 +376,24 @@
     <!-- ============ MEAL TOTAL (sums every dish above) ============ -->
     <section class="calc-panel" id="fw-meal-section" hidden>
       <div class="wrap">
-        <div class="fw-summary-strip" id="fw-summary-strip"></div>
-        <div class="calc-actions no-print">
+        <div class="fw-top-actions no-print">
           <button type="button" id="fw-save-pdf" class="btn btn-secondary">Save as PDF</button>
         </div>
-        <div class="fw-detail-grid">
+        <div class="fw-worth-banner">
+          <div class="fw-worth-banner-stars" aria-hidden="true">
+            <span class="fw-worth-star" data-star="1">★</span>
+            <span class="fw-worth-star" data-star="2">★</span>
+            <span class="fw-worth-star" data-star="3">★</span>
+            <span class="fw-worth-star" data-star="4">★</span>
+            <span class="fw-worth-star" data-star="5">★</span>
+          </div>
+          <div class="fw-worth-banner-text">
+            <strong id="fw-worth-banner-verdict">Rate the taste above</strong>
+            <small>Worth it</small>
+          </div>
+        </div>
+        <div class="fw-summary-strip" id="fw-summary-strip"></div>
+        <div class="fw-detail-grid" id="fw-worth-value-grid">
           <details class="fw-collapsible fw-panel-box" open>
             <summary class="fw-collapsible-summary"><h2>Worth it?</h2></summary>
             <div class="fw-collapsible-body">
@@ -309,7 +411,7 @@
               </div>
               <div class="ica-results" style="margin-top:20px;">
                 <div class="result-card" style="grid-column: span 2;">
-                  <span class="result-label">Worth it?<span class="tooltip-icon" data-tooltip="Combines your taste rating with the value rating alongside — 5 stars at a cheap price is the best combination, 1 star at an expensive price is the worst.">?</span></span>
+                  <span class="result-label">Worth it?<span class="tooltip-icon" data-tooltip="Combines your taste rating with the value rating alongside.&#10;Five stars at a cheap price is the best combination — one star at an expensive price is the worst.">?</span></span>
                   <span class="fw-rating-badge" id="fw-worthiness-badge">Rate the taste above</span>
                 </div>
               </div>
@@ -353,15 +455,15 @@
             <span class="result-value" id="fw-cost-per-100g">RM0.00</span>
           </div>
           <div class="result-card" id="fw-market-price-card" style="grid-column: span 2;">
-            <span class="result-label">Typical market price<span class="tooltip-icon" data-tooltip="Gemini's estimate of typical cost at a Malaysian hawker stall or eatery — not a live price lookup.">?</span></span>
+            <span class="result-label">Typical market price<span class="tooltip-icon" data-tooltip="Gemini's estimate of typical cost at a Malaysian hawker stall or eatery.&#10;Not a live price lookup.">?</span></span>
             <span class="result-value" id="fw-market-price">Analyze a dish to see this</span>
           </div>
           <div class="result-card" id="fw-ingredient-cost-card" style="grid-column: span 2;" hidden>
-            <span class="result-label">Ingredient-cost fair price<span class="tooltip-icon" data-tooltip="Gemini's estimate of standard ingredients at typical Malaysian prices, grossed up by a 30% cost benchmark.">?</span></span>
+            <span class="result-label">Ingredient-cost fair price<span class="tooltip-icon" data-tooltip="Gemini's estimate of standard ingredients at typical Malaysian prices.&#10;Grossed up by a 30% cost benchmark.">?</span></span>
             <span class="result-value" id="fw-ingredient-fair-price">—</span>
           </div>
           <div class="result-card" id="fw-rating-card" style="grid-column: span 2;">
-            <span class="result-label">Value rating<span class="tooltip-icon" data-tooltip="Price paid vs. the average of typical market price and the ingredient-cost fair price above — whichever of the two you have.">?</span></span>
+            <span class="result-label">Value rating<span class="tooltip-icon" data-tooltip="Price paid compared with the average of typical market price and the ingredient-cost fair price above.&#10;Whichever of the two you have is used.">?</span></span>
             <span class="fw-rating-badge" id="fw-rating-badge">Add a price above</span>
           </div>
         </div>
@@ -374,7 +476,7 @@
     <!-- ============ CALORIE NEEDS & BMI (full-width box) + MACROS / MICROS (side by side below it) ============ -->
     <section class="calc-panel" id="fw-detail-section" hidden>
       <div class="wrap">
-        <details class="fw-collapsible fw-panel-box fw-full-box">
+        <details class="fw-collapsible fw-panel-box fw-full-box" id="fw-calorie-bmi-panel">
           <summary class="fw-collapsible-summary"><h2>Calorie needs &amp; BMI</h2></summary>
           <div class="fw-collapsible-body">
             <p class="structure-note">A rough comparison of this meal's calories against a full day's need. General population reference: about 2,000 kcal/day for women and 2,500 kcal/day for men — or use your own numbers below (or your own known target) for something closer to you. Nothing entered here is saved.</p>
@@ -424,7 +526,7 @@
                 <span class="result-value" id="fw-daily-need">—</span>
               </div>
               <div class="result-card" id="fw-bmi-card" hidden>
-                <span class="result-label">BMI<span class="tooltip-icon" data-tooltip="A general screening figure, not a diagnosis — doesn't account for muscle mass or individual differences.">?</span></span>
+                <span class="result-label">BMI<span class="tooltip-icon" data-tooltip="A general screening figure, not a diagnosis.&#10;It doesn't account for muscle mass or individual differences.">?</span></span>
                 <span class="result-value" id="fw-bmi-value">—</span>
               </div>
               <div class="result-card" id="fw-calorie-share-card" style="grid-column: span 2;">
@@ -435,7 +537,7 @@
           </div>
         </details>
 
-        <div class="fw-detail-grid">
+        <div class="fw-detail-grid" id="fw-macros-micros-grid">
           <details class="fw-collapsible fw-panel-box">
             <summary class="fw-collapsible-summary"><h2>Macros</h2></summary>
             <div class="fw-collapsible-body">
@@ -473,14 +575,20 @@
     </div>
   </footer>
 
-  <!-- Same idea as interactive-costing-analysis.html's back-to-top
-       button, adapted since this page has no tool-dock open/close
-       event to key off — shown once scrolled a page-height down,
-       hidden near the top. Jumps to the dish photos, since that's
-       "the start" here the way the results area is "the start" there. -->
-  <button type="button" id="fw-back-to-top" class="no-print" hidden>&uarr; Back to top</button>
+  <!-- Floating quick-nav: jump-to-section links stacked above the
+       existing back-to-top button (same idea as interactive-costing-
+       analysis.html's button, still keyed off scroll position since
+       this page has no tool-dock open/close event to hook into) — all
+       four now share one fixed-position cluster instead of just the
+       one button standing alone. -->
+  <div id="fw-quick-nav" class="no-print" hidden>
+    <button type="button" class="fw-quick-nav-btn" data-target="fw-worth-value-grid">Worth it &amp; value</button>
+    <button type="button" class="fw-quick-nav-btn" data-target="fw-calorie-bmi-panel">Calories &amp; BMI</button>
+    <button type="button" class="fw-quick-nav-btn" data-target="fw-macros-micros-grid">Macros &amp; Micros</button>
+    <button type="button" id="fw-back-to-top" class="fw-quick-nav-btn" hidden>&uarr; Back to top</button>
+  </div>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=14" defer></script>
+  <script src="food-worth-calculator.js?v=15" defer></script>
 </body>
 </html>

@@ -82,6 +82,22 @@
    already carries their headline numbers. See the .fw-collapsible
    CSS comment in the HTML for why print gets its own override.
 
+   2026-09-05 UI polish round: the recipe breakdown panel
+   (.fw-recipe-panel) moved out of .fw-dish-results and into its own
+   .fw-recipe-col, sitting beside the photo in a new .fw-dish-top-grid
+   two-column layout instead of appearing full-width under the item
+   table — the "Break down as a recipe" button moved up alongside
+   Choose/Analyze accordingly, gated the same way (disabled until
+   analysis succeeds, not just hidden/absent). computeWorthiness() now
+   returns {label, score} instead of a bare string, since the new
+   gold-bordered "Worth it" banner above the summary strip
+   (renderWorthBanner / #fw-worth-banner) needs the raw 0-1 score to
+   color its verdict text continuously (colorForScore) rather than
+   just picking from the 5 discrete labels. A floating quick-nav
+   cluster (#fw-quick-nav) joins the existing back-to-top button,
+   jumping to each results section and auto-opening any closed
+   <details> found there.
+
    FUTURE (KIV, architected for but not built):
      - Confirm current Malaysian NRV for Vitamin C/D against the
        gazetted Fifth A Schedule text directly, and for Potassium and
@@ -101,7 +117,7 @@
        runRecipeBreakdown().
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-03-v11-star-rating-relayout-renames');
+console.info('[Food Worth Calculator] script build: 2026-09-05-v12-ui-polish-tooltips-recipe-layout-worth-banner-quicknav');
 
 /* ================= CONFIG ================= */
 
@@ -475,16 +491,38 @@ function computeValueRating(price, referencePrice) {
 // normalized scores, not a weighted formula — no more principled
 // reason to weight taste over price or vice versa than there was to
 // weight typical-price over ingredient-cost in computeReferencePrice.
+// Returns {label, score} rather than just the label, as of 2026-09-05
+// — the new gold "Worth it" banner (renderWorthBanner) needs the raw
+// 0-1 score to color its verdict text on a continuum, not just which
+// of the 5 buckets it landed in.
 function computeWorthiness(stars, ratingLabel) {
   if (!(stars > 0) || !ratingLabel) return null;
   const tasteNorm = stars / 5;
   const priceNorm = ratingLabel === 'Great value' ? 1.0 : ratingLabel === 'Fair value' ? 0.55 : 0.15;
   const score = (tasteNorm + priceNorm) / 2;
-  if (score >= 0.85) return 'Excellent worth';
-  if (score >= 0.65) return 'Good worth';
-  if (score >= 0.45) return 'Fair worth';
-  if (score >= 0.25) return 'Poor worth';
-  return 'Not worth it';
+  let label;
+  if (score >= 0.85) label = 'Excellent worth';
+  else if (score >= 0.65) label = 'Good worth';
+  else if (score >= 0.45) label = 'Fair worth';
+  else if (score >= 0.25) label = 'Poor worth';
+  else label = 'Not worth it';
+  return { label, score };
+}
+
+// Interpolates red -> gold as the worthiness score runs 0 -> 1, so the
+// "Worth it" banner's verdict text reads as a smooth extension of the
+// same scale computeWorthiness() buckets into 5 discrete labels above
+// — reuses the site's existing error red (#C0392B, already on
+// .fw-status.is-error) and accent gold (#D4A017, already on the taste
+// stars and the fat macro segment) rather than introducing new colors.
+function colorForScore(score) {
+  const t = Math.max(0, Math.min(1, score));
+  const from = { r: 0xC0, g: 0x39, b: 0x2B };
+  const to = { r: 0xD4, g: 0xA0, b: 0x17 };
+  const r = Math.round(from.r + (to.r - from.r) * t);
+  const g = Math.round(from.g + (to.g - from.g) * t);
+  const b = Math.round(from.b + (to.b - from.b) * t);
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 
@@ -642,7 +680,32 @@ function renderWorthiness(stars, rating) {
   } else if (!rating.label) {
     badge.textContent = 'Add a price above';
   } else {
-    badge.textContent = computeWorthiness(stars, rating.label);
+    badge.textContent = computeWorthiness(stars, rating.label).label;
+  }
+}
+
+// The gold-bordered "Worth it" banner above the summary strip — same
+// verdict as renderWorthiness() above (they share computeWorthiness's
+// result), but bigger/bolder: a big read-only star display mirroring
+// tasteRating, and the verdict text colored on the red->gold scale
+// from colorForScore rather than plain text, so the single most
+// "read this in one glance" number on the page gets a spot to match.
+function renderWorthBanner(stars, rating) {
+  const verdictEl = document.getElementById('fw-worth-banner-verdict');
+  if (!verdictEl) return;
+  document.querySelectorAll('.fw-worth-star').forEach((el) => {
+    el.classList.toggle('is-filled', Number(el.dataset.star) <= stars);
+  });
+  if (!(stars > 0)) {
+    verdictEl.textContent = 'Rate the taste above';
+    verdictEl.style.color = '';
+  } else if (!rating.label) {
+    verdictEl.textContent = 'Add a price above';
+    verdictEl.style.color = '';
+  } else {
+    const worthiness = computeWorthiness(stars, rating.label);
+    verdictEl.textContent = worthiness.label;
+    verdictEl.style.color = colorForScore(worthiness.score);
   }
 }
 
@@ -868,6 +931,9 @@ function renderMicronutrients(coverage) {
   // shape (not an organic illustration) so it stays legible at 14px and
   // matches the site's otherwise-typographic visual language.
   const sparkleSVG = '<svg class="fw-micro-care-icon" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1L9.2 6.2 14 8 9.2 9.8 8 15 6.8 9.8 2 8 6.8 6.2Z"/></svg>';
+  // Mirrors sparkleSVG's geometry (same viewBox/weight) but a plain
+  // minus bar, for "Could use less" — same treatment, opposite direction.
+  const minusSVG = '<svg class="fw-micro-caution-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M3 8H13"/></svg>';
 
   let html = '';
   if (goodSources.length) {
@@ -875,8 +941,9 @@ function renderMicronutrients(coverage) {
       + `<div class="fw-micro-tags">${goodSources.map((i) => tagHTML(i)).join('')}</div></div>`;
   }
   if (cautionFlags.length) {
-    html += `<div class="fw-micro-group"><span class="fw-micro-group-label">Higher in</span>`
-      + `<div class="fw-micro-tags">${cautionFlags.map((i) => tagHTML(i, 'is-caution')).join('')}</div>`
+    html += `<div class="fw-micro-group fw-micro-caution-card">`
+      + `<span class="fw-micro-group-label">${minusSVG}Could use less</span>`
+      + `<div class="fw-micro-tags">${cautionFlags.map((i) => tagHTML(i, 'is-caution-strong')).join('')}</div>`
       + `<ul class="fw-micro-suggestions">${cautionFlags.map(suggestionHTML).join('')}</ul></div>`;
   }
   if (lackingFlags.length) {
@@ -961,8 +1028,10 @@ async function runAnalysis(panel) {
     } else {
       result.items.forEach((it) => createItemRow(panel, it));
       panel.querySelector('.fw-dish-results').hidden = false;
+      panel.querySelector('.fw-recipe-btn').disabled = false;
       document.getElementById('fw-meal-section').hidden = false;
       document.getElementById('fw-detail-section').hidden = false;
+      document.getElementById('fw-quick-nav').hidden = false;
       recalculateDish(panel);
       recalculateMeal();
       updateAddDishVisibility();
@@ -1049,6 +1118,7 @@ function recalculateMeal() {
   renderRating(rating);
   renderTasteStars();
   renderWorthiness(tasteRating, rating);
+  renderWorthBanner(tasteRating, rating);
   renderMarketPrice(mealPrice);
   renderIngredientFairPrice(mealIngredientCost);
   renderMacroChart(mix, mealTotals.calories);
@@ -1085,10 +1155,18 @@ function createDishPanel() {
     </div>
 
     <div class="fw-upload-zone">
-      <img class="fw-preview-img" alt="" hidden>
-      <div class="fw-upload-row no-print">
-        <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo<input type="file" accept="image/*" class="sr-only fw-photo-input"></label>
-        <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
+      <div class="fw-dish-top-grid">
+        <div class="fw-photo-col">
+          <img class="fw-preview-img" alt="" hidden>
+          <div class="fw-upload-row no-print">
+            <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo<input type="file" accept="image/*" class="sr-only fw-photo-input"></label>
+            <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
+            <button type="button" class="btn btn-secondary fw-recipe-btn" disabled>Break down as a recipe</button>
+          </div>
+        </div>
+        <div class="fw-recipe-col">
+          <div class="fw-recipe-panel" hidden></div>
+        </div>
       </div>
     </div>
     <p class="fw-status no-print" role="status" aria-live="polite"></p>
@@ -1116,10 +1194,8 @@ function createDishPanel() {
       </div>
       <div class="calc-actions no-print">
         <button type="button" class="btn btn-secondary fw-add-item">+ Add item</button>
-        <button type="button" class="btn btn-secondary fw-recipe-btn">Break down as a recipe</button>
       </div>
       <p class="fw-dish-subtotal"></p>
-      <div class="fw-recipe-panel" hidden></div>
     </div>
   `;
   document.getElementById('fw-dish-panels').appendChild(panel);
@@ -1261,6 +1337,19 @@ function init() {
         const live = document.getElementById('fw-taste-live');
         if (live) live.textContent = `Rated ${tasteRating} out of 5 stars`;
         recalculateMeal();
+      });
+    });
+
+    // Floating quick-nav: jump straight to a results section, auto-
+    // opening any closed <details> there so landing on a collapsed
+    // summary heading doesn't look like nothing happened.
+    document.querySelectorAll('.fw-quick-nav-btn[data-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const target = document.getElementById(btn.dataset.target);
+        if (!target) return;
+        if (target.tagName === 'DETAILS') target.open = true;
+        target.querySelectorAll('details:not([open])').forEach((d) => { d.open = true; });
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
 
