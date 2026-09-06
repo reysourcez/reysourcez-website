@@ -2,6 +2,8 @@
 
 **For the AI building standalone pages (per AI_BUILD_BRIEF.md).** Paste this section into AI_BUILD_BRIEF.md, or keep it alongside it — either way, treat it as a hard rule, not a suggestion.
 
+**2026-09-06 update — name change:** item 5's nav text is now **"Margin Analysis"**, not "Margin Audit." The file is still `margin-audit-calculator.html` (not renamed) — only the label a visitor sees, in the nav and on the page itself (title + heading), changed. If you're touching that page for any other reason, make sure any nav copy you write or copy-paste uses the new name, not the old one from an earlier version of this doc.
+
 ## The problem this fixes
 
 Right now the "Business Analysis" dropdown doesn't match across pages — some list Margin Audit, some don't, and where it does appear the order differs page to page. The dropdown must be byte-for-byte identical everywhere except for which single item carries `aria-current="page"`.
@@ -14,7 +16,7 @@ Every page's `.nav-dropdown-menu` must list all six tools in exactly this order:
 2. Overhead & Manpower
 3. Printing Calculator
 4. Costing Analysis
-5. Margin Audit
+5. Margin Analysis
 6. Food Worth
 
 ## Canonical markup
@@ -27,7 +29,7 @@ Copy this exactly. On whichever page you're building, add `aria-current="page"` 
   <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
   <li><a href="printing-calculator.html">Printing Calculator</a></li>
   <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-  <li><a href="margin-audit-calculator.html">Margin Audit</a></li>
+  <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
   <li><a href="food-worth-calculator.html">Food Worth</a></li>
 </ul>
 ```

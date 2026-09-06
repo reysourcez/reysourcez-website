@@ -220,6 +220,13 @@ const MENU_TYPES = ['Main', 'Side', 'Sauce', 'Dip', 'Garnish', 'Beverage', 'Pack
 let menuBlockIdCounter = 0;
 let menuRowIdCounter = 0;
 
+// Separate Worker from Food Worth's and Margin Audit's proxies, even
+// though all three share the same photo/description -> Gemini ->
+// structured JSON shape — see menu-calculator-proxy-worker.js's own
+// header comment for why they're kept apart rather than shared.
+const MENU_AI_PROXY_ENDPOINT = 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE';
+const MENU_AI_MAX_IMAGE_EDGE = 1024;
+
 function menuTypeOptionsHTML() {
   return MENU_TYPES.map((t) => `<option value="${t}">${t}</option>`).join('');
 }
@@ -309,23 +316,58 @@ function createMenuRow(block) {
   updateMenuRow(tr);
 }
 
-// Total (cost) and Total Target Selling Price both sum only the
-// checked rows. Delivery commission/SST mark UP the target price
-// rather than being deducted from it — these fees are the platform's
-// and the tax authority's cut on top of what you list, not something
-// that should come out of your own target. Gross up the listed price
-// so that after fees are taken out, you still net your full target.
-function updateMenuBlockSummary(block) {
-  let total = 0;
-  let totalTargetPrice = 0;
-  block.querySelectorAll('.menu-rows > tr').forEach((tr) => {
+// Cost, for whichever of the three methods (detailed/simple/ai) is
+// currently active on this block — see setCostTab/setManualSub below.
+// Detailed sums the checked ingredient rows, same as always. Simple
+// and AI both resolve to one number a different way, but from here on
+// out (target price, delivery/SST, sync) it's all just "total" again,
+// same math regardless of source.
+function computeAiRowsTotal(block) {
+  let sum = 0;
+  block.querySelectorAll('.menu-ai-rows > tr').forEach((tr) => {
     if (tr.querySelector('.m-include').checked) {
-      total += parseFloat(tr.dataset.price) || 0;
-      totalTargetPrice += parseFloat(tr.dataset.targetPrice) || 0;
+      sum += parseFloat(tr.querySelector('.ai-price').value) || 0;
     }
   });
+  return sum;
+}
+
+function computeBlockCost(block) {
+  const mode = block.dataset.costMode || 'detailed';
+  if (mode === 'simple') {
+    return parseFloat(block.querySelector('.menu-simple-cost').value) || 0;
+  }
+  if (mode === 'ai') {
+    return computeAiRowsTotal(block);
+  }
+  let total = 0;
+  block.querySelectorAll('.menu-rows > tr').forEach((tr) => {
+    if (tr.querySelector('.m-include').checked) total += parseFloat(tr.dataset.price) || 0;
+  });
+  return total;
+}
+
+// Total Target Selling Price used to be summed from each row's own
+// dataset.targetPrice, which only ever existed for detailed rows. One
+// division does the same job for all three modes: every row shares
+// the same Target Food Cost %, so total/pct% is identical to summing
+// each row's own price/pct% would have been.
+// Delivery commission/SST mark UP the target price rather than being
+// deducted from it — these fees are the platform's and the tax
+// authority's cut on top of what you list, not something that should
+// come out of your own target. Gross up the listed price so that
+// after fees are taken out, you still net your full target.
+function updateMenuBlockSummary(block) {
+  const total = computeBlockCost(block);
+  const targetFoodCostPct = parsePercent(block.querySelector('.target-food-cost'), 30, 0.1);
+  const totalTargetPrice = total / (targetFoodCostPct / 100);
   block.querySelector('.menu-total').textContent = formatRM(total);
   block.querySelector('.menu-total-target-price').textContent = formatRM(totalTargetPrice);
+  // The AI table's own footer total stays live regardless of whether
+  // AI is the active mode right now, same as Detailed's .menu-total
+  // above already does — flip back to AI and the number's still right.
+  const aiTotalEl = block.querySelector('.menu-ai-total');
+  if (aiTotalEl) aiTotalEl.textContent = formatRM(computeAiRowsTotal(block));
 
   const useDelivery = block.querySelector('.use-delivery-toggle').checked;
   const useSST = block.querySelector('.use-sst-toggle').checked;
@@ -364,13 +406,211 @@ function updateMenuBlockSummary(block) {
   block.querySelector('.sst-amount').textContent = formatRM(sstAmount);
   block.querySelector('.net-amount').textContent = formatRM(netAmount);
 
-  // Sync to Cost Analysis if it's listening. Only the FIRST menu
-  // block syncs for now — Cost Analysis assumes one product; once
-  // it supports a full multi-menu portfolio (KIV'd), every block
-  // will feed in.
-  if (typeof rzBroadcast === 'function' && block === document.querySelector('.menu-block')) {
+  // Sync to whoever's listening (Cost Analysis, Margin Audit) — every
+  // block broadcasts its own updates now, tagged with its own stable
+  // blockId, so a receiver can tell "this dish changed again" apart
+  // from "this is a new dish" instead of only ever hearing about one
+  // menu item. See MULTI_MENU_SYNC_PLAN.md for the receiving side.
+  if (typeof rzBroadcast === 'function') {
     const name = block.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item';
-    rzBroadcast({ costPerPortion: total, sellingPrice: isFinite(listedPrice) ? listedPrice : undefined, dishName: name });
+    rzBroadcast({ blockId: block.dataset.blockId, costPerPortion: total, sellingPrice: isFinite(listedPrice) ? listedPrice : undefined, dishName: name });
+  }
+}
+
+/* ================= COST-MODE TABS =================
+   Two levels: the outer Manual/AI estimate tabs, and — only while
+   Manual is active — the inner Detailed/Simple sub-tabs. block.dataset
+   .costMode is the one thing computeBlockCost actually reads; these
+   two functions exist to keep that value and the visible panels in
+   sync with each other and with which buttons look pressed. */
+
+function setCostTab(block, tab) {
+  block.querySelectorAll('.cost-mode-tab').forEach((b) => b.classList.toggle('is-active', b.dataset.costTab === tab));
+  block.querySelectorAll('[data-cost-panel]').forEach((p) => { p.hidden = p.dataset.costPanel !== tab; });
+  if (tab === 'ai') {
+    block.dataset.costMode = 'ai';
+  } else {
+    const activeSub = block.querySelector('.manual-sub-tab.is-active');
+    block.dataset.costMode = activeSub ? activeSub.dataset.manualSub : 'detailed';
+  }
+  updateMenuBlockSummary(block);
+}
+
+function setManualSub(block, sub) {
+  block.querySelectorAll('.manual-sub-tab').forEach((b) => b.classList.toggle('is-active', b.dataset.manualSub === sub));
+  block.querySelectorAll('[data-manual-panel]').forEach((p) => { p.hidden = p.dataset.manualPanel !== sub; });
+  block.dataset.costMode = sub;
+  updateMenuBlockSummary(block);
+}
+
+/* ================= AI ESTIMATE =================
+   Describe the dish and/or attach a photo, send it to a Cloudflare
+   Worker holding the real Gemini key (see menu-calculator-proxy-
+   worker.js), and render whatever ingredient breakdown comes back as
+   fully editable rows — same checkbox-to-include, editable name/
+   amount/price, and delete button as the Detailed table, feeding the
+   same computeBlockCost('ai') path as any other mode. Review, correct,
+   or drop a line Gemini got wrong before it counts toward your price.
+   Deliberately does NOT touch the shared Ingredient Costing table up
+   top: these are Gemini's best guess for this one dish, not verified
+   purchase prices, so they stay local to this block rather than
+   quietly becoming "real" ingredient data other menu items could pull
+   into their own Detailed breakdown. */
+
+function resizeImageToBase64(file, maxEdge) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that file'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Could not read that image'));
+      img.onload = () => {
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85).split(',')[1]);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function handleMenuAiPhoto(block, file) {
+  if (!file) return;
+  const nameEl = block.querySelector('.menu-ai-photo-name');
+  try {
+    const base64 = await resizeImageToBase64(file, MENU_AI_MAX_IMAGE_EDGE);
+    block.dataset.aiPhotoBase64 = base64;
+    nameEl.hidden = false;
+    nameEl.textContent = '\u2713 Photo attached: ' + file.name;
+  } catch (e) {
+    nameEl.hidden = false;
+    nameEl.textContent = 'Could not read that photo \u2014 try a different file.';
+  }
+}
+
+function createMenuAiRow(block, ingredient) {
+  const tbody = block.querySelector('.menu-ai-rows');
+  const tr = document.createElement('tr');
+
+  const includeTd = document.createElement('td');
+  const includeInput = document.createElement('input');
+  includeInput.type = 'checkbox';
+  includeInput.className = 'm-include';
+  includeInput.checked = true;
+  includeInput.setAttribute('aria-label', 'Include in total');
+  includeTd.appendChild(includeInput);
+
+  const nameTd = document.createElement('td');
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.className = 'ai-name';
+  nameInput.value = ingredient.name || '';
+  nameTd.appendChild(nameInput);
+
+  const qtyTd = document.createElement('td');
+  const qtyInput = document.createElement('input');
+  qtyInput.type = 'text';
+  qtyInput.className = 'ai-quantity';
+  qtyInput.value = ingredient.quantity || '';
+  qtyTd.appendChild(qtyInput);
+
+  const priceTd = document.createElement('td');
+  priceTd.className = 'auto-col';
+  const priceInput = document.createElement('input');
+  priceInput.type = 'number';
+  priceInput.className = 'ai-price';
+  priceInput.inputMode = 'decimal';
+  priceInput.min = '0';
+  priceInput.step = '0.01';
+  priceInput.value = (Number(ingredient.price_myr) || 0).toFixed(2);
+  priceTd.appendChild(priceInput);
+
+  const removeTd = document.createElement('td');
+  removeTd.className = 'no-print';
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'delete-row';
+  removeBtn.setAttribute('aria-label', 'Remove this ingredient');
+  removeBtn.innerHTML = '&times;';
+  removeTd.appendChild(removeBtn);
+
+  tr.append(includeTd, nameTd, qtyTd, priceTd, removeTd);
+  tbody.appendChild(tr);
+
+  const recalc = () => updateMenuBlockSummary(block);
+  includeInput.addEventListener('change', () => {
+    tr.classList.toggle('excluded', !includeInput.checked);
+    recalc();
+  });
+  priceInput.addEventListener('input', recalc);
+  removeBtn.addEventListener('click', () => { tr.remove(); recalc(); });
+}
+
+// AI estimate rows come back editable, not read-only — after Gemini's
+// first guess you may want to fix an amount, correct a misidentified
+// ingredient, drop a line that doesn't apply, or just adjust a price
+// you know better than it does. Every row shares the Detailed table's
+// own .m-include checkbox and .menu-table styling rather than a
+// parallel style system, so "exclude this line" behaves identically
+// (including the dimmed-row treatment) in both tables.
+function renderMenuAiRows(block, ingredients) {
+  const tbody = block.querySelector('.menu-ai-rows');
+  tbody.innerHTML = '';
+  ingredients.forEach((ing) => createMenuAiRow(block, ing));
+  block.querySelector('.menu-ai-table').hidden = ingredients.length === 0;
+  updateMenuBlockSummary(block);
+}
+
+async function estimateMenuBlockCost(block) {
+  const statusEl = block.querySelector('.menu-ai-status');
+  const description = block.querySelector('.menu-ai-description').value.trim();
+  const photoBase64 = block.dataset.aiPhotoBase64;
+
+  const showStatus = (text, isError) => {
+    statusEl.hidden = false;
+    statusEl.textContent = text;
+    statusEl.classList.toggle('is-error', !!isError);
+  };
+
+  if (!description && !photoBase64) {
+    showStatus('Describe the dish or attach a photo first.', true);
+    return;
+  }
+  if (MENU_AI_PROXY_ENDPOINT.indexOf('PASTE_YOUR') === 0) {
+    showStatus('AI estimate isn\u2019t connected yet \u2014 this needs a Cloudflare Worker URL pasted into MENU_AI_PROXY_ENDPOINT.', true);
+    return;
+  }
+
+  showStatus('Estimating\u2026', false);
+  const body = {};
+  if (description) body.description = description;
+  if (photoBase64) { body.image = photoBase64; body.mime_type = 'image/jpeg'; }
+
+  try {
+    const resp = await fetch(MENU_AI_PROXY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      showStatus(data.error || 'Could not estimate right now. Try again.', true);
+      return;
+    }
+    const ingredients = Array.isArray(data.ingredients) ? data.ingredients : [];
+    renderMenuAiRows(block, ingredients);
+    if (ingredients.length) {
+      showStatus('\u2713 Estimated \u2014 review the amounts below before it feeds your price.', false);
+    } else {
+      showStatus('Could not identify ingredients from that \u2014 try adding more detail.', true);
+    }
+    updateMenuBlockSummary(block);
+  } catch (e) {
+    showStatus('Could not reach the estimator \u2014 check your connection and try again.', true);
   }
 }
 
@@ -403,39 +643,95 @@ function createMenuBlock() {
   const block = document.createElement('div');
   block.className = 'menu-block';
   block.dataset.blockId = 'menublock-' + n;
+  block.dataset.costMode = 'detailed';
   block.innerHTML = `
     <div class="menu-block-header">
       <input type="text" class="menu-name-input" name="menu-name" value="Untitled Menu Item" aria-label="Menu item name">
       <button type="button" class="remove-block-btn no-print" aria-label="Remove this menu">Remove menu</button>
     </div>
 
-    <div class="table-scroll">
-      <table class="menu-table">
-        <caption class="sr-only">Menu portion builder \u2014 combine ingredients from the table above into one dish</caption>
-        <thead>
-          <tr>
-            <th scope="col"><span class="sr-only">Include in total</span></th>
-            <th scope="col" class="sortable" data-sort="type">Type <span class="sort-indicator"></span></th>
-            <th scope="col" class="sortable" data-sort="item">Item <span class="sort-indicator"></span></th>
-            <th scope="col" class="sortable" data-sort="amount">Amount <span class="sort-indicator"></span></th>
-            <th scope="col" class="sortable auto-col" data-sort="price">Price <span class="sort-indicator"></span></th>
-            <th scope="col" class="sortable auto-col" data-sort="targetprice">Target Selling Price <span class="sort-indicator"></span></th>
-            <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
-          </tr>
-        </thead>
-        <tbody class="menu-rows"></tbody>
-        <tfoot>
-          <tr class="menu-total-row">
-            <td colspan="4"><strong>Total</strong> <span class="toggle-hint">(cost)</span></td>
-            <td class="calc menu-total">RM0.00</td>
-            <td class="calc menu-total-target-price" colspan="2"><strong>Total Target Selling Price</strong><br>RM0.00</td>
-          </tr>
-        </tfoot>
-      </table>
+    <div class="cost-mode-tabs no-print" role="tablist" aria-label="How to work out this item's cost">
+      <button type="button" class="btn btn-secondary cost-mode-tab is-active" data-cost-tab="manual">Manual</button>
+      <button type="button" class="btn btn-secondary cost-mode-tab" data-cost-tab="ai">AI estimate</button>
     </div>
 
-    <div class="calc-actions no-print">
-      <button type="button" class="add-menu-row-btn btn btn-primary">+ Add item to menu</button>
+    <div class="cost-mode-panel" data-cost-panel="manual">
+      <div class="manual-mode-box">
+        <div class="manual-mode-label">Manual</div>
+        <div class="manual-sub-tabs no-print">
+          <button type="button" class="btn btn-secondary manual-sub-tab is-active" data-manual-sub="detailed">Detailed</button>
+          <button type="button" class="btn btn-secondary manual-sub-tab" data-manual-sub="simple">Simple</button>
+        </div>
+
+        <div class="manual-sub-panel" data-manual-panel="detailed">
+          <div class="table-scroll">
+            <table class="menu-table">
+              <caption class="sr-only">Menu portion builder \u2014 combine ingredients from the table above into one dish</caption>
+              <thead>
+                <tr>
+                  <th scope="col"><span class="sr-only">Include in total</span></th>
+                  <th scope="col" class="sortable" data-sort="type">Type <span class="sort-indicator"></span></th>
+                  <th scope="col" class="sortable" data-sort="item">Item <span class="sort-indicator"></span></th>
+                  <th scope="col" class="sortable" data-sort="amount">Amount <span class="sort-indicator"></span></th>
+                  <th scope="col" class="sortable auto-col" data-sort="price">Price <span class="sort-indicator"></span></th>
+                  <th scope="col" class="sortable auto-col" data-sort="targetprice">Target Selling Price <span class="sort-indicator"></span></th>
+                  <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+                </tr>
+              </thead>
+              <tbody class="menu-rows"></tbody>
+              <tfoot>
+                <tr class="menu-total-row">
+                  <td colspan="4"><strong>Total</strong> <span class="toggle-hint">(cost)</span></td>
+                  <td class="calc menu-total">RM0.00</td>
+                  <td class="calc menu-total-target-price" colspan="2"><strong>Total Target Selling Price</strong><br>RM0.00</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          <div class="calc-actions no-print">
+            <button type="button" class="add-menu-row-btn btn btn-primary">+ Add item to menu</button>
+          </div>
+        </div>
+
+        <div class="manual-sub-panel" data-manual-panel="simple" hidden>
+          <label for="simple-cost-${n}">Cost per portion (RM)<span class="tooltip-icon" data-tooltip="For when you already worked out the cost elsewhere \u2014 type it in directly, no ingredient breakdown needed">?</span></label>
+          <input type="number" id="simple-cost-${n}" class="menu-simple-cost" inputmode="decimal" min="0" step="0.01" value="0.00">
+        </div>
+      </div>
+    </div>
+
+    <div class="cost-mode-panel" data-cost-panel="ai" hidden>
+      <label for="ai-desc-${n}">Describe the dish \u2014 main ingredients and rough portions</label>
+      <textarea id="ai-desc-${n}" class="menu-ai-description" rows="3" placeholder="e.g. 200g rice, fried chicken thigh, sambal, egg, cucumber"></textarea>
+      <div class="ai-actions no-print">
+        <button type="button" class="menu-ai-photo-btn btn btn-secondary">Or snap a photo</button>
+        <input type="file" accept="image/*" class="menu-ai-photo-input" hidden>
+        <button type="button" class="menu-ai-estimate-btn btn btn-primary">Estimate cost</button>
+      </div>
+      <p class="menu-ai-photo-name" hidden></p>
+      <p class="menu-ai-status" hidden></p>
+      <div class="table-scroll">
+        <table class="menu-table menu-ai-table" hidden>
+          <thead>
+            <tr>
+              <th scope="col"><span class="sr-only">Include in total</span></th>
+              <th scope="col">Ingredient</th>
+              <th scope="col">Amount</th>
+              <th scope="col" class="auto-col">Cost</th>
+              <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+            </tr>
+          </thead>
+          <tbody class="menu-ai-rows"></tbody>
+          <tfoot>
+            <tr class="menu-total-row">
+              <td colspan="3"><strong>Total</strong></td>
+              <td class="calc menu-ai-total">RM0.00</td>
+              <td class="no-print"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
     </div>
 
     <div class="pricing-panel">
@@ -477,6 +773,17 @@ function createMenuBlock() {
   `;
   container.appendChild(block);
 
+  block.querySelectorAll('.cost-mode-tab').forEach((btn) => {
+    btn.addEventListener('click', () => setCostTab(block, btn.dataset.costTab));
+  });
+  block.querySelectorAll('.manual-sub-tab').forEach((btn) => {
+    btn.addEventListener('click', () => setManualSub(block, btn.dataset.manualSub));
+  });
+  block.querySelector('.menu-simple-cost').addEventListener('input', () => updateMenuBlockSummary(block));
+  block.querySelector('.menu-ai-photo-btn').addEventListener('click', () => block.querySelector('.menu-ai-photo-input').click());
+  block.querySelector('.menu-ai-photo-input').addEventListener('change', (e) => handleMenuAiPhoto(block, e.target.files[0]));
+  block.querySelector('.menu-ai-estimate-btn').addEventListener('click', () => estimateMenuBlockCost(block));
+
   block.querySelector('.add-menu-row-btn').addEventListener('click', () => createMenuRow(block));
   block.querySelector('.remove-block-btn').addEventListener('click', () => {
     const wasActive = !block.hidden;
@@ -506,7 +813,7 @@ function createMenuBlock() {
   });
 
   makeSortable(
-    block.querySelector('thead'),
+    block.querySelector('.menu-table thead'),
     block.querySelector('.menu-rows'),
     menuSortValue,
     () => updateMenuBlockSummary(block)
@@ -559,7 +866,7 @@ function renderMenuTabs() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-09-03-menu-tabs');
+console.info('[Menu Calculator] script build: 2026-09-06-ai-rows-editable');
 
 let rzInitialized = false;
 

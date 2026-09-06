@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=16">
 </head>
 <body>
 
@@ -41,7 +41,7 @@
             <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
             <li><a href="printing-calculator.html">Printing Calculator</a></li>
             <li><a href="interactive-costing-analysis.html" aria-current="page">Costing Analysis</a></li>
-            <li><a href="margin-audit-calculator.html">Margin Audit</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
             <li><a href="food-worth-calculator.html">Food Worth</a></li>
           </ul>
         </li>
@@ -90,6 +90,9 @@
         <div class="ica-grid">
           <div class="ica-inputs">
             <h3>Variable Costs <span class="toggle-hint">(per portion)</span></h3>
+            <div class="synced-menu-picker" id="synced-menu-picker" hidden>
+              <label for="synced-menu-select"><span class="label-text">Pricing which menu item?</span> <select id="synced-menu-select"></select></label>
+            </div>
             <label id="ing-cost-label"><span class="label-text">Ingredients &amp; packaging</span> <input type="number" id="ing-cost" inputmode="decimal" min="0" step="0.01" value="4.00"></label>
             <label id="sell-price-label"><span class="label-text">Selling price</span> <input type="number" id="sell-price" inputmode="decimal" min="0" step="0.01" value="12.00"></label>
 
@@ -249,6 +252,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="interactive-costing-analysis.js?v=9" defer></script>
+  <script src="interactive-costing-analysis.js?v=10" defer></script>
 </body>
 </html>

@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-02-cost-structure-pies');
+console.info('[Interactive Costing Analysis] script build: 2026-09-06-multi-menu-dropdown');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -471,6 +471,51 @@ function markSynced(labelSelector, sourceLabel) {
   badge.textContent = '\u2190 ' + sourceLabel;
 }
 
+// Every menu item that's ever broadcast a blockId lands here, so this
+// page can price any one of them (bottom-up: cost structure -> target
+// price) instead of assuming the restaurant only has one menu item.
+// Side-by-side comparison across all of them at once is Margin
+// Audit's job, not this page's — see MULTI_MENU_SYNC_PLAN.md for why
+// the two tools split it that way.
+const syncedMenuItems = new Map();
+let currentSyncedBlockId = null;
+
+function renderSyncedMenuDropdown() {
+  const picker = document.getElementById('synced-menu-picker');
+  const select = document.getElementById('synced-menu-select');
+  if (!picker || !select) return;
+  if (syncedMenuItems.size === 0) {
+    picker.hidden = true;
+    return;
+  }
+  picker.hidden = false;
+  select.innerHTML = '';
+  syncedMenuItems.forEach((item, blockId) => {
+    const opt = document.createElement('option');
+    opt.value = blockId;
+    opt.textContent = item.dishName;
+    select.appendChild(opt);
+  });
+  if (currentSyncedBlockId && syncedMenuItems.has(currentSyncedBlockId)) {
+    select.value = currentSyncedBlockId;
+  }
+}
+
+function applySyncedMenuItem(blockId) {
+  const item = syncedMenuItems.get(blockId);
+  if (!item) return;
+  currentSyncedBlockId = blockId;
+  const select = document.getElementById('synced-menu-select');
+  if (select) select.value = blockId;
+  document.getElementById('ing-cost').value = item.costPerPortion.toFixed(2);
+  markSynced('#ing-cost-label', 'Menu Portion Creator (' + item.dishName + ')');
+  if (typeof item.sellingPrice === 'number' && item.sellingPrice > 0) {
+    document.getElementById('sell-price').value = item.sellingPrice.toFixed(2);
+    markSynced('#sell-price-label', 'Menu Portion Creator (' + item.dishName + ')');
+  }
+  recalculate();
+}
+
 // Same payload shape either way a number reaches this page: over
 // BroadcastChannel from a separate tab (initSync below), or handed
 // directly from a tool running inside the tool dock (see
@@ -479,13 +524,17 @@ function markSynced(labelSelector, sourceLabel) {
 // than duplicating the field-mapping twice.
 function handleSyncPayload(data) {
   if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
-    document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
-    markSynced('#ing-cost-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
-    if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
-      document.getElementById('sell-price').value = data.sellingPrice.toFixed(2);
-      markSynced('#sell-price-label', 'Menu Portion Creator' + (data.dishName ? ' (' + data.dishName + ')' : ''));
+    const blockId = data.blockId || 'menu-calculator-unkeyed';
+    const dishName = data.dishName || 'Untitled Menu Item';
+    syncedMenuItems.set(blockId, { dishName, costPerPortion: data.costPerPortion, sellingPrice: data.sellingPrice });
+    renderSyncedMenuDropdown();
+    // Only actually change what's on screen if nothing's been picked
+    // yet, or if the item that just updated is the one already being
+    // viewed — an edit to a DIFFERENT menu item elsewhere shouldn't
+    // yank the fields out from under whichever one you're pricing.
+    if (currentSyncedBlockId === null || currentSyncedBlockId === blockId) {
+      applySyncedMenuItem(blockId);
     }
-    recalculate();
   }
   if (data.source === 'printing-calculator' && typeof data.costPerPortion === 'number') {
     document.getElementById('ing-cost').value = data.costPerPortion.toFixed(2);
@@ -698,6 +747,7 @@ function init() {
   ['ing-cost', 'sell-price', 'overhead-cost', 'manpower-cost'].forEach((id) => {
     document.getElementById(id).addEventListener('input', recalculate);
   });
+  document.getElementById('synced-menu-select').addEventListener('change', (e) => applySyncedMenuItem(e.target.value));
   wireSliderPair('operating-days', 'operating-days-num');
   wireSliderPair('daily-volume', 'daily-volume-num');
   document.querySelectorAll('[data-preset]').forEach((btn) => {

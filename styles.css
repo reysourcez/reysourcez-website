@@ -527,6 +527,31 @@ th.sortable:hover { color: var(--accent-dark); }
 .menu-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
 .menu-tab-btn.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* ---- Cost-mode tabs (Manual > Detailed/Simple, AI estimate) ----
+   Same .btn/.btn-secondary + .is-active pattern as .menu-tab-btn just
+   above, one level deeper: the outer Manual/AI estimate pair picks
+   which .cost-mode-panel shows, and — only while Manual is active —
+   the inner Detailed/Simple pair picks which .manual-sub-panel shows.
+   See menu-calculator.js's setCostTab/setManualSub. Manual's sub-tabs
+   get the darker accent-dark shade so the two levels stay visually
+   distinct even though both use the same tab mechanic. */
+.cost-mode-tabs { display: flex; gap: 8px; margin: 16px 0 12px; }
+.cost-mode-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.manual-mode-box { border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+.manual-mode-label { font-family: var(--font-display); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-bottom: 10px; }
+.manual-sub-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+.manual-sub-tab.is-active { background: var(--accent-dark); border-color: var(--accent-dark); color: #fff; }
+
+.menu-ai-description { width: 100%; font-family: var(--font-body); resize: vertical; margin: 8px 0 12px; }
+.ai-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.menu-ai-photo-name { font-size: 0.85rem; color: var(--muted); margin: 6px 0 0; }
+.menu-ai-status { font-size: 0.85rem; color: var(--accent-dark); margin: 6px 0 0; }
+.menu-ai-status.is-error { color: #C0392B; }
+.menu-ai-table { width: 100%; margin-top: 12px; border-collapse: collapse; }
+.menu-ai-table th, .menu-ai-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-family: var(--font-body); }
+.menu-ai-table th:last-child, .menu-ai-table td:last-child { text-align: right; }
+
 .calc-note { padding: 32px 0 72px; }
 .calc-note p { color: var(--muted); font-size: 0.95rem; max-width: 75ch; margin: 0 0 10px; }
 .calc-note p:last-child { margin-bottom: 0; }
@@ -646,6 +671,16 @@ th.sortable:hover { color: var(--accent-dark); }
 }
 .menu-table td select { min-width: 130px; }
 .menu-table td input[type="number"] { width: 90px; }
+.menu-table td input[type="text"] {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  background: var(--surface);
+  color: var(--text);
+}
 .menu-table input:focus-visible, .menu-table select:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 1px;
@@ -1350,6 +1385,13 @@ th.sortable:hover { color: var(--accent-dark); }
   margin-left: 8px;
   white-space: nowrap;
 }
+
+/* Dropdown that appears once Menu Calculator has synced more than
+   one menu item, letting this page price any one of them at a time
+   (bottom-up) — the full side-by-side comparison across all of them
+   lives on Margin Audit instead, see MULTI_MENU_SYNC_PLAN.md. */
+.synced-menu-picker { background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+.synced-menu-picker select { max-width: 220px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); background: var(--surface); }
 
 /* ---- Tooltips (question mark icon + hover text) ---- */
 .tooltip-icon {
