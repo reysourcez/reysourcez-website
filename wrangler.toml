@@ -1,0 +1,21 @@
+# Optional — only needed if you prefer deploying via the `wrangler` CLI
+# instead of pasting into the Cloudflare dashboard editor (see
+# SETUP_AND_GLOSSARY.md for the no-CLI method, which needs none of this).
+#
+# Usage:
+#   npm install -g wrangler
+#   wrangler login
+#   wrangler deploy
+#   wrangler secret put LUNO_KEY_ID
+#   wrangler secret put LUNO_KEY_SECRET
+#   wrangler secret put GEMINI_API_KEY
+
+name = "crypto-radar-worker"
+main = "crypto-radar-worker.js"
+compatibility_date = "2026-01-01"
+
+# Non-secret variables can go here as plain text. Secrets (the three above)
+# must be set with `wrangler secret put`, never written into this file.
+[vars]
+ALLOWED_ORIGIN = "*"
+GEMINI_MODEL = "gemini-flash-lite-latest"
