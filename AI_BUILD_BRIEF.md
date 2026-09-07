@@ -6,7 +6,7 @@ Give this file to whichever AI is building or updating a page, along with:
 - If updating a page that already exists (including Printing Calculator or Food Worth), use its own **current** HTML (+ its `.js` file, if separate) as the starting point — not an old copy, not from memory.
 
 ## Header nav — copy this block verbatim, don't rebuild it
-This is the single most common source of drift between pages. Every page's nav puts the 6 tools inside one dropdown, not as flat top-level links:
+This is the single most common source of drift between pages. Every page's nav puts the 7 tools inside one dropdown, not as flat top-level links:
 
 ```html
 <li class="nav-dropdown">
@@ -18,11 +18,12 @@ This is the single most common source of drift between pages. Every page's nav p
     <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
     <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
     <li><a href="food-worth-calculator.html">Food Worth</a></li>
+    <li><a href="crypto-radar.html">Crypto Radar</a></li>
   </ul>
 </li>
 ```
 
-On whichever page IS one of those five, add `aria-current="page"` to that one link, and add `active` to the toggle button's class list — copy the exact pattern from a current tool page rather than guessing at it.
+On whichever page IS one of those seven, add `aria-current="page"` to that one link, and add `active` to the toggle button's class list — copy the exact pattern from a current tool page rather than guessing at it.
 
 Also required, loaded alongside the page's own script(s):
 ```html
