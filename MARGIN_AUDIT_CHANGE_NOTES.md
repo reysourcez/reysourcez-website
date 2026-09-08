@@ -1,4 +1,30 @@
-# Margin Audit Calculator — change notes
+# Margin Analysis Calculator — change notes
+
+(Title/page renamed from "Margin Audit" to "Margin Analysis" 2026-09-06, per `NAV_ORDER_STANDARD.md`. The file itself is still `margin-audit-calculator.html`/`.js` — only the visitor-facing name changed. Earlier entries below use whichever name was current when they were written; not retroactively edited.)
+
+## 2026-09-08 — Ingredient cost now comes from Menu Calculator only; own AI-estimate/manual entry removed
+
+**Where this came from.** Two docs from the session that owns Menu Calculator and Costing Analysis — `MARGIN_AUDIT_HANDOFF.md` and `MULTI_MENU_SYNC_PLAN.md` — plus a direct steer in chat. Both are worth keeping around; this entry summarizes what actually shipped from them, not the full brief.
+
+**The upstream fix that made this possible.** Every menu item block in Menu Calculator used to broadcast updates from only the *first* block on the page, regardless of which one you actually edited — `document.querySelector('.menu-block')` always returns the first match, full stop, it never meant "the one that changed." That's fixed upstream now: every block broadcasts its own updates, tagged with a stable `blockId` (e.g. `menublock-3`). Menu Calculator also grew its own Detailed / Simple / AI-estimate modes per item, with its own Worker behind the AI-estimate one.
+
+**What that means here.** Margin Analysis had its own, completely separate AI-estimate/manual dish-costing UI — describe a dish or snap a photo, call `margin-audit-proxy-worker.js`, get a cost back. Once Menu Calculator can do all of that itself *and* reliably tell this page about it, keeping a second, disconnected way to arrive at a cost for what might be the same dish was pure redundancy — worse, a real risk of two different numbers for one dish. That whole UI, and everything behind it (`PROXY_ENDPOINT`, `resizeImageToBase64`, `handleDishPhoto`, `estimateDishCost`, `switchDishSource`, the AI-estimate/manual tab markup), is gone.
+
+**What a dish panel asks for now: exactly two things.** Current price (RM) and Sold / day — the two numbers that are genuinely Margin Analysis's own job to ask, since Menu Calculator has no equivalent of "what do you currently charge" or "how many do you actually sell." Ingredient cost is display-only now, driven entirely by sync: a status line reads either "Ingredient cost not yet synced" or "Ingredient cost: RM3.85 ← synced from Menu Calculator."
+
+**De-duping synced dishes.** The first time a dish panel is created from a sync payload, it's tagged `panel.dataset.syncedBlockId = blockId`. Every later payload for that same `blockId` finds the existing panel (`findDishPanelByBlockId`) and updates its cost, price, and name *in place* instead of creating a duplicate. A payload with no `blockId` at all (a shape from before this change) falls back to always creating a fresh dish, same as the old behavior — there's nothing to de-dupe against without one.
+
+**An open question from the handoff doc, resolved one way.** "Should a dish panel keep any standalone way to add an item that doesn't exist in Menu Calculator yet, or should the rule become 'add it in Menu Calculator first, no shortcuts here'?" — deliberately left open there. Decided here: **kept.** "+ Add menu item" still creates a dish panel with no cost yet; it just sits at "not yet synced" (reads as RM0 ingredient cost in every calculation) until something matches it via `blockId`, if ever. Reasoning: removing the ability to even create a placeholder felt like a bigger, less reversible behavior change than what was actually asked for, and an unsynced dish fails safely (an obviously-wrong RM0 true cost, not a crash or a silently-stale number) rather than blocking the page from being useful before every dish exists in Menu Calculator.
+
+**A second judgment call, flagged rather than silently made.** The handoff doc says a matched payload should "update its price/cost fields in place" — read literally, meaning both the stated selling price *and* the ingredient cost get overwritten on every sync, not just cost. That's what shipped: **every** matching sync payload updates both `Current price` and the ingredient cost, even on a dish that already existed and already had a manually-typed price. If that turns out to clobber a price you deliberately set differently from Menu Calculator's own suggestion, the fix is small — stop re-writing `ma-dish-price` after the dish's first creation — flagging it now rather than guessing wrong quietly.
+
+**Naming collision, resolved.** The page itself is now titled "Margin Analysis" (H1, tab title, nav). The results half of the page was ALSO called "Margin Analysis" as an internal section label from the 2026-09-05 restructure — same name, two different things on the same screen. Renamed that section's eyebrow (and its floating nav button) to **"Results"** instead, so the page doesn't visually echo its own name back at the visitor. "Margin Calculation" (the input half) had no such collision and is unchanged.
+
+**Nav sync.** `margin-audit-calculator.html`'s own dropdown now matches the current 7-item canonical list from `NAV_ORDER_STANDARD.md` — "Margin Analysis" label, `crypto-radar.html` appended at position 7. Every other page's nav was already updated by the other session; this page was the one gap.
+
+**`margin-audit-proxy-worker.js` is now spare capacity.** Still deployed, still holding a real Gemini key, just with no caller left in this file. Not touched this round — flagging per the handoff doc's own suggestion that it's worth finding a genuine new use for it before assuming it should sit idle, rather than deciding that unprompted here.
+
+**Testing done, given I can't render a browser here:** `node --check` clean; HTML tag balance re-verified; cross-checked every `getElementById` call in the JS against an id that actually exists in the HTML (one intentional exception — `ma-print-data-view`, created dynamically by `saveDataSnapshot()`, not present in static markup); grepped for every removed identifier (`PROXY_ENDPOINT`, `dishAiCost`, `dishAiImage`, `switchDishSource`, `handleDishPhoto`, `estimateDishCost`, `resizeImageToBase64`, `costSource`, `manualCost`, every `.ma-ai-*`/`.ma-source-*`/`.ma-manual-*` class) — none found outside of explanatory comments. Still worth clicking through for real: open the same dish in Menu Calculator via "Pull from Menu Portion Creator," edit it, and confirm the sync-status line updates in place rather than adding a second dish tab.
 
 ## 2026-09-05 — Split into Margin Analysis (top) and Margin Calculation (bottom, tabbed)
 
@@ -29,7 +55,8 @@ Printing Calculator has been removed as a pull-from source on this page specific
 
 | Term | Plain-English meaning |
 |---|---|
-| Margin Analysis | The top section of the page. Everything in it is a *result* — nothing here is typed in to drive a calculation. |
+| Margin Analysis | The whole page's name, as of 2026-09-06 (was "Margin Audit") — shown in the nav, the tab title, and the H1. |
+| Results | The top section of the page (was internally called "Margin Analysis" too, until that collided with the page's own new name). Everything in it is a *result* — nothing here is typed in to drive a calculation. |
 | Margin Calculation | The section near the footer where you actually enter numbers, organized into four tabs. |
 | Calc-tab | One of the four buttons (Menu / Fixed Overhead / Variable Overhead / Manpower) in Margin Calculation. Each independently shows or hides its own panel — it's a toggle, not a switch between mutually-exclusive views. |
 | Fixed overhead | Costs that stay roughly the same no matter how much you sell — rent, licenses, and similar. |
@@ -38,9 +65,10 @@ Printing Calculator has been removed as a pull-from source on this page specific
 | Contribution margin (CM) | Price charged minus true cost, per portion — what's actually left over per sale once every real cost is counted. |
 | Quadrant (Star / Plowhorse / Puzzle / Dog) | The standard menu-engineering classification: popular-and-profitable, popular-but-thin-margin, profitable-but-rarely-ordered, or neither. Popularity is volume-weighted so a high margin *percentage* on a low-volume item doesn't get mistaken for a Star. |
 | Tool dock | The panel that loads another tool's real page (Menu Portion Creator or Overhead & Manpower Calculator) directly into this page, so you can use that tool's own interface without leaving this one. |
-| Pull from / sync | Using the tool dock to bring a number computed in another tool (a dish's cost, or overhead/manpower totals) into this page automatically, instead of retyping it. |
+| Pull from / sync | Using the tool dock (or a live BroadcastChannel if Menu Calculator happens to be open in another tab) to bring a number computed in another tool into this page automatically, instead of retyping it. |
+| blockId | A stable id Menu Calculator now stamps on every menu block (e.g. `menublock-3`) and includes in every sync broadcast. Lets Margin Analysis tell "this is an update to a dish I already have" apart from "this is a new dish," instead of guessing. |
+| Synced vs. unsynced dish | A dish panel is "synced" once a matching `blockId` payload has given it an ingredient cost; until then it's "unsynced" and reads as RM0 ingredient cost in every calculation, clearly flagged on its own status line. |
 | Reset all | The one destructive control in Margin Calculation — clears every dish and puts overhead/utilities/manpower back to their starting defaults. Confirms before doing it, since it can't be undone. |
-| Cost source (AI estimate / manual) | Per dish: either describe it (or snap a photo) and let Gemini estimate the ingredient cost, or type a number you already know. |
 | Guide ratio | A rough, editable benchmark ingredient/overhead/manpower/margin split for a given venue type (home-based, stall, truck, store) — comparison only, never feeds the math. |
 
 ## Settings reference
@@ -62,9 +90,12 @@ Printing Calculator has been removed as a pull-from source on this page specific
 | Which tab opens by default | Menu (open); Fixed Overhead / Variable Overhead / Manpower (closed) | `setCalcTabOpen(...)` calls in `init()`, `margin-audit-calculator.js` |
 | Which external tools are offered as "Pull from" | Menu Portion Creator, Overhead & Manpower Calculator (Printing Calculator intentionally excluded) | `TOOL_DOCK_CONFIG`, `margin-audit-calculator.js` |
 | Utility box accent colors (Electricity / Water / Gas) | Teal / blue / rust (reused from existing site tokens, no new colors added) | `.ma-util-elec` / `.ma-util-water` / `.ma-util-gas`, `margin-audit-calculator.html` `<style>` block |
+| Does a re-sync overwrite an already-set "Current price"? | Yes — every matching sync updates both price and cost, not cost alone (see 2026-09-08 entry's second judgment call) | `handleSyncPayload()`'s `menu-calculator` branch, `margin-audit-calculator.js` |
+| Can a dish exist with no Menu Calculator match at all? | Yes — shows "not yet synced," reads as RM0 ingredient cost | `getDishCost()` / `renderDishSyncStatus()`, `margin-audit-calculator.js` |
+| ~~AI-estimate/manual dish costing~~ | Removed 2026-09-08 — cost is sync-only now | n/a |
 
 ## Deploy checklist
 
 - [ ] `margin-audit-calculator.html` and `margin-audit-calculator.js` → push to GitHub Pages as usual. Both are full-file replacements this round, not patches.
-- [ ] No Worker changes — `margin-audit-proxy-worker.js` is untouched, nothing here touched the Gemini contract.
-- [ ] Confirm `costing-sync.js` and `nav-dropdown.js` are already deployed (this page depends on both, unchanged from before).
+- [ ] No Worker changes needed to ship this — `margin-audit-proxy-worker.js` is untouched. It's no longer called from anywhere in this file though (see 2026-09-08 entry); it isn't broken, it's just idle, worth a look before assuming it should stay that way.
+- [ ] Confirm `costing-sync.js` and `nav-dropdown.js` are already deployed (this page depends on both, unchanged from before) — and confirm the deployed `menu-calculator.js` is the version that broadcasts per-block with `blockId`, or the de-dupe logic here has nothing to match against yet.

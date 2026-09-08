@@ -40,30 +40,23 @@
     }
     .ma-box > h2, .ma-box > h3:first-child { margin-top: 0; }
 
-    /* ---- Cost-source picker (per dish: AI estimate / Manual) ---- */
-    .ma-source-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-    .ma-source-tab {
-      background: var(--paper); border: 1px solid var(--line); border-radius: 999px;
-      padding: 6px 14px; font-family: var(--font-body); font-size: 0.82rem; font-weight: 600;
-      color: var(--muted); cursor: pointer;
+    /* ---- Dish cost sync status ----
+         2026-09-08: replaces the old AI-estimate/manual cost picker
+         entirely. Ingredient cost is no longer entered here at all —
+         Menu Calculator now has its own Detailed/Simple/AI-estimate
+         modes per item and broadcasts whichever one you used, so
+         Margin Audit would only have been a second, disconnected way
+         to arrive at the same number. This line just reports whatever
+         came over sync: a plain status message while nothing has
+         synced yet, a tinted result line once something has. See
+         MARGIN_AUDIT_HANDOFF.md and MULTI_MENU_SYNC_PLAN.md. */
+    .ma-sync-line {
+      font-size: 0.88rem; margin: 12px 0 0; padding: 10px 14px;
+      border-radius: 8px; background: var(--paper); color: var(--muted);
     }
-    .ma-source-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .ma-source-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    .ma-source-panel[hidden] { display: none; }
-    .ma-source-panel { padding: 12px 14px; background: var(--paper); border-radius: 8px; margin-bottom: 14px; }
-
-    .ma-ai-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
-    .ma-ai-row textarea {
-      flex: 1 1 260px; min-height: 64px; padding: 8px 10px; border: 1px solid var(--line);
-      border-radius: 6px; font-family: var(--font-body); font-size: 0.9rem; resize: vertical;
-    }
-    .ma-ai-photo-btn { flex-shrink: 0; }
-    .ma-ai-preview { max-width: 90px; max-height: 90px; border-radius: 6px; margin-top: 8px; }
-    .ma-cost-range { font-family: "IBM Plex Mono", monospace; font-weight: 600; color: var(--accent-dark); margin-top: 8px; display: block; }
-    .ma-ai-status { min-height: 1.2em; }
-
-    .ma-manual-row { display: flex; align-items: center; gap: 10px; }
-    .ma-manual-row input { width: 100px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: "IBM Plex Mono", monospace; }
+    .ma-sync-line[data-state="synced"] { background: var(--accent-soft); color: var(--text); }
+    .ma-sync-line strong { font-family: "IBM Plex Mono", monospace; color: var(--accent-dark); }
+    .ma-sync-source { font-size: 0.8rem; color: var(--muted); margin-left: 8px; }
 
     .ma-dish-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; margin-bottom: 14px; }
     .ma-dish-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--text); }
@@ -153,8 +146,8 @@
        2026-09-05 additions — section split + tabbed calculation
        ============================================================ */
 
-    /* Small heading block used at the top of both Margin Analysis
-       and Margin Calculation — same .eyebrow token the rest of the
+    /* Small heading block used at the top of both Results and Margin
+       Calculation — same .eyebrow token the rest of the
        site already uses (see .calc-intro), just reused here so both
        halves of this page announce themselves the same way every
        other section does. */
@@ -268,8 +261,8 @@
       <div class="wrap">
         <span class="eyebrow">Free tool &middot; nothing is saved</span>
         <h1>Margin Analysis</h1>
-        <p class="lead">Costing Analysis tells you what you <em>should</em> charge. This tells you what's actually happening at the price you charge <em>today</em> — reverse-engineered from your real ingredient, overhead, utility, and labor costs, with AI doing the cost estimation so you don't have to.</p>
-        <p class="lead" style="margin-top:10px;">Enter your numbers in <strong>Margin Calculation</strong>, near the bottom of this page — <strong>Margin Analysis</strong>, right below, updates on its own as you go. Once you've started, two floating buttons let you jump between the two.</p>
+        <p class="lead">Costing Analysis tells you what you <em>should</em> charge. This tells you what's actually happening at the price you charge <em>today</em> — reverse-engineered from your real ingredient, overhead, utility, and labor costs, with ingredient cost itself now sourced straight from Menu Calculator rather than estimated twice.</p>
+        <p class="lead" style="margin-top:10px;">Enter your numbers in <strong>Margin Calculation</strong>, near the bottom of this page — your <strong>Results</strong>, right below, update on their own as you go. Once you've started, two floating buttons let you jump between the two.</p>
       </div>
     </section>
 
@@ -305,7 +298,7 @@
         <p class="ma-sync-status no-print" id="ma-compare-note" hidden></p>
 
         <div class="ma-section-intro">
-          <span class="eyebrow">Margin Analysis</span>
+          <span class="eyebrow">Results</span>
           <p class="structure-note">Everything below is calculated automatically from what you enter in <strong>Margin Calculation</strong>, further down this page — there's nothing to fill in up here.</p>
         </div>
 
@@ -441,7 +434,7 @@
         <div class="ma-section-intro">
           <span class="eyebrow">Margin Calculation</span>
           <h2>Enter your numbers</h2>
-          <p class="structure-note">Fill in each tab below — <strong>Margin Analysis</strong>, further up the page, updates automatically as you go.</p>
+          <p class="structure-note">Fill in each tab below — your <strong>Results</strong>, further up the page, update automatically as you go.</p>
         </div>
 
         <div class="inflation-control">
@@ -468,7 +461,7 @@
         <div class="ma-calc-panel" id="ma-panel-menu" data-calc-panel="menu">
           <div class="ma-box">
             <h3>Your menu, at today's prices</h3>
-            <p class="menu-builder-intro">Add each item, what you charge for it right now, and roughly how many you sell. For cost, describe it and let AI estimate, type what you think it costs, or pull it straight from Menu Portion Creator.</p>
+            <p class="menu-builder-intro">Add each item you sell, what you currently charge for it, and roughly how many you sell a day — the two numbers only you know. Ingredient cost comes from Menu Calculator now, not from here: pull an item in below, and it'll keep itself up to date automatically as you edit that item in Menu Calculator, in this tab or another browser tab.</p>
             <div class="calc-actions no-print">
               <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator" id="ma-pull-menu">Pull from Menu Portion Creator</button>
             </div>
@@ -581,17 +574,21 @@
     </div>
   </footer>
 
-  <!-- Two destinations now instead of one: Margin Analysis is the
-       results, Margin Calculation is the input tabs, and they can be
-       far apart on the page — so both get a direct jump rather than
-       just "back to the top of the dock". -->
+  <!-- Two destinations now instead of one: Results is the output,
+       Margin Calculation is the input tabs, and they can be far
+       apart on the page — so both get a direct jump rather than just
+       "back to the top of the dock". Labeled "Results" rather than
+       "Margin Analysis" specifically to avoid echoing the page's own
+       name (this whole page is now called Margin Analysis, per
+       NAV_ORDER_STANDARD.md's 2026-09-06 update) right back at the
+       visitor as a button label. -->
   <div class="no-print" id="rz-float-nav" hidden>
-    <button type="button" id="rz-back-to-analysis">&uarr; Margin Analysis</button>
+    <button type="button" id="rz-back-to-results">&uarr; Results</button>
     <button type="button" id="rz-back-to-calc">&uarr; Margin Calculation</button>
   </div>
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="margin-audit-calculator.js?v=3" defer></script>
+  <script src="margin-audit-calculator.js?v=4" defer></script>
 </body>
 </html>

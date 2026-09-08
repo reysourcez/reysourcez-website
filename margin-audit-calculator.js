@@ -1,5 +1,13 @@
 /* ============================================================
-   Margin Audit
+   Margin Analysis
+   (page renamed from "Margin Audit" 2026-09-06, per
+   NAV_ORDER_STANDARD.md — the file itself keeps the old filename
+   on purpose, only the visitor-facing title/heading/nav label
+   changed. Comments below still say "Margin Audit" here and there
+   where it reads more naturally as a description of the tool's
+   JOB rather than its current display name — that's intentional,
+   not a missed rename.)
+
    Vanilla JS, no dependencies, nothing saved anywhere except a
    file the vendor explicitly downloads themselves (see EXPORT /
    IMPORT section — that file never touches our server).
@@ -7,29 +15,63 @@
    PURPOSE: reverse the direction of Interactive Costing Analysis.
    That tool asks "what SHOULD I charge?" This one asks "given
    what I DO charge, what's actually happening?" — a vendor enters
-   their current menu prices, and everything else (cost estimate,
+   their current menu prices, and everything else (true cost,
    utility cost, whether the margin is healthy) is worked out for
-   them, with AI doing the estimation, never the arithmetic.
+   them.
 
    HARD RULE, same discipline as every other calculator on this
-   site: Gemini (via the Cloudflare Worker) only ever does two
-   things — turn unstructured input (a photo, a loose description)
-   into a structured cost estimate, and turn already-computed
-   numbers into a plain-language sentence. It never calculates a
-   margin, a ratio, or a break-even. All of that is deterministic
-   JS below, same as the EPF/SOCSO tables in
-   overhead-manpower-calculator.js — auditable, never guessed.
+   site: nothing in this file ever calculates a margin, a ratio, or
+   a break-even with AI — all of that is deterministic JS, same as
+   the EPF/SOCSO tables in overhead-manpower-calculator.js,
+   auditable, never guessed. As of 2026-09-08 this file makes NO
+   Gemini/Worker calls of its own at all (see COST MODEL below) —
+   previously it had its own AI-estimate/manual dish-costing UI
+   calling margin-audit-proxy-worker.js directly; that's gone.
 
    ------------------------------------------------------------
-   PAGE STRUCTURE (2026-09-05 rewrite):
-   The page is now two clearly separate sections instead of one
-   long stack of boxes:
+   COST MODEL (2026-09-08 change — see MARGIN_AUDIT_HANDOFF.md and
+   MULTI_MENU_SYNC_PLAN.md for the full brief this implements):
 
-     MARGIN ANALYSIS (#ma-analysis, top) — read-only output. True
-     cost breakdown, earnings summary, per-item breakdown, the
-     quadrant chart, cost-structure pies, insights. Nothing here
-     is a cost input; "Your target margin %" and the guide-venue
-     dropdown only change how results are COMPARED or labeled.
+   Menu Calculator now has its own Detailed / Simple / AI-estimate
+   modes built into every menu block, and — the actual fix this
+   required — every block broadcasts ITS OWN updates over the sync
+   channel now, tagged with a stable blockId, instead of only ever
+   the first block on the page. That makes Margin Audit's own,
+   separate AI-estimate/manual cost-entry UI pure duplication: two
+   disconnected ways to arrive at a cost for what might be the same
+   dish. So it's removed. A dish panel here now asks for exactly
+   two things only Margin Audit needs — Current price (RM) and
+   Sold / day — and gets its ingredient cost from ONE place only:
+   syncing with the matching item in Menu Calculator, either by
+   pulling it in through the tool dock (see below) or automatically,
+   live, if Menu Calculator happens to be open in another tab.
+
+   De-duping synced dishes: every dish panel that came from a sync
+   carries panel.dataset.syncedBlockId, set once when it's first
+   created. A later payload for the SAME blockId updates that exact
+   panel's cost (and its stated price, and its name) in place
+   instead of creating a duplicate — see handleSyncPayload() and
+   findDishPanelByBlockId(). A dish added manually via "+ Add menu
+   item" has no syncedBlockId and just sits at "not yet synced"
+   (ingredient cost reads as RM0.00 in every calculation below)
+   until something matches it, if ever — deliberately not required,
+   since MARGIN_AUDIT_HANDOFF.md left "should an unsynced dish even
+   be allowed to exist" as an open question rather than answering
+   it; allowing it seemed like the safer, more reversible default.
+
+   ------------------------------------------------------------
+   PAGE STRUCTURE (2026-09-05 rewrite, unaffected by the cost-model
+   change above): the page is two clearly separate sections instead
+   of one long stack of boxes:
+
+     RESULTS (#ma-analysis, top; labeled "Results" on the page
+     itself, NOT "Margin Analysis" — that label is reserved for the
+     page's own name now, so the section eyebrow doesn't just echo
+     the H1 back at the visitor) — read-only output. True cost
+     breakdown, earnings summary, per-item breakdown, the quadrant
+     chart, cost-structure pies, insights. Nothing here is a cost
+     input; "Your target margin %" and the guide-venue dropdown only
+     change how results are COMPARED or labeled.
 
      MARGIN CALCULATION (#ma-calculation, near the footer) — every
      actual cost input, including the dish list that used to be a
@@ -41,14 +83,6 @@
      was typed into it, same idea as a native <details> element,
      just styled as pill buttons. Reset All is the one control here
      that actually clears data, and needs a confirm() first.
-
-   This replaces the previous design, where "Your menu, at today's
-   prices" lived in its own always-visible box up top AND a
-   separate "Pull from Menu Portion Creator" button near the footer
-   could ALSO create dishes into that same box — two different
-   places to manage the same list. Now there's exactly one: the
-   Menu tab in Margin Calculation, which both the native AI-
-   estimate/manual entry form AND the "pull from" button feed into.
 
    DATA MODEL: one or more "dishes", same repeatable-block pattern
    as menu-calculator.js's .menu-block, INCLUDING its tab-queue
@@ -66,12 +100,9 @@
    (accordion-style, several can be open at once). Don't confuse
    toggleCalcTab (outer) with switchToDish (inner, dish-level).
 
-   Each dish has a cost SOURCE: ai (Gemini estimates from a
-   description and/or photo) or manual (vendor just types a
-   number). Pulling a dish in from Menu Calculator now goes through
-   the "Pull from Menu Portion Creator" button inside the Menu tab
-   (see TOOL DOCK section) — it CREATES a new dish panel pre-filled
-   as a manual entry. Printing Calculator is intentionally NOT
+   Pulling a dish in from Menu Calculator goes through the "Pull
+   from Menu Portion Creator" button inside the Menu tab (see TOOL
+   DOCK section below). Printing Calculator is intentionally NOT
    offered as a pull source on this page (see TOOL_DOCK_CONFIG
    below) — printing isn't a food cost, so it doesn't belong in a
    food margin tool; revisit if/when a services-margin sibling tool
@@ -89,9 +120,8 @@
    that's ever missing or reshaped, every touch point already guards
    for it (typeof RZ_TOOLS === 'undefined' etc.) and simply no-ops
    rather than breaking anything else on the page. The dock itself
-   now lives inside Margin Calculation (it used to sit under a
-   separate connector-panel row) — "pull from" buttons are embedded
-   directly in the tab whose data they fill instead.
+   lives inside Margin Calculation — "pull from" buttons are
+   embedded directly in the tab whose data they fill.
 
    STRUCTURE COMPARISON: pie-chart based, ported from
    interactive-costing-analysis.js's renderStructurePie/
@@ -99,14 +129,17 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Audit] script build: 2026-09-05-v3-analysis-calc-split');
+console.info('[Margin Analysis] script build: 2026-09-08-v4-sync-only-cost');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
    here, with the current value on the left and nothing else in
-   this file needing to change to update it. */
-
-const PROXY_ENDPOINT = 'https://margin-audit-proxy.reysourcez-ent.workers.dev/';
+   this file needing to change to update it. No PROXY_ENDPOINT here
+   anymore — this file makes no Worker/Gemini calls of its own as of
+   2026-09-08 (see the COST MODEL note at the top of this file).
+   margin-audit-proxy-worker.js is still deployed and still holds a
+   real key, just with no caller left in this file; see the change
+   notes for the "what to do with it now" flag. */
 
 const GUIDE_RATIOS = {
   home:  { ingredients: 55, overhead: 15, manpower: 15, margin: 15 },
@@ -335,8 +368,12 @@ function resetAllCalculationData() {
 
 /* ================= DISH PANELS (tab-queue pattern) ================= */
 
-const dishAiCost = new WeakMap();   // panel -> {low, high} from Gemini
-const dishAiImage = new WeakMap();  // panel -> base64 (for the estimate request only, never stored)
+// panel -> ingredient cost number, set ONLY by a matching sync
+// payload from Menu Calculator (see handleSyncPayload). No entry in
+// this map means "not yet synced" — getDishCost() below reads that
+// as 0, same as any other empty numeric field on this site, rather
+// than needing a separate "is this synced" flag threaded everywhere.
+const dishSyncedCost = new WeakMap();
 let dishIdCounter = 0;
 
 function createDishPanel() {
@@ -345,7 +382,6 @@ function createDishPanel() {
   const panel = document.createElement('div');
   panel.className = 'ma-dish-panel menu-block';
   panel.dataset.dishId = id;
-  panel.dataset.costSource = 'ai';
   panel.innerHTML = `
     <div class="menu-block-header">
       <input type="text" class="menu-name-input ma-dish-name" value="Dish ${dishIdCounter}" aria-label="Dish name">
@@ -355,44 +391,14 @@ function createDishPanel() {
       <label>Current price (RM) <input type="number" class="ma-dish-price" inputmode="decimal" min="0" step="0.01" value="0.00"></label>
       <label>Sold / day <input type="number" class="ma-dish-volume" inputmode="decimal" min="0" step="1" value="0"></label>
     </div>
-
-    <div class="ma-source-tabs" role="tablist">
-      <button type="button" class="ma-source-tab is-active" data-source="ai">AI estimate</button>
-      <button type="button" class="ma-source-tab" data-source="manual">I'll enter it myself</button>
-    </div>
-
-    <div class="ma-source-panel ma-source-ai" data-source-panel="ai">
-      <div class="ma-ai-row">
-        <textarea class="ma-ai-desc" placeholder="Describe the dish — main ingredients and rough portions (e.g. 200g rice, fried chicken thigh, sambal, egg, cucumber)"></textarea>
-        <label class="btn btn-secondary ma-ai-photo-btn" style="cursor:pointer;">Or snap a photo<input type="file" accept="image/*" class="sr-only ma-ai-photo-input"></label>
-      </div>
-      <img class="ma-ai-preview" alt="" hidden>
-      <div class="calc-actions no-print" style="padding-top:10px;">
-        <button type="button" class="btn btn-primary ma-ai-estimate-btn">Estimate cost</button>
-      </div>
-      <p class="ma-ai-status"></p>
-      <span class="ma-cost-range" hidden></span>
-    </div>
-
-    <div class="ma-source-panel ma-source-manual" data-source-panel="manual" hidden>
-      <div class="ma-manual-row">
-        <label>Ingredient cost (RM) <input type="number" class="ma-manual-cost" inputmode="decimal" min="0" step="0.01" value="0.00"></label>
-      </div>
-    </div>
+    <p class="ma-sync-line" data-state="unsynced"></p>
   `;
   document.getElementById('ma-dish-panels').appendChild(panel);
 
   panel.querySelector('.ma-dish-name').addEventListener('input', () => { renderDishTabs(); recalculateAll(); });
-  panel.querySelectorAll('.ma-dish-price, .ma-dish-volume, .ma-manual-cost').forEach((el) => {
+  panel.querySelectorAll('.ma-dish-price, .ma-dish-volume').forEach((el) => {
     el.addEventListener('input', recalculateAll);
   });
-
-  panel.querySelectorAll('.ma-source-tab').forEach((tab) => {
-    tab.addEventListener('click', () => switchDishSource(panel, tab.dataset.source));
-  });
-
-  panel.querySelector('.ma-ai-photo-input').addEventListener('change', (e) => handleDishPhoto(e, panel));
-  panel.querySelector('.ma-ai-estimate-btn').addEventListener('click', () => estimateDishCost(panel));
 
   panel.querySelector('.ma-remove-dish').addEventListener('click', () => {
     const wasActive = !panel.hidden;
@@ -407,8 +413,35 @@ function createDishPanel() {
     recalculateAll();
   });
 
+  renderDishSyncStatus(panel);
   switchToDish(id);
   return panel;
+}
+
+// Finds the dish panel already tagged with this Menu Calculator
+// blockId, if any — the whole de-dupe mechanism in one place. Plain
+// array search rather than a CSS attribute-selector string, so an
+// unusual blockId never needs escaping to be queried safely.
+function findDishPanelByBlockId(blockId) {
+  return Array.from(document.querySelectorAll('.ma-dish-panel'))
+    .find((p) => p.dataset.syncedBlockId === blockId) || null;
+}
+
+// The one place that renders whether a dish's ingredient cost has
+// ever been synced from Menu Calculator, and what it is if so. Called
+// right after a panel is created (starts unsynced) and again every
+// time a matching sync payload updates it.
+function renderDishSyncStatus(panel) {
+  const line = panel.querySelector('.ma-sync-line');
+  if (!line) return;
+  const cost = dishSyncedCost.get(panel);
+  if (typeof cost === 'number') {
+    line.dataset.state = 'synced';
+    line.innerHTML = `Ingredient cost: <strong>${formatRM(cost)}</strong><span class="ma-sync-source">\u2190 synced from Menu Calculator</span>`;
+  } else {
+    line.dataset.state = 'unsynced';
+    line.textContent = 'Ingredient cost not yet synced \u2014 pull it in below, or edit the matching item in Menu Calculator (this tab or another) and it\u2019ll sync here on its own.';
+  }
 }
 
 // Only the active dish's full card is shown at a time; the tab row
@@ -450,124 +483,41 @@ function renderDishTabs() {
   });
 }
 
-function switchDishSource(panel, source) {
-  panel.dataset.costSource = source;
-  panel.querySelectorAll('.ma-source-tab').forEach((t) => t.classList.toggle('is-active', t.dataset.source === source));
-  panel.querySelectorAll('.ma-source-panel').forEach((p) => { p.hidden = p.dataset.sourcePanel !== source; });
-  recalculateAll();
-}
-
-/* ---- AI estimate (Gemini via Cloudflare Worker) ---- */
-
-function resizeImageToBase64(file) {
-  return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) { reject(new Error("That file doesn't look like an image.")); return; }
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Could not read that file.'));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Couldn't open that image. Try a different file."));
-      img.onload = () => {
-        const MAX_EDGE = 1024;
-        let { width, height } = img;
-        if (width > MAX_EDGE || height > MAX_EDGE) {
-          const scale = MAX_EDGE / Math.max(width, height);
-          width = Math.round(width * scale); height = Math.round(height * scale);
-        }
-        const canvas = document.createElement('canvas');
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
-        resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl });
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
-async function handleDishPhoto(e, panel) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const statusEl = panel.querySelector('.ma-ai-status');
-  statusEl.textContent = 'Preparing photo\u2026';
-  try {
-    const { base64, previewUrl } = await resizeImageToBase64(file);
-    dishAiImage.set(panel, base64);
-    const img = panel.querySelector('.ma-ai-preview');
-    img.src = previewUrl; img.hidden = false;
-    statusEl.textContent = 'Photo ready \u2014 add a short description too if you can, then click Estimate cost.';
-  } catch (err) {
-    statusEl.textContent = err.message || 'Could not read that photo.';
-  }
-}
-
-async function estimateDishCost(panel) {
-  const statusEl = panel.querySelector('.ma-ai-status');
-  const rangeEl = panel.querySelector('.ma-cost-range');
-  const description = panel.querySelector('.ma-ai-desc').value.trim();
-  const image = dishAiImage.get(panel);
-
-  if (!description && !image) {
-    statusEl.textContent = 'Add a short description or a photo first.';
-    return;
-  }
-  if (!PROXY_ENDPOINT || PROXY_ENDPOINT === 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE') {
-    statusEl.textContent = 'This tool needs its proxy URL set \u2014 see PROXY_ENDPOINT near the top of margin-audit-calculator.js. Use manual entry for now.';
-    return;
-  }
-
-  const btn = panel.querySelector('.ma-ai-estimate-btn');
-  btn.disabled = true;
-  statusEl.textContent = 'Estimating\u2026';
-
-  try {
-    const response = await fetch(PROXY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'dish_cost_estimate',
-        description,
-        image: image || undefined,
-        mime_type: image ? 'image/jpeg' : undefined,
-        venue_context: wizardAnswers.venue || 'stall',
-      }),
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || ('Estimate failed (error ' + response.status + ').'));
-    const low = numOrZero(Number(data.cost_low_myr));
-    const high = numOrZero(Number(data.cost_high_myr));
-    dishAiCost.set(panel, { low, high });
-    rangeEl.hidden = false;
-    rangeEl.textContent = low && high && low !== high
-      ? `Estimated: ${formatRM(low)}\u2013${formatRM(high)} \u2014 using the midpoint for calculations, refine if you know better`
-      : `Estimated: ${formatRM(high)} \u2014 refine if you know better`;
-    statusEl.textContent = '';
-    recalculateAll();
-  } catch (err) {
-    statusEl.textContent = err.message || 'Could not reach the estimate service. Try manual entry instead.';
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 /* ================= CROSS-TOOL SYNC (dishes: created via tool
    dock pulls; overhead/manpower: filled directly) ================= */
 
 function handleSyncPayload(data) {
   if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
-    const panel = createDishPanel();
-    panel.querySelector('.ma-dish-name').value = data.dishName || 'Synced item';
+    // Every menu block in Menu Calculator now broadcasts its OWN
+    // updates, tagged with a stable blockId (e.g. "menublock-3") —
+    // previously only the first block on that page ever broadcast
+    // anything, so every synced dish here used to collapse onto one.
+    // A payload with no blockId at all (an older/unexpected shape)
+    // falls back to always creating a fresh dish, same as before —
+    // there's nothing to de-dupe against without one.
+    const blockId = typeof data.blockId === 'string' && data.blockId ? data.blockId : null;
+    let panel = blockId ? findDishPanelByBlockId(blockId) : null;
+    const isNewDish = !panel;
+    if (!panel) {
+      panel = createDishPanel();
+      if (blockId) panel.dataset.syncedBlockId = blockId;
+    }
+
+    if (data.dishName) panel.querySelector('.ma-dish-name').value = data.dishName;
+    dishSyncedCost.set(panel, data.costPerPortion);
     if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
       panel.querySelector('.ma-dish-price').value = data.sellingPrice.toFixed(2);
     }
-    switchDishSource(panel, 'manual');
-    panel.querySelector('.ma-manual-cost').value = data.costPerPortion.toFixed(2);
+    renderDishSyncStatus(panel);
     renderDishTabs();
     setCalcTabOpen('menu', true);
+
     const feedback = document.getElementById('ma-dock-feedback');
     if (feedback) {
-      feedback.textContent = `\u2713 Added "${panel.querySelector('.ma-dish-name').value}" to your menu from Menu Portion Creator \u2014 ${formatRM(data.costPerPortion)}/portion.`;
+      const label = panel.querySelector('.ma-dish-name').value;
+      feedback.textContent = isNewDish
+        ? `\u2713 Added "${label}" to your menu from Menu Calculator \u2014 ${formatRM(data.costPerPortion)}/portion.`
+        : `\u2713 Updated "${label}" from Menu Calculator \u2014 ${formatRM(data.costPerPortion)}/portion.`;
     }
     recalculateAll();
   }
@@ -765,14 +715,15 @@ function computeGasCost() {
 
 /* ================= MATH ENGINE (pure functions, no DOM) ================= */
 
+// Ingredient cost comes from exactly one place now: whatever Menu
+// Calculator last broadcast for this dish (see dishSyncedCost /
+// handleSyncPayload). A dish with no entry in that map hasn't synced
+// yet and reads as 0 here — the true-cost math downstream already
+// handles a 0 ingredient cost fine, so nothing needs a separate
+// "is this synced" branch beyond the sync-status line itself.
 function getDishCost(panel) {
-  const source = panel.dataset.costSource || 'manual';
-  if (source === 'ai') {
-    const est = dishAiCost.get(panel);
-    if (!est) return 0;
-    return est.low && est.high ? (est.low + est.high) / 2 : (est.high || est.low || 0);
-  }
-  return num(panel.querySelector('.ma-manual-cost'));
+  const cost = dishSyncedCost.get(panel);
+  return typeof cost === 'number' ? cost : 0;
 }
 
 function collectDishes() {
@@ -1115,8 +1066,11 @@ function gatherExportData() {
     targetMargin: document.getElementById('ma-target-margin').value,
     guideVenue: document.getElementById('guide-venue-select').value,
     dishes: Array.from(document.querySelectorAll('.ma-dish-panel')).map((p) => ({
-      name: p.querySelector('.ma-dish-name').value, price: num(p.querySelector('.ma-dish-price')), volumeDay: num(p.querySelector('.ma-dish-volume')),
-      costSource: p.dataset.costSource || 'manual', manualCost: num(p.querySelector('.ma-manual-cost')),
+      name: p.querySelector('.ma-dish-name').value,
+      price: num(p.querySelector('.ma-dish-price')),
+      volumeDay: num(p.querySelector('.ma-dish-volume')),
+      syncedBlockId: p.dataset.syncedBlockId || null,
+      syncedCost: numOrZero(dishSyncedCost.get(p)),
     })),
     resultSummary: {
       revenueMonth: document.getElementById('ma-total-revenue').textContent,
@@ -1176,8 +1130,13 @@ function importData(file) {
       panel.querySelector('.ma-dish-name').value = d.name || '';
       panel.querySelector('.ma-dish-price').value = d.price || 0;
       panel.querySelector('.ma-dish-volume').value = d.volumeDay || 0;
-      panel.querySelector('.ma-manual-cost').value = d.manualCost || 0;
-      switchDishSource(panel, d.costSource === 'ai' ? 'ai' : 'manual');
+      // Files saved before 2026-09-08 carry costSource/manualCost
+      // instead — those fields are simply absent here and the dish
+      // just comes back in as "not yet synced" rather than failing to
+      // import; re-pulling from Menu Calculator picks it back up.
+      if (d.syncedBlockId) panel.dataset.syncedBlockId = d.syncedBlockId;
+      if (d.syncedCost > 0) dishSyncedCost.set(panel, d.syncedCost);
+      renderDishSyncStatus(panel);
     });
     renderDishTabs();
 
@@ -1214,14 +1173,14 @@ function saveDataSnapshot() {
     document.body.appendChild(view);
   }
   const lines = [
-    'REYSOURCEZ MARGIN AUDIT \u2014 DATA SNAPSHOT',
+    'REYSOURCEZ MARGIN ANALYSIS \u2014 DATA SNAPSHOT',
     'Saved: ' + new Date().toLocaleString(),
     '',
     'Venue: ' + (wizardAnswers.venue || '\u2014') + ' | Manpower: ' + (wizardAnswers.manpower || '\u2014'),
     'Operating days/month: ' + data.operatingDays,
     '',
     'DISHES',
-    ...data.dishes.map((d) => `  ${d.name} | price RM${d.price.toFixed(2)} | ${d.volumeDay}/day | source: ${d.costSource}${d.costSource === 'manual' ? ' | RM' + d.manualCost.toFixed(2) : ''}`),
+    ...data.dishes.map((d) => `  ${d.name} | price RM${d.price.toFixed(2)} | ${d.volumeDay}/day | ingredient cost: ${d.syncedCost > 0 ? 'RM' + d.syncedCost.toFixed(2) + ' (synced from Menu Calculator)' : 'not yet synced'}`),
     '',
     'OVERHEAD & UTILITIES',
     '  Rent/misc: RM' + data.rent.toFixed(2),
@@ -1298,7 +1257,7 @@ function init() {
   });
   document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
 
-  document.getElementById('rz-back-to-analysis').addEventListener('click', () => {
+  document.getElementById('rz-back-to-results').addEventListener('click', () => {
     document.getElementById('ma-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   document.getElementById('rz-back-to-calc').addEventListener('click', () => {
