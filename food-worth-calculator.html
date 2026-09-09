@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Food Worth Calculator</title>
-  <meta name="description" content="Upload a photo of a meal and get an instant breakdown — item by item weight, calories, and nutrition — plus a value-for-money rating against the price you paid.">
+  <meta name="description" content="Snap a photo or just describe what you had — food or drink — and get an instant breakdown — item by item weight, calories, and nutrition — plus a value-for-money rating against the price you paid.">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,32 +19,24 @@
   <style>
     .fw-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; background: var(--surface); }
     .fw-upload-zone.has-image { border-style: solid; padding: 20px; }
-    /* Two-column layout once there's a photo: photo + stacked action
-       buttons on the left, the (opt-in) recipe breakdown box on the
-       right \u2014 using up what used to be a lot of empty space next
-       to a photo capped at 240px wide. Collapses to one column on
-       small screens so the recipe panel never gets squeezed unreadably. */
-    .fw-dish-top-grid { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 20px; align-items: start; }
-    .fw-photo-col { text-align: center; min-width: 0; }
-    .fw-upload-zone.has-image .fw-photo-col { text-align: left; }
-    .fw-preview-img { max-width: 240px; max-height: 240px; border-radius: 8px; display: block; margin: 0 auto 16px; }
-    .fw-upload-zone.has-image .fw-preview-img { margin: 0 0 16px; }
-    /* Choose photo -> Analyze photo -> Break down as a recipe, stacked
-       in that order (was a side-by-side row) so the workflow reads
-       top-to-bottom, and the photo's right-hand margin stays free for
-       .fw-recipe-col alongside it instead of empty space. */
+    /* Photo analyze / Text analyze \u2014 mutually exclusive input tabs,
+       2026-09-07 (replaced the old always-a-photo flow, and the
+       two-column photo+recipe grid that went with it \u2014 the recipe
+       panel is shared/full-width below now, since it has to work
+       whichever tab produced the analysis, not just a photo one).
+       Reuses the same pill-tab look as .fw-standard-tab/.fw-calorie-tab
+       rather than inventing a third near-identical component. */
+    .fw-input-tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .fw-input-panel { max-width: 420px; }
+    .fw-preview-img { max-width: 240px; max-height: 240px; border-radius: 8px; display: block; margin: 0 0 10px; }
     .fw-upload-row { display: flex; flex-direction: column; gap: 10px; }
     .fw-upload-row > .btn { display: flex; width: 100%; align-items: center; justify-content: center; }
-    /* The recipe button's arrow is a ::after, not a real child element
-       \u2014 runRecipeBreakdown() swaps btn.textContent to "Breaking
-       down\u2026" mid-flow, which would wipe out a nested <span> but
-       leaves a CSS-generated icon untouched. */
-    .fw-recipe-btn.btn { justify-content: space-between; }
-    .fw-recipe-btn::after { content: '\25B8'; font-size: 0.8em; opacity: 0.8; margin-left: 8px; }
-    .fw-recipe-col { min-width: 0; }
-    @media (max-width: 700px) {
-      .fw-dish-top-grid { grid-template-columns: 1fr; }
+    .fw-text-desc, .fw-photo-note {
+      display: block; width: 100%; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line);
+      border-radius: 8px; font-family: var(--font-body); font-size: 0.92rem; color: var(--text);
+      resize: vertical; min-height: 64px; box-sizing: border-box;
     }
+    .fw-text-desc:focus-visible, .fw-photo-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
     .fw-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 12px; }
     .fw-status.is-error { color: #C0392B; font-weight: 600; }
 
@@ -241,12 +233,12 @@
        instead of two, since they're visually identical. */
     .fw-standard-toggle { display: flex; align-items: center; gap: 8px; margin: 4px 0 16px; flex-wrap: wrap; }
     .fw-standard-toggle-label { font-size: 0.85rem; font-weight: 600; color: var(--muted); }
-    .fw-standard-tab, .fw-calorie-tab {
+    .fw-standard-tab, .fw-calorie-tab, .fw-input-tab {
       padding: 7px 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface);
       font-family: var(--font-body); font-weight: 600; font-size: 0.85rem; color: var(--muted); cursor: pointer;
     }
-    .fw-standard-tab.is-active, .fw-calorie-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .fw-standard-tab:focus-visible, .fw-calorie-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .fw-standard-tab.is-active, .fw-calorie-tab.is-active, .fw-input-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .fw-standard-tab:focus-visible, .fw-calorie-tab:focus-visible, .fw-input-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 
     .fw-calorie-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
     .fw-calorie-fields { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; align-items: end; }
@@ -280,14 +272,22 @@
     /* Per-dish recipe breakdown — opt-in, read-only, now sits to the
        right of the photo in its own column (was under the item table)
        once someone clicks "Break down as a recipe". */
-    .fw-recipe-panel:not(:empty) { padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+    .fw-recipe-panel:not(:empty) { margin-top: 14px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
     .fw-recipe-title { font-family: var(--font-display); font-size: 1.05rem; margin: 0 0 6px; }
     .fw-recipe-disclaimer { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
     .fw-recipe-ingredients { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
     .fw-recipe-ingredients li { display: flex; justify-content: space-between; gap: 12px; font-size: 0.9rem; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
     .fw-recipe-ing-name { font-weight: 600; flex: 1; }
-    .fw-recipe-ing-qty { color: var(--muted); }
-    .fw-recipe-ing-price { font-family: "IBM Plex Mono", monospace; }
+    /* 2026-09-07: these were plain <span>s; now real <input>s so a
+       vendor can correct a quantity or price Gemini estimated wrong,
+       the same way item-table rows are already editable. */
+    .fw-recipe-ing-qty-input, .fw-recipe-ing-price-input {
+      border: 1px solid var(--line); border-radius: 4px; font-family: inherit; font-size: 0.85rem;
+      padding: 2px 6px; background: #fff; color: var(--text);
+    }
+    .fw-recipe-ing-qty-input { width: 90px; color: var(--muted); }
+    .fw-recipe-ing-price-input { width: 64px; font-family: "IBM Plex Mono", monospace; text-align: right; }
+    .fw-recipe-ing-qty-input:focus-visible, .fw-recipe-ing-price-input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
     .fw-recipe-total { font-size: 0.92rem; margin: 0; }
     .fw-recipe-empty { font-size: 0.9rem; color: var(--muted); margin: 0; }
 
@@ -359,7 +359,7 @@
       <div class="wrap">
         <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
         <h1>Food Worth Calculator</h1>
-        <p class="lead">Upload a photo of a meal. Gemini estimates what's on the plate — item by item weight, calories, and nutrition. Add what it cost and see what you're actually getting for the price.</p>
+        <p class="lead">Snap a photo, or just describe what you had — food or drink. Gemini estimates the item-by-item breakdown: weight, calories, and nutrition. Add what it cost and see what you're actually getting for the price.</p>
       </div>
     </section>
 
@@ -590,6 +590,6 @@
   </div>
 
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="food-worth-calculator.js?v=15" defer></script>
+  <script src="food-worth-calculator.js?v=17" defer></script>
 </body>
 </html>

@@ -8,8 +8,12 @@
    forward analysis requests to Gemini on the browser's behalf. The
    key never reaches food-worth-calculator.js or any visitor.
 
-   Contract with the browser:
-     Browser sends  -> { image: "<base64>", mime_type: "image/jpeg" }
+   Contract with the browser (2026-09-07: image and description are
+   each independently optional now — at least one is required, same
+   "either, or both" shape margin_audit_proxy_worker.js already uses
+   for its own dish_cost_estimate call):
+     Browser sends  -> { image?: "<base64>", mime_type?: "image/jpeg",
+                          description?: "text" }
                         optionally with mode: "recipe" for the
                         ingredient-cost breakdown instead of the
                         standard analysis (see RECIPE_SCHEMA below)
@@ -114,20 +118,29 @@ const ITEM_SCHEMA = {
   required: ['items', 'micronutrients', 'typical_price_myr'],
 };
 
-const PROMPT = 'You are analyzing a photo of a plate of food for an F&B costing tool used in Malaysia. '
-  + 'Identify every distinct food item visible. Count a sauce or garnish as its own item only if '
-  + "it's substantial enough to matter nutritionally, not a token sprinkle. For each item, estimate "
-  + 'from typical serving sizes and the visible portion: its common name, weight in grams, calories '
-  + 'for that weight, protein/carbs/fat/fiber in grams, and one short nutritional note. Separately, '
-  + 'give one combined estimate \u2014 not per item \u2014 of the total vitamin A, vitamin C, vitamin D, '
-  + 'vitamin B12, calcium, iron, potassium, sodium, magnesium, and zinc across everything in the photo. '
-  + 'Also give one combined estimate of what a similar portion of everything on the plate would '
-  + 'typically cost in Malaysian Ringgit at an ordinary Malaysian hawker stall, kopitiam, or casual '
+const PROMPT = 'You are analyzing a food or drink order for an F&B costing tool used in Malaysia. '
+  + 'You will be given a photo, a short text description, or both \u2014 use whatever is provided. If '
+  + "both are given, treat the text as the person's own clarification of anything the photo alone "
+  + "doesn't fully show (size, ice level, an off-menu substitution, a brand) rather than a separate "
+  + 'thing to also identify. Identify every distinct food or drink item. Count a sauce, garnish, or '
+  + 'drink add-on (e.g. boba, an extra shot, syrup) as its own item only if it\u2019s substantial enough '
+  + 'to matter nutritionally, not a token amount. For each item, estimate from typical serving sizes '
+  + '(and the photo\u2019s visible portion, if a photo was given): its common name, weight in grams, '
+  + 'calories for that weight, protein/carbs/fat/fiber in grams, and one short nutritional note. For a '
+  + 'drink or anything else primarily liquid, estimate weight_g from its typical serving volume \u2014 '
+  + 'roughly 1g per ml for a thin liquid (water, tea, most juices), adjusted upward for anything '
+  + 'notably dense (a thick shake, a creamy dessert drink) or carrying solid components (boba, ice, '
+  + 'fruit chunks) \u2014 rather than treating weight_g as inapplicable just because it\u2019s a drink. '
+  + 'Separately, give one combined estimate \u2014 not per item \u2014 of the total vitamin A, vitamin C, '
+  + 'vitamin D, vitamin B12, calcium, iron, potassium, sodium, magnesium, and zinc across everything '
+  + 'described or shown. Also give one combined estimate of what a similar order would typically cost '
+  + 'in Malaysian Ringgit at an ordinary Malaysian hawker stall, kopitiam, drink stall, or casual '
   + "eatery \u2014 a realistic low and high bound reflecting genuine price variation, not a single "
   + 'invented figure. '
-  + "Treat a mixed dish that can't be usefully split apart (a curry, a fried rice) as one item rather "
-  + 'than guessing at sub-ingredients. If nothing that looks like food is visible, return an empty '
-  + 'items array, zeros for micronutrients, and zeros for the price range rather than guessing.';
+  + "Treat a mixed dish or drink that can't be usefully split apart (a curry, a fried rice, a blended "
+  + 'smoothie) as one item rather than guessing at sub-ingredients. If what\u2019s shown or described '
+  + 'isn\u2019t identifiable as a real food or drink item, return an empty items array, zeros for '
+  + 'micronutrients, and zeros for the price range rather than guessing.';
 
 // Recipe mode is a deliberately separate call, not folded into the
 // schema/prompt above: it's a different kind of task (general recipe
@@ -163,22 +176,25 @@ const RECIPE_SCHEMA = {
   required: ['recognized', 'recipe_name', 'ingredients', 'total_ingredient_cost_myr'],
 };
 
-const RECIPE_PROMPT = 'You are looking at a photo of a plate of food for an F&B costing tool used in Malaysia. '
-  + 'Decide whether this photo clearly matches a common, well-known dish that has a fairly standard set '
-  + 'of ingredients \u2014 for example Chicken Rice, Nasi Lemak, Char Kway Teow, Mee Goreng, a basic fried '
-  + 'rice, or similar. If the food is a specific branded or franchise product without a public recipe '
-  + '(a McDonald\u2019s, KFC, or similar item), don\u2019t mark it unrecognized just for that \u2014 instead identify '
-  + 'the closest generic dish by cooking method and main ingredients (treat a branded fried chicken '
-  + 'product as generic deep-fried marinated chicken, for example) and break that down instead, naming '
-  + 'it in a way that makes the approximation clear, e.g. "Deep-fried marinated chicken (McDonald\u2019s-style)". '
-  + 'Only mark something unrecognized if you genuinely can\u2019t identify a reasonable standard or generic '
-  + 'equivalent at all \u2014 a one-off combination or a buffet-style plate with no clear cooking-method '
-  + 'analog. If it is recognized (standard or approximated), name the dish and list the STANDARD '
-  + 'ingredients and quantities used to make ONE PORTION of it as typically prepared \u2014 general recipe '
-  + 'knowledge, not an attempt to re-measure this specific photo. For each ingredient, estimate its cost '
-  + 'in Malaysian Ringgit at average Malaysian wet-market or grocery prices for that quantity, and sum '
-  + 'these into a total ingredient cost. If not recognized, return false, an empty recipe name, an empty '
-  + 'ingredients array, and zero for the total.';
+const RECIPE_PROMPT = 'You are looking at a food or drink order for an F&B costing tool used in Malaysia \u2014 '
+  + 'a photo, a text description, or both (use whatever is given; if both, the text may clarify what '
+  + 'the photo alone doesn\u2019t fully show). Decide whether it clearly matches a common, well-known '
+  + 'dish or drink that has a fairly standard set of ingredients \u2014 for example Chicken Rice, Nasi '
+  + 'Lemak, Char Kway Teow, Mee Goreng, a basic fried rice, iced Milo, teh tarik, or similar. If it\u2019s '
+  + 'a specific branded or franchise product without a public recipe (a McDonald\u2019s, KFC, Starbucks, '
+  + 'or similar item), don\u2019t mark it unrecognized just for that \u2014 instead identify the closest '
+  + 'generic dish or drink by preparation method and main ingredients (treat a branded fried chicken '
+  + 'product as generic deep-fried marinated chicken; a branded iced coffee drink as generic iced milk '
+  + 'coffee, for example) and break that down instead, naming it in a way that makes the approximation '
+  + 'clear, e.g. "Deep-fried marinated chicken (McDonald\u2019s-style)". Only mark something unrecognized '
+  + 'if you genuinely can\u2019t identify a reasonable standard or generic equivalent at all \u2014 a one-off '
+  + 'combination or a buffet-style plate with no clear preparation-method analog. If it is recognized '
+  + '(standard or approximated), name it and list the STANDARD ingredients and quantities used to make '
+  + 'ONE PORTION as typically prepared \u2014 general recipe knowledge, not an attempt to re-measure this '
+  + 'specific photo or description. For each ingredient, estimate its cost in Malaysian Ringgit at '
+  + 'average Malaysian wet-market or grocery prices for that quantity, and sum these into a total '
+  + 'ingredient cost. If not recognized, return false, an empty recipe name, an empty ingredients '
+  + 'array, and zero for the total.';
 
 function corsHeaders(origin) {
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -296,8 +312,10 @@ export default {
     try { body = await request.json(); }
     catch (e) { return json({ error: 'Invalid request body' }, 400, origin); }
 
-    if (!body || typeof body.image !== 'string' || !body.image) {
-      return json({ error: 'Missing image data' }, 400, origin);
+    const description = typeof body.description === 'string' ? body.description.trim() : '';
+    const hasImage = typeof body.image === 'string' && body.image;
+    if (!body || (!description && !hasImage)) {
+      return json({ error: 'Provide a photo, a description, or both.' }, 400, origin);
     }
     const mimeType = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
     const isRecipeMode = body.mode === 'recipe';
@@ -306,6 +324,14 @@ export default {
       return json({ error: 'Server is missing its Gemini key \u2014 add the GEMINI_API_KEY secret in this Worker\u2019s Settings.' }, 500, origin);
     }
 
+    // Text goes in ahead of the image (when both are given) so it
+    // reads as context for what follows, matching how the prompt
+    // itself describes the text as clarifying the photo rather than
+    // a second, separate thing to identify.
+    const inputParts = [{ type: 'text', text: isRecipeMode ? RECIPE_PROMPT : PROMPT }];
+    if (description) inputParts.push({ type: 'text', text: 'Description: ' + description });
+    if (hasImage) inputParts.push({ type: 'image', data: body.image, mime_type: mimeType });
+
     let geminiResp;
     try {
       geminiResp = await fetch(GEMINI_ENDPOINT, {
@@ -313,10 +339,7 @@ export default {
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
         body: JSON.stringify({
           model: GEMINI_MODEL,
-          input: [
-            { type: 'text', text: isRecipeMode ? RECIPE_PROMPT : PROMPT },
-            { type: 'image', data: body.image, mime_type: mimeType },
-          ],
+          input: inputParts,
           // Gemini 3-series models default to thinking_level "high" if this
           // is left unset — meaning extended internal reasoning before
           // producing any output. Fine for hard problems, unnecessary for

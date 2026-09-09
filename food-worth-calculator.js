@@ -1,23 +1,40 @@
 /* ============================================================
    Food Worth Calculator
-   Vanilla JS, no dependencies. The photo goes to the Cloudflare
-   Worker proxy (food-worth-proxy-worker.js) — never straight to
-   Gemini, and never with a key visible in this file.
+   Vanilla JS, no dependencies. The photo and/or description goes to
+   the Cloudflare Worker proxy (food-worth-proxy-worker.js) — never
+   straight to Gemini, and never with a key visible in this file.
    ------------------------------------------------------------
-   DATA MODEL (v4): a session is one or more "dishes". Each dish is
-   its own self-contained unit — own photo, own upload zone, own
-   editable item table, own subtotal — exactly the same repeatable-
-   block pattern menu-calculator.js already uses for .menu-block
-   (create*, scope every lookup to that instance via
-   panel.querySelector(), never a page-wide id). A dish panel is
-   just a .menu-block wearing a different hat.
+   DATA MODEL (v5, 2026-09-07): a session is one or more "dishes"
+   (the word covers drinks too — see below). Each dish is its own
+   self-contained unit — own input, own upload zone, own editable
+   item table, own subtotal — exactly the same repeatable-block
+   pattern menu-calculator.js already uses for .menu-block (create*,
+   scope every lookup to that instance via panel.querySelector(),
+   never a page-wide id). A dish panel is just a .menu-block wearing
+   a different hat.
+
+   INPUT MODES: each dish panel has two mutually exclusive tabs —
+   "Photo analyze" (a chosen photo, plus an optional short note for
+   anything the photo alone might not show — size, less ice, an
+   off-menu substitution) and "Text analyze" (just a typed
+   description, no photo at all, for someone who'd rather describe
+   what they had than take a picture). switchInputMode() toggles
+   which is active; gatherAnalysisInput() reads whichever one is
+   active into { image, description } when Analyze is clicked — both
+   fields are independently optional at the Worker level (mirroring
+   the "either, or both" contract Margin Audit's own proxy already
+   uses), but in practice exactly one side is populated per mode.
+   Drinks are a first-class case here, not an afterthought — the
+   Worker's own PROMPT explicitly covers food AND drinks, estimating
+   a liquid's weight_g from typical serving volume rather than
+   assuming everything in frame is solid food on a plate.
 
    Single food item mode: exactly one dish, tabs never appear.
    Meal mode: "+ Add another dish" is offered once the active dish
-   has results; 2+ dishes render as tabs automatically. The mode
-   dropdown doesn't change how any one photo is analyzed — Gemini
-   already returns multiple items from one photo just fine, e.g. a
-   full plate. It only gates whether you can add MORE photos.
+   has results; 2+ dishes render as tabs automatically. This tab
+   layer (dish tabs) is unrelated to the input-mode tabs above —
+   don't conflate switchToDish (which dish) with switchInputMode
+   (photo vs. text for the CURRENT dish).
 
    Meal totals = sum of every INCLUDED item across every dish. Price,
    benchmark, rating, and the macro bar are meal-level, not per-dish
@@ -47,16 +64,27 @@
    St Jeor) is a physiological formula, not a policy figure, so it
    doesn't change by country the way the nutrient/BMI bands do.
 
-   Recipe breakdown (analyzeRecipe() / runRecipeBreakdown()) is a
-   genuinely separate Gemini call, opt-in per dish via its own button
-   — not folded into the main analyzePhoto() schema, because it's a
-   different kind of task (general recipe/pricing knowledge, not
-   photo-precision estimation) that most analyses will never touch,
-   so it shouldn't cost every visitor extra latency/tokens by default.
-   Its result (an ingredient cost) is stored in its own WeakMap
-   (dishRecipeCost) and follows the exact same dish -> sum -> render
-   shape as typical price. computeImpliedFairPrice() grosses that sum
-   up via the F&B industry's ~30% ingredient-cost-structure benchmark
+   Recipe breakdown (analyzeRecipe(), called from inside runAnalysis)
+   is a genuinely separate Gemini call — not folded into the main
+   analyzePhoto() schema, because it's a different kind of task
+   (general recipe/pricing knowledge, not photo-precision estimation)
+   with its own prompt and schema. It used to be opt-in per dish via
+   its own button; as of 2026-09-07 it auto-runs alongside the main
+   analysis on every Analyze click instead (see runAnalysis), since
+   most people never found the separate button — it's still a
+   distinct API call under the hood, just no longer a distinct user
+   action. This does mean every Analyze click now costs two Gemini
+   calls instead of one; see MAX_ANALYSES_PER_DAY's own comment for
+   how the daily cap was adjusted to compensate. Its ingredient rows
+   are editable (quantity, price) in the rendered panel, so the cost
+   is read live from those inputs via getRecipeCost() — same "never
+   cache what's editable" rule as getDishTotals() reading the item
+   table — rather than a stored WeakMap total that would go stale the
+   moment a price is corrected; panel.dataset.recipeRecognized is the
+   one thing still tracked outside the DOM, since it's what an
+   empty/never-run panel needs to be told apart from a genuinely
+   zero-cost one. computeImpliedFairPrice() grosses that sum up via
+   the F&B industry's ~30% ingredient-cost-structure benchmark
    — cost \u00f7 target, not cost \u00d7 markup — deliberately never
    merged into computeValueRating()'s own rating; paid price, typical
    market price, and the ingredient-cost fair price are three
@@ -86,9 +114,11 @@
    (.fw-recipe-panel) moved out of .fw-dish-results and into its own
    .fw-recipe-col, sitting beside the photo in a new .fw-dish-top-grid
    two-column layout instead of appearing full-width under the item
-   table — the "Break down as a recipe" button moved up alongside
-   Choose/Analyze accordingly, gated the same way (disabled until
-   analysis succeeds, not just hidden/absent). computeWorthiness() now
+   table. Superseded 2026-09-07 (see below) once a dish could just as
+   easily have no photo at all — the panel is full-width again now,
+   but for a different reason than the original pre-09-05 layout:
+   this time because it has to work for both input tabs, not because
+   nothing better was tried yet. computeWorthiness() now
    returns {label, score} instead of a bare string, since the new
    gold-bordered "Worth it" banner above the summary strip
    (renderWorthBanner / #fw-worth-banner) needs the raw 0-1 score to
@@ -98,33 +128,56 @@
    jumping to each results section and auto-opening any closed
    <details> found there.
 
+   DONE, 2026-09-07 (were KIV above as of 2026-09-05):
+     - Vitamin C/D's Malaysian NRV cross-referenced against RNI 2017
+       (see the comment above MICRONUTRIENT_FIELDS for sourcing and
+       confidence level — one step removed from the gazetted Fifth A
+       Schedule text itself, which still isn't freely published
+       anywhere this could confirm word-for-word). Potassium and
+       Sodium are unaffected — still flat mg claim thresholds, not a
+       %NRV table, per Malaysia's own regulations.
+     - Editable recipe ingredients: recipePanel's rendered list now
+       has real inputs for quantity and price, recomputed on edit via
+       getRecipeCost()/recalcRecipeSummary() the same way getDishTotals()
+       already does for the main item table.
+     - Recipe breakdown no longer needs its own button — it auto-runs
+       alongside the main analysis on every Analyze click instead
+       (see the big comment above and runAnalysis further down).
+     - Photo analyze / text analyze input tabs (switchInputMode(),
+       gatherAnalysisInput()) — a dish no longer requires a photo;
+       describing it in text works the whole way through, and a photo
+       can now carry an optional note alongside it for anything the
+       picture alone might not show.
+     - Drinks are explicitly covered now, not just "a plate of food"
+       — see PROMPT/RECIPE_PROMPT in food-worth-proxy-worker.js for
+       the liquid-weight-estimation guidance this needed on the
+       Worker side; nothing structural changed in this file for it,
+       since weight_g already worked fine as the one universal unit.
+
    FUTURE (KIV, architected for but not built):
-     - Confirm current Malaysian NRV for Vitamin C/D against the
-       gazetted Fifth A Schedule text directly, and for Potassium and
-       Sodium if Malaysia ever publishes a distinct %NRV instead of
-       flat mg thresholds for those two — dvMy is a single number per
-       row, so this is a data fix, not a structural change.
-     - Editable recipe ingredients (adjust a price Gemini got wrong,
-       the same way item rows are already editable) — would mean
-       recipePanel's rendered list needs inputs instead of plain
-       text, and dishRecipeCost recomputed on edit like getDishTotals
-       already does for items.
      - Live market pricing (an actual price dataset/API) instead of
        Gemini's own estimate, for either typical price or ingredient
        costs, if the estimates prove too rough in practice —
-       dishTypicalPrice and dishRecipeCost are already their own
-       WeakMaps, so swapping the source only touches runAnalysis()/
-       runRecipeBreakdown().
+       dishTypicalPrice is already its own WeakMap and ingredient
+       cost is already read live off the DOM, so swapping the source
+       only touches runAnalysis()/analyzeRecipe() either way.
    ============================================================ */
 
-console.info('[Food Worth Calculator] script build: 2026-09-05-v12-ui-polish-tooltips-recipe-layout-worth-banner-quicknav');
+console.info('[Food Worth Calculator] script build: 2026-09-07-v14-photo-text-tabs-auto-recipe-drinks');
 
 /* ================= CONFIG ================= */
 
 const MAX_IMAGE_EDGE = 1024; // px — resized client-side before it's ever sent
 const PROXY_ENDPOINT = 'https://food-worth-proxy.reysourcez-ent.workers.dev';
 
-const MAX_ANALYSES_PER_DAY = 20;
+// Counts individual Gemini calls, not Analyze clicks — since
+// 2026-09-07, every click fires two calls (main breakdown + recipe
+// breakdown, run together, see runAnalysis), where it used to fire
+// one. Doubled from 20 to 40 here for that reason, so the ORIGINAL
+// intent (roughly 20 dishes analyzed per browser per day) still
+// holds rather than silently halving to 10 the moment recipe
+// breakdown stopped being opt-in.
+const MAX_ANALYSES_PER_DAY = 40;
 const USAGE_STORAGE_KEY = 'fw-usage';
 
 // Two parallel reference standards, switchable in the UI (see
@@ -135,19 +188,29 @@ const USAGE_STORAGE_KEY = 'fw-usage';
 // figure for a nutrient (potassium and sodium are handled there as
 // flat mg claim thresholds, not a %NRV table), dvMy falls back to
 // the same internationally-common figure used for dvUsa. Vitamin
-// C/D's dvMy are the last-confirmed pre-2024-amendment values —
-// Malaysia's own amendment notice lists both as having increased
-// but doesn't publish the replacement number anywhere this could
-// verify, so it's worth checking against the current gazetted text
-// if exact precision matters to you (see the settings table in
-// FOOD_WORTH_CHANGE_NOTES.md for exactly which line to edit).
+// C/D's dvMy were 60mg/5mcg (the pre-2024 values) until 2026-09-07,
+// when they were updated to 70mg/15mcg — cross-referenced against
+// Malaysia's RNI 2017 report (National Coordinating Committee on
+// Food and Nutrition, the direct input the food-labelling NRV
+// amendment drew from) rather than the gazetted Fifth A Schedule
+// table itself, which still isn't freely published anywhere this
+// could confirm word-for-word. Confidence is reasonably good —
+// 15mcg for vitamin D matches RNI 2017 exactly (a direct increase
+// from the RNI 2005 figure of 5mcg, per a peer-reviewed citation),
+// and 70mg for vitamin C sits inside RNI 2017's cited adult range
+// (45–90mg, with 70mg the commonly-quoted single figure) — but
+// this is still one step removed from the actual gazette text, so
+// worth a final check against that directly if exact regulatory
+// precision ever matters more than it does for a rough meal-worth
+// signal (see the settings table in FOOD_WORTH_CHANGE_NOTES.md for
+// exactly which line to edit if a correction is needed).
 // `caution` flags sodium as a heads-up nutrient rather than a
 // selling point; `lowHint`/`highHint` are the food-suggestion text
 // for computeNutrientCoverage() — see further down.
 const MICRONUTRIENT_FIELDS = [
   { key: 'vitamin_a_mcg', label: 'Vitamin A', unit: 'mcg', dvUsa: 900, dvMy: 800, lowHint: 'leafy greens, carrots, or orange sweet potato' },
-  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg', dvUsa: 90, dvMy: 60, lowHint: 'citrus fruit, guava, or bell pepper' },
-  { key: 'vitamin_d_mcg', label: 'Vitamin D', unit: 'mcg', dvUsa: 20, dvMy: 5, lowHint: 'fatty fish, eggs, or a bit of sunlight' },
+  { key: 'vitamin_c_mg', label: 'Vitamin C', unit: 'mg', dvUsa: 90, dvMy: 70, lowHint: 'citrus fruit, guava, or bell pepper' },
+  { key: 'vitamin_d_mcg', label: 'Vitamin D', unit: 'mcg', dvUsa: 20, dvMy: 15, lowHint: 'fatty fish, eggs, or a bit of sunlight' },
   { key: 'vitamin_b12_mcg', label: 'Vitamin B12', unit: 'mcg', dvUsa: 2.4, dvMy: 2.4, lowHint: 'fish, eggs, or dairy' },
   { key: 'calcium_mg', label: 'Calcium', unit: 'mg', dvUsa: 1300, dvMy: 1000, lowHint: 'dairy, tofu, or leafy greens' },
   { key: 'iron_mg', label: 'Iron', unit: 'mg', dvUsa: 18, dvMy: 14, lowHint: 'red meat, spinach, or lentils' },
@@ -318,13 +381,22 @@ function resizeImageToBase64(file) {
 
 /* ================= PROXY CALL ================= */
 
-async function analyzePhoto(base64Image) {
+// input is { image, description } — either may be undefined, but not
+// both (gatherAnalysisInput()/runAnalysis() already guarantee at
+// least one is present before this is ever called). Same "either, or
+// both" contract as Margin Audit's proxy already uses for its own
+// dish_cost_estimate call, extended here to the main item breakdown.
+async function analyzePhoto(input) {
   let response;
   try {
     response = await fetch(PROXY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64Image, mime_type: 'image/jpeg' }),
+      body: JSON.stringify({
+        image: input.image || undefined,
+        mime_type: input.image ? 'image/jpeg' : undefined,
+        description: input.description || undefined,
+      }),
     });
   } catch (e) {
     throw new Error('Could not reach the analysis service \u2014 check PROXY_ENDPOINT is correct and that this page\u2019s URL is in the Worker\u2019s ALLOWED_ORIGINS.');
@@ -345,17 +417,25 @@ async function analyzePhoto(base64Image) {
   };
 }
 
-// Same endpoint, same photo already sitting in memory — just a
-// different mode flag, so the Worker runs a different prompt/schema
-// against it (see food-worth-proxy-worker.js). Opt-in only: this
-// never runs as part of the normal analyzePhoto() flow.
-async function analyzeRecipe(base64Image) {
+// Same endpoint, same input already gathered — just a different mode
+// flag, so the Worker runs a different prompt/schema against it (see
+// food-worth-proxy-worker.js). As of 2026-09-07 this auto-runs
+// alongside analyzePhoto() on every Analyze click (see runAnalysis)
+// rather than needing its own button — a description-only dish gets
+// exactly the same treatment as a photo one, since recipe knowledge
+// doesn't require a picture any more than the main breakdown does.
+async function analyzeRecipe(input) {
   let response;
   try {
     response = await fetch(PROXY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: base64Image, mime_type: 'image/jpeg', mode: 'recipe' }),
+      body: JSON.stringify({
+        image: input.image || undefined,
+        mime_type: input.image ? 'image/jpeg' : undefined,
+        description: input.description || undefined,
+        mode: 'recipe',
+      }),
     });
   } catch (e) {
     throw new Error('Could not reach the analysis service \u2014 check PROXY_ENDPOINT is correct and that this page\u2019s URL is in the Worker\u2019s ALLOWED_ORIGINS.');
@@ -737,6 +817,19 @@ function renderIngredientFairPrice(ingredientCost) {
 // takes priority (a failed call); otherwise recognized=false gets a
 // plain "didn't match" message rather than an empty ingredient list,
 // so it reads as an explanation, not a bug.
+//
+// 2026-09-07: ingredient rows are now genuinely editable (quantity
+// and price), not read-only text \u2014 same reasoning as every other
+// AI estimate on this page: Gemini's guess is a starting point, and
+// the vendor may simply know their own supplier price better. Name
+// stays a plain label \u2014 editing what an ingredient IS feels like a
+// different action (add/remove) than correcting a number Gemini
+// estimated for it, and isn't what was asked for. The two summary
+// figures get stable classes (.fw-recipe-cost-value /
+// .fw-recipe-fair-value) so recalcRecipeSummary() can update just
+// those two numbers per keystroke without rebuilding this whole
+// innerHTML \u2014 doing a full rebuild on every keystroke would blow
+// away focus and cursor position mid-edit.
 function renderRecipePanel(el, result, errorMessage) {
   if (errorMessage) {
     el.innerHTML = `<p class="fw-status is-error">${escapeHTML(errorMessage)}</p>`;
@@ -748,16 +841,52 @@ function renderRecipePanel(el, result, errorMessage) {
   }
   const rows = result.ingredients.map((ing) => `<li>
       <span class="fw-recipe-ing-name">${escapeHTML(ing.name)}</span>
-      <span class="fw-recipe-ing-qty">${escapeHTML(ing.quantity || '')}</span>
-      <span class="fw-recipe-ing-price">${formatRM(numOrZero(Number(ing.price_myr)))}</span>
+      <input type="text" class="fw-recipe-ing-qty-input" value="${escapeHTML(ing.quantity || '')}" aria-label="Quantity of ${escapeHTML(ing.name)}">
+      <input type="number" class="fw-recipe-ing-price-input" min="0" step="0.01" value="${numOrZero(Number(ing.price_myr)).toFixed(2)}" aria-label="Estimated cost of ${escapeHTML(ing.name)} in RM">
     </li>`).join('');
   const fairPrice = computeImpliedFairPrice(result.totalCost);
   el.innerHTML = `
     <h3 class="fw-recipe-title">${escapeHTML(result.recipeName || 'This dish')} \u2014 standard recipe</h3>
-    <p class="fw-recipe-disclaimer">A rough breakdown based on how this dish is typically made (or its closest generic equivalent, for a branded item) and average Malaysian ingredient prices \u2014 not this specific plate's actual recipe or sourcing, so treat these as a ballpark for comparison, not an exact figure.</p>
+    <p class="fw-recipe-disclaimer">A rough breakdown based on how this dish is typically made (or its closest generic equivalent, for a branded item) and average Malaysian ingredient prices \u2014 not this specific plate's actual recipe or sourcing, so treat these as a ballpark for comparison. Know a price better? Edit it below \u2014 the totals update as you go.</p>
     <ul class="fw-recipe-ingredients">${rows}</ul>
-    <p class="fw-recipe-total">Ingredient cost: <strong>${formatRM(result.totalCost)}</strong> \u00b7 Implied fair price at a ${Math.round(INGREDIENT_COST_TARGET_PCT * 100)}% ingredient-cost structure: <strong>${formatRM(fairPrice)}</strong></p>
+    <p class="fw-recipe-total">Ingredient cost: <strong class="fw-recipe-cost-value">${formatRM(result.totalCost)}</strong> \u00b7 Implied fair price at a ${Math.round(INGREDIENT_COST_TARGET_PCT * 100)}% ingredient-cost structure: <strong class="fw-recipe-fair-value">${formatRM(fairPrice)}</strong></p>
   `;
+  const dishPanel = el.closest('.fw-dish-panel');
+  el.querySelectorAll('.fw-recipe-ing-price-input').forEach((input) => {
+    input.addEventListener('input', () => recalcRecipeSummary(dishPanel));
+  });
+}
+
+// Mirrors getDishTotals()'s "always read live from the DOM, never
+// trust a cached number" approach \u2014 now that ingredient rows are
+// editable, the recipe cost has to be summed the same way, not
+// pulled from a number that would go stale the moment someone
+// corrects a price. panel.dataset.recipeRecognized (set in
+// runAnalysis, where the recipe call now lives) is what tells
+// "recipe never run" / "came back unrecognized" apart from an
+// actually-priced dish \u2014 both those cases render no ingredient rows
+// to sum, so this would already return 0 by construction, but the
+// flag makes that explicit rather than relying on an empty NodeList
+// meaning the same thing by luck.
+function getRecipeCost(panel) {
+  if (panel.dataset.recipeRecognized !== 'true') return 0;
+  let sum = 0;
+  panel.querySelectorAll('.fw-recipe-ing-price-input').forEach((input) => { sum += num(input); });
+  return sum;
+}
+
+// Called on every ingredient-price edit. Updates only the summary
+// line's two numbers in place, deliberately not re-running
+// renderRecipePanel()'s full innerHTML rebuild for the same reason
+// recalculateDish() never touches the item table's own <input>
+// elements, only reads them.
+function recalcRecipeSummary(panel) {
+  const cost = getRecipeCost(panel);
+  const costEl = panel.querySelector('.fw-recipe-cost-value');
+  const fairEl = panel.querySelector('.fw-recipe-fair-value');
+  if (costEl) costEl.textContent = formatRM(cost);
+  if (fairEl) fairEl.textContent = formatRM(computeImpliedFairPrice(cost));
+  recalculateMeal();
 }
 
 // Reads whichever calorie-need mode is active. Manual mode is just
@@ -989,49 +1118,126 @@ async function handleFileSelect(e, panel) {
     img.src = previewUrl;
     img.hidden = false;
     panel.querySelector('.fw-upload-zone').classList.add('has-image');
-    panel.querySelector('.fw-analyze-btn').disabled = false;
-    setStatus(statusEl, 'Photo ready \u2014 click Analyze photo when you\u2019re set.');
+    updateAnalyzeButtonState(panel);
+    setStatus(statusEl, 'Photo ready \u2014 click Analyze when you\u2019re set.');
   } catch (err) {
     setStatus(statusEl, err.message || 'Could not read that photo.', true);
   }
 }
 
+// Photo analyze / text analyze are mutually exclusive input modes,
+// same pattern as Margin Audit's AI-estimate/manual source tabs \u2014
+// switching doesn't clear either side's data, just changes which one
+// gatherAnalysisInput() reads when Analyze is clicked. The Analyze
+// button's own label switches with it, so it never reads "Analyze
+// photo" while about to send a typed description, or vice versa.
+function switchInputMode(panel, mode) {
+  panel.dataset.inputMode = mode;
+  panel.querySelectorAll('.fw-input-tab').forEach((t) => t.classList.toggle('is-active', t.dataset.inputMode === mode));
+  panel.querySelectorAll('.fw-input-panel').forEach((p) => { p.hidden = p.dataset.inputPanel !== mode; });
+  panel.querySelector('.fw-analyze-btn').textContent = mode === 'text' ? 'Analyze description' : 'Analyze photo';
+  updateAnalyzeButtonState(panel);
+}
+
+// Enabled once the ACTIVE mode has something to send \u2014 a chosen
+// photo for photo mode (the optional note never gates it on its
+// own), or actual typed text for text mode. Called on tab switch and
+// on every keystroke in the text-mode textarea.
+function updateAnalyzeButtonState(panel) {
+  const btn = panel.querySelector('.fw-analyze-btn');
+  if (panel.dataset.inputMode === 'text') {
+    btn.disabled = !panel.querySelector('.fw-text-desc').value.trim();
+  } else {
+    btn.disabled = !dishImageData.get(panel);
+  }
+}
+
+// Reads whichever mode is active into the shape both analyzePhoto()
+// and analyzeRecipe() take \u2014 image and description are each
+// independently optional at the Worker level (same "either, or both"
+// contract Margin Audit's proxy already uses), but exactly one side
+// is actually populated here per mode: photo mode sends the chosen
+// photo plus its optional note (context the photo alone might not
+// show \u2014 size, less ice, an off-menu substitution); text mode
+// sends only the typed description, no image at all.
+function gatherAnalysisInput(panel) {
+  if (panel.dataset.inputMode === 'text') {
+    return { image: undefined, description: panel.querySelector('.fw-text-desc').value.trim() };
+  }
+  const note = panel.querySelector('.fw-photo-note').value.trim();
+  return { image: dishImageData.get(panel), description: note || undefined };
+}
+
+// Runs the main item breakdown AND the recipe/ingredient-cost
+// breakdown together, in parallel \u2014 recipe breakdown used to be a
+// separate opt-in button; as of 2026-09-07 it auto-runs on every
+// Analyze instead, since most people never found the second button.
+// The two calls are independent (both just need the same input,
+// neither depends on the other's result), so Promise.all fires them
+// together rather than waiting on one before starting the next. The
+// recipe call is individually wrapped so ITS failure never fails the
+// whole analysis \u2014 a dish that doesn't match a standard recipe, or
+// a recipe call that times out, shouldn't take the main item
+// breakdown down with it. Each Analyze click now costs TWO Gemini
+// calls instead of one \u2014 see MAX_ANALYSES_PER_DAY's own comment for
+// how the daily cap was adjusted to match.
 async function runAnalysis(panel) {
   const statusEl = panel.querySelector('.fw-status');
+  const mode = panel.dataset.inputMode;
 
   if (!PROXY_ENDPOINT || PROXY_ENDPOINT === 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE') {
     setStatus(statusEl, 'This tool needs its proxy URL set \u2014 see PROXY_ENDPOINT near the top of food-worth-calculator.js.', true);
     return;
   }
-  const base64 = dishImageData.get(panel);
-  if (!base64) {
-    setStatus(statusEl, 'Add a photo first.', true);
+  const input = gatherAnalysisInput(panel);
+  if (!input.image && !input.description) {
+    setStatus(statusEl, mode === 'text' ? 'Type a description first.' : 'Add a photo first.', true);
     return;
   }
-  if (getUsageToday() >= MAX_ANALYSES_PER_DAY) {
+  if (getUsageToday() + 2 > MAX_ANALYSES_PER_DAY) {
     setStatus(statusEl, 'This browser has hit today\u2019s analysis limit. Try again tomorrow.', true);
     return;
   }
 
   const btn = panel.querySelector('.fw-analyze-btn');
   btn.disabled = true;
-  setStatus(statusEl, 'Looking at your photo\u2026');
+  setStatus(statusEl, mode === 'text' ? 'Reading your description\u2026' : 'Looking at your photo\u2026');
+  const recipePanel = panel.querySelector('.fw-recipe-panel');
+  recipePanel.hidden = false;
+  recipePanel.innerHTML = '<p class="fw-status">Checking if this matches a common recipe\u2026</p>';
 
   try {
-    const result = await analyzePhoto(base64);
-    recordUsage();
+    const [result, recipeOutcome] = await Promise.all([
+      analyzePhoto(input),
+      analyzeRecipe(input).then((r) => ({ ok: true, value: r })).catch((e) => ({ ok: false, error: e })),
+    ]);
+    recordUsage(); // main analysis call
+    recordUsage(); // recipe-breakdown call \u2014 fired alongside it every time now
     dishMicronutrients.set(panel, result.micronutrients);
     dishTypicalPrice.set(panel, result.typicalPrice);
     panel.querySelector('.fw-item-rows').innerHTML = '';
     if (result.items.length === 0) {
-      setStatus(statusEl, 'Didn\u2019t spot any food in that photo \u2014 try a clearer, closer shot.', true);
+      setStatus(statusEl, mode === 'text'
+        ? 'Couldn\u2019t identify a food or drink from that description \u2014 try adding what it is and roughly how much.'
+        : 'Didn\u2019t spot any food or drink in that photo \u2014 try a clearer, closer shot, or add a note describing it.', true);
+      recipePanel.hidden = true;
+      panel.dataset.recipeRecognized = 'false';
     } else {
       result.items.forEach((it) => createItemRow(panel, it));
       panel.querySelector('.fw-dish-results').hidden = false;
-      panel.querySelector('.fw-recipe-btn').disabled = false;
       document.getElementById('fw-meal-section').hidden = false;
       document.getElementById('fw-detail-section').hidden = false;
       document.getElementById('fw-quick-nav').hidden = false;
+
+      if (recipeOutcome.ok) {
+        const recipe = recipeOutcome.value;
+        panel.dataset.recipeRecognized = (recipe.recognized && Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0) ? 'true' : 'false';
+        renderRecipePanel(recipePanel, recipe);
+      } else {
+        panel.dataset.recipeRecognized = 'false';
+        renderRecipePanel(recipePanel, null, 'Couldn\u2019t check for a standard recipe this time \u2014 the item breakdown below is still accurate.');
+      }
+
       recalculateDish(panel);
       recalculateMeal();
       updateAddDishVisibility();
@@ -1040,43 +1246,13 @@ async function runAnalysis(panel) {
     }
   } catch (err) {
     setStatus(statusEl, err.message || 'Something went wrong. Try again.', true);
+    recipePanel.hidden = true;
   } finally {
     btn.disabled = false;
   }
 }
 
 /* ================= CONTROLLER: meal-level (sums every dish) ================= */
-
-async function runRecipeBreakdown(panel) {
-  const base64 = dishImageData.get(panel);
-  const recipePanel = panel.querySelector('.fw-recipe-panel');
-  if (!base64 || !recipePanel) return; // shouldn't happen — button only shows after a successful photo analysis
-
-  if (getUsageToday() >= MAX_ANALYSES_PER_DAY) {
-    recipePanel.hidden = false;
-    renderRecipePanel(recipePanel, null, 'This browser has hit today\u2019s analysis limit. Try again tomorrow.');
-    return;
-  }
-
-  const btn = panel.querySelector('.fw-recipe-btn');
-  btn.disabled = true;
-  btn.textContent = 'Breaking down\u2026';
-  recipePanel.hidden = false;
-  recipePanel.innerHTML = '<p class="fw-status">Checking if this matches a common recipe\u2026</p>';
-
-  try {
-    const result = await analyzeRecipe(base64);
-    recordUsage();
-    dishRecipeCost.set(panel, result.recognized ? result.totalCost : 0);
-    renderRecipePanel(recipePanel, result);
-    recalculateMeal();
-  } catch (err) {
-    renderRecipePanel(recipePanel, null, err.message || 'Something went wrong. Try again.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Break down as a recipe';
-  }
-}
 
 function recalculateMeal() {
   const panels = Array.from(document.querySelectorAll('.fw-dish-panel'));
@@ -1101,7 +1277,7 @@ function recalculateMeal() {
     mealPrice.low += numOrZero(dishPrice.low);
     mealPrice.high += numOrZero(dishPrice.high);
 
-    mealIngredientCost += numOrZero(dishRecipeCost.get(panel));
+    mealIngredientCost += getRecipeCost(panel);
   });
 
   const price = num(document.getElementById('fw-price'));
@@ -1136,7 +1312,6 @@ function recalculateMeal() {
 const dishImageData = new WeakMap();
 const dishMicronutrients = new WeakMap();
 const dishTypicalPrice = new WeakMap();
-const dishRecipeCost = new WeakMap();
 
 let dishIdCounter = 0;
 
@@ -1148,6 +1323,7 @@ function createDishPanel() {
   const panel = document.createElement('div');
   panel.className = 'fw-dish-panel menu-block';
   panel.dataset.dishId = id;
+  panel.dataset.inputMode = 'photo';
   panel.innerHTML = `
     <div class="menu-block-header">
       <input type="text" class="menu-name-input fw-dish-name" value="${escapeHTML(label)}" aria-label="Dish name">
@@ -1155,21 +1331,29 @@ function createDishPanel() {
     </div>
 
     <div class="fw-upload-zone">
-      <div class="fw-dish-top-grid">
-        <div class="fw-photo-col">
-          <img class="fw-preview-img" alt="" hidden>
-          <div class="fw-upload-row no-print">
-            <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo<input type="file" accept="image/*" class="sr-only fw-photo-input"></label>
-            <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
-            <button type="button" class="btn btn-secondary fw-recipe-btn" disabled>Break down as a recipe</button>
-          </div>
-        </div>
-        <div class="fw-recipe-col">
-          <div class="fw-recipe-panel" hidden></div>
-        </div>
+      <div class="fw-input-tabs no-print" role="tablist">
+        <button type="button" class="fw-input-tab is-active" data-input-mode="photo">Photo analyze</button>
+        <button type="button" class="fw-input-tab" data-input-mode="text">Text analyze</button>
       </div>
+
+      <div class="fw-input-panel" data-input-panel="photo">
+        <img class="fw-preview-img" alt="" hidden>
+        <div class="fw-upload-row no-print">
+          <label class="btn btn-secondary" style="cursor:pointer;">Choose or take a photo<input type="file" accept="image/*" class="sr-only fw-photo-input"></label>
+        </div>
+        <textarea class="fw-photo-note" placeholder="Optional \u2014 anything the photo might not show: size, less ice, off-menu item, brand"></textarea>
+      </div>
+
+      <div class="fw-input-panel" data-input-panel="text" hidden>
+        <textarea class="fw-text-desc" placeholder="Describe the food or drink \u2014 e.g. &quot;1 plate chicken rice, extra chili&quot; or &quot;large iced Milo, less sweet&quot;"></textarea>
+      </div>
+
+      <div class="calc-actions no-print">
+        <button type="button" class="btn btn-primary fw-analyze-btn" disabled>Analyze photo</button>
+      </div>
+      <p class="fw-status no-print" role="status" aria-live="polite"></p>
+      <div class="fw-recipe-panel" hidden></div>
     </div>
-    <p class="fw-status no-print" role="status" aria-live="polite"></p>
 
     <div class="fw-dish-results" hidden>
       <div class="table-scroll">
@@ -1201,6 +1385,10 @@ function createDishPanel() {
   document.getElementById('fw-dish-panels').appendChild(panel);
   panel.dataset.included = 'true';
 
+  panel.querySelectorAll('.fw-input-tab').forEach((tab) => {
+    tab.addEventListener('click', () => switchInputMode(panel, tab.dataset.inputMode));
+  });
+  panel.querySelector('.fw-text-desc').addEventListener('input', () => updateAnalyzeButtonState(panel));
   panel.querySelector('.fw-photo-input').addEventListener('change', (e) => handleFileSelect(e, panel));
   panel.querySelector('.fw-analyze-btn').addEventListener('click', () => runAnalysis(panel));
   panel.querySelector('.fw-add-item').addEventListener('click', () => {
@@ -1208,7 +1396,6 @@ function createDishPanel() {
     recalculateDish(panel);
     recalculateMeal();
   });
-  panel.querySelector('.fw-recipe-btn').addEventListener('click', () => runRecipeBreakdown(panel));
   panel.querySelector('.fw-dish-name').addEventListener('input', renderDishTabs);
   panel.querySelector('.fw-remove-dish').addEventListener('click', () => {
     const wasActive = !panel.hidden;
