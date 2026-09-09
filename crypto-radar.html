@@ -49,30 +49,41 @@
 .cr-disclaimer { background: var(--paper); border-left: 3px solid #D4A017; border-radius: 6px; padding: 12px 16px; font-size: 0.85rem; color: var(--muted); }
 .cr-disclaimer strong { color: #9C7A12; }
 
-.cr-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 16px; }
+.cr-market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; margin-top: 12px; }
+.cr-tier-section + .cr-tier-section { margin-top: 10px; }
+.cr-tier-summary { cursor: pointer; list-style: none; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.cr-tier-summary::-webkit-details-marker { display: none; }
+.cr-tier-summary h3 { display: inline-flex; align-items: baseline; gap: 8px; margin: 0; font-size: 1rem; }
+.cr-tier-summary h3::after { content: '\25be'; font-size: 0.7em; color: var(--muted); transition: transform 0.15s ease; }
+.cr-tier-section[open] .cr-tier-summary h3::after { transform: rotate(180deg); }
+.cr-tier-count { font-weight: 400; color: var(--muted); font-size: 0.85rem; }
 .cr-coin-card {
   border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface);
-  cursor: pointer; text-align: left; font-family: var(--font-body); display: flex; flex-direction: column; gap: 6px;
+  cursor: pointer; text-align: left; font-family: var(--font-body); display: flex; flex-direction: column; gap: 4px;
+  position: relative;
 }
 .cr-coin-card:hover, .cr-coin-card:focus-visible { border-color: var(--accent); outline: none; }
 .cr-coin-card:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 .cr-coin-card.is-selected { border-color: var(--accent); border-width: 2px; }
-.cr-coin-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.cr-coin-star { position: absolute; top: 10px; right: 12px; color: #D4A017; font-size: 1.1rem; }
+.cr-coin-top { display: flex; align-items: center; gap: 8px; }
+.cr-coin-icon { position: relative; width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cr-coin-icon img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.cr-coin-icon-fallback { color: #fff; font-family: var(--font-display); font-weight: 700; font-size: 0.7rem; }
 .cr-coin-name { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; }
-.cr-coin-price { font-family: "IBM Plex Mono", monospace; font-size: 0.95rem; }
-.cr-coin-change { font-family: "IBM Plex Mono", monospace; font-size: 0.85rem; font-weight: 600; }
+.cr-coin-blended { font-family: "IBM Plex Mono", monospace; font-size: 1.5rem; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
+.cr-coin-sublabel { font-size: 0.75rem; color: var(--muted); }
+.cr-coin-price { font-family: "IBM Plex Mono", monospace; font-size: 0.95rem; margin-top: 2px; }
+.cr-coin-change { font-family: "IBM Plex Mono", monospace; font-size: 2.4rem; font-weight: 700; line-height: 1; }
 .cr-coin-change.is-up { color: #0F6E56; }
 .cr-coin-change.is-down { color: #C0392B; }
+@media (max-width: 480px) { .cr-coin-change { font-size: 1.7rem; } }
 .cr-coin-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 0.78rem; color: var(--muted); }
 
 .cr-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
 .cr-badge.is-bullish { background: #E1F5EE; color: #085041; }
 .cr-badge.is-bearish { background: #FCEBEB; color: #791F1F; }
 .cr-badge.is-neutral { background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
-.cr-liquidity-tag { font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); }
-.cr-liquidity-tag.is-low { border-color: #C0392B; color: #C0392B; }
-.cr-liquidity-tag.is-medium { border-color: #D4A017; color: #9C7A12; }
-.cr-liquidity-tag.is-high { border-color: var(--accent); color: var(--accent-dark); }
 
 .cr-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--line); margin-bottom: 16px; }
 .cr-tab { background: none; border: none; padding: 8px 12px; font-family: var(--font-body); font-weight: 600; font-size: 0.85rem; color: var(--muted); cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; }
@@ -126,8 +137,8 @@
    rather than assumed global. */
 .cr-collapsible-summary { cursor: pointer; list-style: none; padding: 4px 0; }
 .cr-collapsible-summary::-webkit-details-marker { display: none; }
-.cr-collapsible-summary h3 { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
-.cr-collapsible-summary h3::after { content: '\25be'; font-size: 0.65em; color: var(--muted); position: relative; top: -1px; transition: transform 0.15s ease; }
+.cr-collapsible-summary h3, .cr-collapsible-summary h2 { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.cr-collapsible-summary h3::after, .cr-collapsible-summary h2::after { content: '\25be'; font-size: 0.65em; color: var(--muted); position: relative; top: -1px; transition: transform 0.15s ease; }
 .cr-collapsible[open] .cr-collapsible-summary h3::after { transform: rotate(180deg); }
 .cr-collapsible-body { padding: 8px 0 4px; font-size: 0.92rem; line-height: 1.55; }
 .cr-collapsible + .cr-collapsible { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
@@ -135,6 +146,28 @@
 @media (max-width: 700px) {
   .cr-orderbook { grid-template-columns: 1fr; }
   .cr-topbar-field input, .cr-topbar-field select { min-width: 0; width: 100%; }
+}
+
+/* Same pattern as Food Worth's #fw-quick-nav — fixed bottom-right stack,
+   hidden until scrolled, each button jumps to a section via scrollIntoView.
+   Kept page-scoped like theirs rather than promoted to styles.css, since
+   Margin Audit's own version already shows this isn't meant to be one
+   shared component across tools. */
+#cr-quick-nav { position: fixed; right: 20px; bottom: 20px; z-index: 40; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.cr-quick-nav-btn {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
+  font-family: var(--font-body); font-size: 0.82rem; font-weight: 600; color: var(--text); cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12); white-space: nowrap;
+}
+.cr-quick-nav-btn:hover, .cr-quick-nav-btn:focus-visible { border-color: var(--accent); outline: none; }
+#cr-back-to-top {
+  background: var(--accent); color: #fff; border: none; border-radius: 999px; padding: 10px 18px;
+  font-family: var(--font-body); font-size: 0.85rem; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+}
+#cr-back-to-top:hover { background: var(--accent-dark); }
+@media (max-width: 480px) {
+  #cr-quick-nav { right: 12px; bottom: 12px; }
+  .cr-quick-nav-btn { padding: 7px 12px; font-size: 0.76rem; }
 }
 </style>
 </head>
@@ -160,8 +193,11 @@ Reysourcez Enterprise
 <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
 <li><a href="printing-calculator.html">Printing Calculator</a></li>
 <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-<li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
+<li><a href="margin-audit-calculator.html">Margin Audit</a></li>
 <li><a href="food-worth-calculator.html">Food Worth</a></li>
+<!-- New this page. The other 6 pages' copies of this dropdown don't
+     have this <li> yet — per AI_BUILD_BRIEF.md that's reconciled
+     centrally rather than hand-edited from a single-page session. -->
 <li><a href="crypto-radar.html" aria-current="page">Crypto Radar</a></li>
 </ul>
 </li>
@@ -185,10 +221,6 @@ Reysourcez Enterprise
 <div class="cr-box">
 <div class="cr-topbar">
 <div class="cr-topbar-field">
-<label for="cr-worker-url">https://crypto-radar-worker.reysourcez-ent.workers.dev/<span class="tooltip-icon" data-tooltip="Deploy crypto-radar-worker.js to Cloudflare Workers and paste its URL here. Without it, this page runs on demo data so you can see it working. See SETUP_AND_GLOSSARY.md.">?</span></label>
-<input type="url" id="cr-worker-url" placeholder="https://your-worker.your-name.workers.dev" inputmode="url" autocomplete="off">
-</div>
-<div class="cr-topbar-field">
 <label for="cr-refresh-interval">Auto-refresh</label>
 <select id="cr-refresh-interval">
 <option value="0">Off</option>
@@ -197,7 +229,6 @@ Reysourcez Enterprise
 <option value="300">Every 5 min</option>
 </select>
 </div>
-<button type="button" id="cr-save-settings" class="btn btn-secondary">Save &amp; connect</button>
 <button type="button" id="cr-update-now" class="btn btn-primary">Update now</button>
 <span class="cr-status is-demo" id="cr-status"><span class="cr-status-dot" aria-hidden="true"></span><span id="cr-status-text">Demo data</span></span>
 </div>
@@ -237,12 +268,59 @@ Reysourcez Enterprise
 </div>
 </section>
 
-<section class="calc-panel">
+<section class="calc-panel" id="cr-coins-section">
 <div class="wrap">
 <h2>All Luno MY coins</h2>
-<p class="structure-note">Tap a coin to open its full breakdown below. Sorted by 24h volume by default — see Settings above to change what's tracked once you're connected to live data.</p>
-<div class="cr-market-grid" id="cr-market-grid">
-<!-- populated by JS: one .cr-coin-card per MYR pair -->
+<p class="structure-note">Grouped by liquidity, sorted within each group by blended score — confluence weighted down for thinner coins, since a big reading there is more often volatility noise than genuine conviction (see the Confluence score glossary entry). <span class="tooltip-icon" data-tooltip="Bu55/100 = raw confluence, 55 out of -100..100, leaning bullish. The bigger number above it is that same score after the liquidity discount — what actually decides sort order and gold stars.">?</span> Tap a coin to open its full breakdown.</p>
+
+<details class="cr-tier-section" open id="cr-tier-active">
+<summary class="cr-tier-summary"><h3>Active <span class="cr-tier-count" id="cr-tier-active-count"></span></h3></summary>
+<div class="cr-market-grid" id="cr-market-grid-active"></div>
+</details>
+
+<details class="cr-tier-section" id="cr-tier-medium">
+<summary class="cr-tier-summary"><h3>Medium <span class="cr-tier-count" id="cr-tier-medium-count"></span></h3></summary>
+<div class="cr-market-grid" id="cr-market-grid-medium"></div>
+</details>
+
+<details class="cr-tier-section" id="cr-tier-thin">
+<summary class="cr-tier-summary"><h3>Thin <span class="cr-tier-count" id="cr-tier-thin-count"></span></h3></summary>
+<div class="cr-market-grid" id="cr-market-grid-thin"></div>
+</details>
+</div>
+</section>
+
+<!-- Moved above Coin/MYR Detail on purpose (was previously the first
+     collapsible inside the detail section, below the charts) — the
+     headline read should be visible before the technical detail, not
+     after it. Still entirely about whichever coin is currently selected;
+     renderConfluence()/renderScorecard() populate these same element ids
+     regardless of where in the DOM they now live. -->
+<section class="calc-panel" id="cr-confluence-section" hidden>
+<div class="wrap">
+<h2>Confluence read</h2>
+<div class="cr-box">
+<p class="structure-note" id="cr-confluence-summary">—</p>
+<div class="cr-confluence-meter"><div class="cr-confluence-needle" id="cr-confluence-needle" style="left:50%"></div></div>
+<div class="cr-confluence-labels"><span>Bearish confluence</span><span>Neutral</span><span>Bullish confluence</span></div>
+
+<div class="cr-regime-row">
+<span class="cr-scorecard-label">Trend Regime<span class="tooltip-icon" data-tooltip="A separate, simpler vote count across 10 moving-average and trend checks — deliberately kept apart from the weighted Confluence score above. See the glossary entry for why the two won't always agree.">?</span></span>
+<span id="cr-regime-label" class="cr-badge is-neutral">—</span>
+<span class="cr-source-note" id="cr-regime-votes"></span>
+<span class="cr-source-note" id="cr-regime-score" style="font-family:'IBM Plex Mono',monospace;"></span>
+</div>
+
+<div class="cr-watch-zones">
+<div class="result-card">
+<span class="result-label">Watch zone — entry side<span class="tooltip-icon" data-tooltip="Nearest support level combined with Bollinger lower band and Fibonacci retracement — a zone worth watching, not a guaranteed floor. Shown as a shaded band on the chart below too.">?</span></span>
+<span class="result-value" id="cr-entry-zone">—</span>
+</div>
+<div class="result-card">
+<span class="result-label">Watch zone — TP side<span class="tooltip-icon" data-tooltip="Nearest resistance level combined with Bollinger upper band and Fibonacci extension — a zone worth watching, not a guaranteed ceiling. Shown as a shaded band on the chart below too.">?</span></span>
+<span class="result-value" id="cr-tp-zone">—</span>
+</div>
+</div>
 </div>
 </div>
 </section>
@@ -257,48 +335,21 @@ Reysourcez Enterprise
 <div class="cr-tabs" id="cr-timeframe-tabs" role="tablist" aria-label="Timeframe"></div>
 
 <div class="cr-chart-wrap">
-<svg id="cr-price-chart" viewBox="0 0 640 320" role="img" aria-label="Price chart with moving averages, Bollinger Bands, and support/resistance levels"></svg>
+<svg id="cr-price-chart" width="640" height="320" viewBox="0 0 640 320" role="img" aria-label="Candlestick price chart with moving averages, Bollinger Bands, support/resistance, and entry/TP zones"></svg>
 <div class="cr-chart-legend" id="cr-price-legend"></div>
 </div>
 <div class="cr-chart-wrap">
-<svg id="cr-volume-chart" viewBox="0 0 640 80" role="img" aria-label="Trading volume per candle"></svg>
+<svg id="cr-volume-chart" width="640" height="96" viewBox="0 0 640 96" role="img" aria-label="Trading volume per candle"></svg>
 </div>
 <div class="cr-chart-wrap">
-<svg id="cr-rsi-chart" viewBox="0 0 640 120" role="img" aria-label="Relative Strength Index"></svg>
+<svg id="cr-rsi-chart" width="640" height="130" viewBox="0 0 640 130" role="img" aria-label="Relative Strength Index"></svg>
 </div>
 <div class="cr-chart-wrap">
-<svg id="cr-macd-chart" viewBox="0 0 640 120" role="img" aria-label="MACD"></svg>
+<svg id="cr-macd-chart" width="640" height="130" viewBox="0 0 640 130" role="img" aria-label="MACD"></svg>
 </div>
 
 <div class="cr-box">
 <details class="cr-collapsible" open>
-<summary class="cr-collapsible-summary"><h3>Confluence read</h3></summary>
-<div class="cr-collapsible-body">
-<p class="structure-note" id="cr-confluence-summary">—</p>
-<div class="cr-confluence-meter"><div class="cr-confluence-needle" id="cr-confluence-needle" style="left:50%"></div></div>
-<div class="cr-confluence-labels"><span>Bearish confluence</span><span>Neutral</span><span>Bullish confluence</span></div>
-
-<div class="cr-regime-row">
-<span class="cr-scorecard-label">Trend Regime<span class="tooltip-icon" data-tooltip="A separate, simpler vote count across 10 moving-average and trend checks — deliberately kept apart from the weighted Confluence score above. See the glossary entry for why the two won't always agree.">?</span></span>
-<span id="cr-regime-label" class="cr-badge is-neutral">—</span>
-<span class="cr-source-note" id="cr-regime-votes"></span>
-<span class="cr-source-note" id="cr-regime-score" style="font-family:'IBM Plex Mono',monospace;"></span>
-</div>
-
-<div class="cr-watch-zones">
-<div class="result-card">
-<span class="result-label">Watch zone — entry side<span class="tooltip-icon" data-tooltip="Nearest support level combined with Bollinger lower band and Fibonacci retracement — a zone worth watching, not a guaranteed floor.">?</span></span>
-<span class="result-value" id="cr-entry-zone">—</span>
-</div>
-<div class="result-card">
-<span class="result-label">Watch zone — TP side<span class="tooltip-icon" data-tooltip="Nearest resistance level combined with Bollinger upper band and Fibonacci extension — a zone worth watching, not a guaranteed ceiling.">?</span></span>
-<span class="result-value" id="cr-tp-zone">—</span>
-</div>
-</div>
-</div>
-</details>
-
-<details class="cr-collapsible">
 <summary class="cr-collapsible-summary"><h3>Full indicator scorecard</h3></summary>
 <div class="cr-collapsible-body">
 <div class="cr-scorecard-grid" id="cr-scorecard-grid"><!-- populated by JS --></div>
@@ -318,10 +369,10 @@ Reysourcez Enterprise
 <details class="cr-collapsible">
 <summary class="cr-collapsible-summary"><h3>News &amp; AI insight</h3></summary>
 <div class="cr-collapsible-body">
-<div class="cr-ai-box is-empty" id="cr-ai-insight">Connect a Worker with a Gemini key to see an AI-generated read of this coin (Settings above). Optional — the scorecard above works fully without it.</div>
+<div class="cr-ai-box is-empty" id="cr-ai-insight">AI insight needs a Worker with a Gemini key set in CONFIG.WORKER_URL (crypto-radar.js). Optional — the scorecard above works fully without it.</div>
 <button type="button" id="cr-get-insight" class="btn btn-secondary" style="margin-top:10px;">Get AI insight for this coin</button>
 <h4 style="margin-top:20px;">Latest crypto headlines</h4>
-<ul class="cr-news-list" id="cr-news-list"><li class="cr-news-meta">Connect a Worker to load live headlines.</li></ul>
+<ul class="cr-news-list" id="cr-news-list"><li class="cr-news-meta">Set CONFIG.WORKER_URL in crypto-radar.js to load live headlines.</li></ul>
 </div>
 </details>
 </div>
@@ -329,25 +380,32 @@ Reysourcez Enterprise
 </div>
 </section>
 
-<section class="calc-panel">
+<section class="calc-panel" id="cr-glossary-section">
 <div class="wrap">
-<h2>Glossary</h2>
+<details class="cr-collapsible">
+<summary class="cr-collapsible-summary"><h2>Glossary</h2></summary>
+<div class="cr-collapsible-body">
 <p class="structure-note">Every term used above, in plain language. Tap any <span class="tooltip-icon" data-tooltip="Like this — hover or tap for a quick definition wherever you see one.">?</span> icon on the page for a quick inline definition instead of coming back here.</p>
 <div class="cr-box">
 <div id="cr-glossary"><!-- populated by JS from GLOSSARY in crypto-radar.js, so the wording only needs to be maintained in one place --></div>
 </div>
 </div>
+</details>
+</div>
 </section>
 
-<section class="calc-panel">
+<section class="calc-panel" id="cr-settings-section">
 <div class="wrap">
-<h2>Settings reference</h2>
+<details class="cr-collapsible">
+<summary class="cr-collapsible-summary"><h2>Settings reference</h2></summary>
+<div class="cr-collapsible-body">
 <p class="structure-note">Everything you can change without touching any code lives in the <code>CONFIG</code> block at the top of <code>crypto-radar.js</code> — column two below is what to type, column one is what's there now by default.</p>
 <div class="cr-box">
 <table class="cr-config-table">
 <thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
 <tbody>
 <tr><td><code>SITE_NAME</code></td><td>Crypto Radar</td><td>Title shown in the browser tab and page header.</td></tr>
+<tr><td><code>WORKER_URL</code></td><td>(empty)</td><td>Your deployed Worker's URL — paste it here once, applies to every visitor. Empty = demo data.</td></tr>
 <tr><td><code>DEFAULT_REFRESH_SECONDS</code></td><td>30</td><td>Auto-refresh interval when the page first loads.</td></tr>
 <tr><td><code>DEFAULT_TIMEFRAME</code></td><td>86400 (1 day)</td><td>Candle size shown when a coin is first opened.</td></tr>
 <tr><td><code>SUPPORT_RESISTANCE_SENSITIVITY</code></td><td>3</td><td>How strict a swing high/low must be to count as a level. Lower = more levels found.</td></tr>
@@ -355,12 +413,17 @@ Reysourcez Enterprise
 <tr><td><code>ORDER_BLOCK_IMPULSE_MULT</code></td><td>1.5</td><td>How much bigger than an average candle the breakout move must be to count as a real order block. Raise this for fewer, stronger zones.</td></tr>
 <tr><td><code>REGIME_ADX_THRESHOLD</code></td><td>25</td><td>ADX level required for the Trend Regime badge to say "Strong" Bull/Bear rather than just Bull/Bear.</td></tr>
 <tr><td><code>CANDLE_LOOKBACK_COUNT</code></td><td>220</td><td>How many candles are requested per timeframe. Must stay at 200+ or SMA 200 in the scorecard can't compute — this was bumped from 180 for exactly that reason.</td></tr>
+<tr><td><code>CHART_VISIBLE_CANDLES</code></td><td>90</td><td>How many recent candles the chart draws at once. Indicators still use the full history above; this only controls how many candlesticks are on screen.</td></tr>
+<tr><td><code>LIQUIDITY_MULTIPLIERS</code></td><td>1.0 / 0.7 / 0.45</td><td>How much confluence is discounted for Active / Medium / Thin coins when computing the blended score coins are sorted and starred by.</td></tr>
+<tr><td><code>GOLD_STAR_COUNT</code></td><td>5</td><td>How many coins (by blended score, across all tiers) get a gold star.</td></tr>
 <tr><td><code>INDICATOR_WEIGHTS</code></td><td>see file</td><td>How much each indicator counts toward the confluence score. All equal by default except MACD and support/resistance, weighted slightly higher.</td></tr>
 <tr><td><code>NEWS_HEADLINE_COUNT</code></td><td>15</td><td>How many headlines to show in the News panel.</td></tr>
 </tbody>
 </table>
 </div>
-<p class="cr-source-note">The Worker URL itself is set from the Settings bar above (top of page), not from this file — that way it can be changed without redeploying anything. It's kept in the page's address bar (<code>?worker=...</code>) rather than saved anywhere, per this site's "nothing persists" rule — bookmark the URL with your Worker attached if you want it to reopen pre-filled.</p>
+<p class="cr-source-note">All of these — including <code>WORKER_URL</code> — live in one place: the <code>CONFIG</code> block at the very top of <code>crypto-radar.js</code>. One edit, applies to every visitor, no separate setup per browser.</p>
+</div>
+</details>
 </div>
 </section>
 
@@ -402,7 +465,14 @@ Reysourcez Enterprise
 </div>
 </footer>
 
-<button type="button" id="cr-back-to-top" class="no-print" hidden>&uarr; Back to top</button>
+<div id="cr-quick-nav" class="no-print" hidden>
+<button type="button" class="cr-quick-nav-btn" data-target="cr-coins-section">All coins</button>
+<button type="button" class="cr-quick-nav-btn" data-target="cr-confluence-section" id="cr-quicknav-confluence" hidden>Confluence</button>
+<button type="button" class="cr-quick-nav-btn" data-target="cr-detail-section" id="cr-quicknav-detail" hidden>Coin detail</button>
+<button type="button" class="cr-quick-nav-btn" data-target="cr-glossary-section">Glossary</button>
+<button type="button" class="cr-quick-nav-btn" data-target="cr-settings-section">Settings ref</button>
+<button type="button" id="cr-back-to-top">&uarr; Top</button>
+</div>
 
 <!-- No costing-sync.js / #rz-switcher here on purpose — this tool doesn't
      exchange cost data with the F&B calculators (crypto prices aren't a

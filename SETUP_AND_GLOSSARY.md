@@ -34,7 +34,7 @@ Without the Worker connected, the page still works — it just says so honestly 
    - `GEMINI_API_KEY` — see below
    - Optionally `ALLOWED_ORIGIN` (e.g. `https://reysourcez.com`) once the page is live on your real domain — until then it defaults to allowing any origin, which is fine for testing but worth tightening later
 5. Copy the Worker's URL (shown at the top of its dashboard page, looks like `https://crypto-radar-worker.yourname.workers.dev`).
-6. Open `crypto-radar.html`, paste that URL into the **Cloudflare Worker URL** field at the top of the page, click **Save & connect**. The status pill should switch from "Demo data" to "Live — Luno API".
+6. Open `crypto-radar.js`, find `WORKER_URL: ''` right at the top in the `CONFIG` block, and paste the URL in between the quotes. Save, re-upload that one file. The status pill on the page should switch from "Demo data" to "Live — Luno API" for every visitor, not just you — there's no per-visitor setup step.
 
 *(Prefer the command line? `wrangler deploy crypto-radar-worker.js` then `wrangler secret put LUNO_KEY_ID` etc. does the same thing.)*
 
@@ -51,11 +51,12 @@ Without the Worker connected, the page still works — it just says so honestly 
 
 ## Settings you can change without touching code
 
-The Worker URL is entered on the page itself (Settings bar at the top) — everything else lives in the `CONFIG` block at the very top of `crypto-radar.js`:
+Every one of these — including the Worker URL — lives in the `CONFIG` block at the very top of `crypto-radar.js`. One edit applies to every visitor; there's no separate setup per browser or per person:
 
 | Setting | Current value | What to change it to |
 |---|---|---|
 | `SITE_NAME` | `Crypto Radar` | Any text — shown in the browser tab |
+| `WORKER_URL` | (empty) | Your deployed Worker's URL, e.g. `https://crypto-radar-worker.yourname.workers.dev`. Empty = demo data |
 | `DEFAULT_REFRESH_SECONDS` | `30` | Any number of seconds, or `0` for no auto-refresh |
 | `DEFAULT_TIMEFRAME` | `86400` (1 day) | One of: 60, 300, 900, 1800, 3600, 10800, 14400, 86400, 259200, 604800 |
 | `SUPPORT_RESISTANCE_SENSITIVITY` | `3` | Lower = more (noisier) levels found; higher = fewer, stronger ones |
@@ -63,13 +64,27 @@ The Worker URL is entered on the page itself (Settings bar at the top) — every
 | `ORDER_BLOCK_IMPULSE_MULT` | `1.5` | How much bigger than average the breakout candle must be to count as a real zone |
 | `REGIME_ADX_THRESHOLD` | `25` | ADX needed for the Trend Regime badge to say "Strong" rather than plain Bull/Bear |
 | `CANDLE_LOOKBACK_COUNT` | `220` | Candles fetched per timeframe. Keep at 200+ — SMA 200 can't compute below that |
+| `CHART_VISIBLE_CANDLES` | `90` | How many recent candlesticks the chart draws at once. Indicators still use the full history above |
+| `LIQUIDITY_MULTIPLIERS` | `1.0 / 0.7 / 0.45` | How much confluence is discounted for Active/Medium/Thin coins — see "Blended score" below |
+| `GOLD_STAR_COUNT` | `5` | How many coins (by blended score, across all tiers) get a gold star |
 | `NEWS_HEADLINE_COUNT` | `15` | Any number |
 | `INDICATOR_WEIGHTS` | see file | Any indicator's contribution to the confluence score — all visible and editable, none hidden |
+
+## Coin icons (optional — falls back gracefully without them)
+
+The coin grid looks for an icon at `icons/{symbol}.svg` (lowercase, no MYR suffix — e.g. `icons/btc.svg`, `icons/ankr.svg`). If that file 404s, the page shows a coloured monogram badge instead — no broken-image icon, no console spam, nothing to configure. So this step is entirely optional and safe to skip.
+
+To add real logos:
+1. Grab **[computationalcore/cryptocurrency-icons](https://github.com/computationalcore/cryptocurrency-icons)** (a continuation of the well-known `spothq` set) — **CC0-licensed**, so no attribution is required, which matters for a commercial site.
+2. Copy its `svg/color/` folder into your repo as a top-level `icons/` folder (so `svg/color/btc.svg` becomes `icons/btc.svg`).
+3. Deploy — nothing else to wire up, the page already looks in that exact location.
+
+Luno lists some coins this pack won't have an icon for (new or very small listings) — those just show the monogram badge, which is expected, not a bug.
 
 ## Honest limitations (please read before trusting a number on this page)
 
 - **Not financial advice, and not a prediction tool.** Every indicator here describes *past* price action. The confluence score, entry zone, and TP zone are a structured way of reading the chart faster — nobody, including this dashboard, can reliably call a market bottom or top in advance.
-- **Thin coins give noisier signals.** A handful of MYR pairs on Luno trade at very low volume — the page flags these as "Thin" liquidity, and indicator readings there deserve less confidence than the same reading on Bitcoin or Ethereum.
+- **Thin coins give noisier signals.** A handful of MYR pairs on Luno trade at very low volume — the page flags these as "Thin" liquidity, and indicator readings there deserve less confidence than the same reading on Bitcoin or Ethereum. The blended score (below) is this dashboard's attempt to correct for that — but the exact discount factors are a judgment call, not a scientifically derived constant. They're deliberately visible and tunable in `CONFIG` rather than presented as a settled formula.
 - **Fear & Greed is market-wide, not per-coin.** There's no standard per-altcoin equivalent — it's shown as overall crypto sentiment context, not a signal about the specific coin you're viewing.
 - **Candle history depth varies by pair.** Newer or smaller listings may not have as much history as Bitcoin/Ethereum, especially at longer timeframes — the page will tell you if there isn't enough history yet to trust every indicator.
 - **News matching is by keyword, not guaranteed relevance.** Headlines are general crypto news, not filtered per-coin — the AI insight does its best to flag genuinely relevant ones but can miss or over-attribute.
@@ -95,7 +110,8 @@ The Worker URL is entered on the page itself (Settings bar at the top) — every
 - **Fear & Greed Index** — Daily 0–100 sentiment reading for the crypto market overall (not per-coin), from alternative.me.
 - **Support / Resistance** — Price levels where the chart has previously turned, found by clustering past swing highs/lows.
 - **Confluence score** — This dashboard's own summary: a transparent, weighted vote across every indicator above, −100 to +100. A read of *now*, not a forecast.
-- **Liquidity** — How much genuine buying/selling is happening. Thin liquidity = price can sit still even as indicators update — trust signals less here.
+- **Liquidity / Active / Medium / Thin** — How much genuine buying/selling is happening, ranked by MYR-notional 24h volume (price × volume — not raw volume, which isn't comparable across coins priced wildly differently) and split into three even groups. Thin liquidity = price can sit still even as indicators update, and momentum indicators swing to extremes more easily on noise alone — trust signals less here.
+- **Blended score** — Confluence score × a liquidity discount (Active ≈1.0, Medium ≈0.7, Thin ≈0.45). This is what the coin grid actually sorts and gold-stars by, not raw confluence — a thin coin needs a much more lopsided reading to rank alongside an active one with a moderate reading. Shown big on each coin card; the smaller "Bu55/100 · Active" line underneath is the *undiscounted* raw confluence plus the tier it came from.
 - **Order book (bid/ask)** — Live buy orders (bids) and sell orders (asks) waiting to fill.
 - **HTF Pivot** — Classic pivot point ((prior day's high+low+close)÷3), used as a bias line no matter which timeframe tab is open.
 - **EMA Cross (21/55)** — % gap between the 21- and 55-period EMA; widening suggests an accelerating trend, near-zero suggests convergence.
@@ -109,6 +125,5 @@ These were left out of this version on purpose, to keep the first build reviewab
 
 - **Price alerts** — browser notification when a coin crosses a support/resistance level or confluence threshold
 - **Backtesting** — running the confluence score against historical data to see how it would have performed, so its usefulness is measured rather than assumed
-- **Candlestick-style charts** — the current price chart is a line chart; true OHLC candles are a visual upgrade, not a functional one
 - **Portfolio view** — if you connect a Luno key with balance-read permission, showing your actual holdings alongside the analysis (bigger security surface, so flagging rather than assuming)
 - **CoinMarketCal integration** — a dedicated crypto events calendar (product launches, unlocks, listings) exists as a free-tier API; left out for now since the AI insight already surfaces relevant news, but a dedicated events feed would be more structured

@@ -21,6 +21,14 @@
 // page itself for a plain-English table of what each of these does.
 const CONFIG = {
   SITE_NAME: 'Crypto Radar',
+  // Paste your deployed Worker URL here once you've done the deploy steps
+  // in SETUP_AND_GLOSSARY.md — looks like
+  // "https://crypto-radar-worker.yourname.workers.dev". This is the site's
+  // own single Worker serving every visitor, not a per-visitor setting, so
+  // it belongs here rather than as something each person types in. Left
+  // empty, the page runs entirely on demo data — a safe default, not a
+  // broken one.
+  WORKER_URL: 'https://crypto-radar-worker.reysourcez-ent.workers.dev/',
   DEFAULT_REFRESH_SECONDS: 30,
   DEFAULT_TIMEFRAME: 86400, // 1 day, in seconds — must be one of TIMEFRAMES below
   SUPPORT_RESISTANCE_SENSITIVITY: 3,
@@ -29,6 +37,29 @@ const CONFIG = {
   ORDER_BLOCK_SWING_LOOKBACK: 10, // candles on each side used to define a "swing" high/low
   ORDER_BLOCK_IMPULSE_MULT: 1.5, // how much bigger than the average candle the breakout move must be
   REGIME_ADX_THRESHOLD: 25, // ADX at/above this = "trending" enough to call a regime "Strong"
+  // Overview-grid confluence uses a smaller candle set than an opened
+  // detail view — computing full history for 50+ coins on every refresh
+  // isn't worth the extra Worker/Luno calls when RSI/MACD/Stochastic are
+  // all stable well under this count anyway. SMA200/EMA144 will come back
+  // null for this lighter pass (not enough candles) and confluenceScore()
+  // already handles missing indicators by just not counting that vote —
+  // same function, smaller input, no special-casing needed.
+  OVERVIEW_LOOKBACK_COUNT: 60,
+  // Blended score = confluence x this multiplier. A thin coin needs a much
+  // more lopsided confluence reading to rank alongside an active one with a
+  // moderate reading — see the glossary entry for why (illiquid price action
+  // pushes momentum indicators to extremes more easily; that's noise
+  // amplitude, not conviction). Tunable, visible, same spirit as every
+  // other weight on this dashboard.
+  LIQUIDITY_MULTIPLIERS: { high: 1.0, medium: 0.7, low: 0.45 },
+  GOLD_STAR_COUNT: 5, // top N coins by blended score, across all tiers, get a star
+  // Indicators compute over the full CANDLE_LOOKBACK_COUNT history (SMA200
+  // needs it), but drawing 220 individual candlesticks into a 640px-wide
+  // chart would render as an unreadable smear — real platforms show a
+  // recent window on screen while computing indicators over full history.
+  // This is that window, applied identically across all four stacked
+  // charts so their x-axes stay aligned to the same date range.
+  CHART_VISIBLE_CANDLES: 90,
   INDICATOR_WEIGHTS: {
     rsi: 1, macd: 1.5, trend: 1, bollinger: 1, stochastic: 1,
     adx: 1, cmf: 1, obv: 1, supportResistance: 1.5,
@@ -124,7 +155,12 @@ const state = {
   news: [],
   selectedPair: null,
   timeframe: CONFIG.DEFAULT_TIMEFRAME,
-  candleCache: {}, // key: `${pair}:${duration}` -> candle array
+  candleCache: {}, // key: `${pair}:${duration}:${count}` -> candle array
+  overviewScores: {}, // pair -> { confluence, blended, tier }
+  selectionToken: 0, // bumped on every selectCoin() call; a renderDetail()
+                      // in flight checks this before writing to the DOM, so
+                      // a slow, stale response from a previously-clicked
+                      // coin can never overwrite a newer selection's render
 };
 
 // ======================= INDICATORS =======================
@@ -430,7 +466,7 @@ function trendRegime(votes, adx) {
 // coin/timeframe is opened, so all of it lives in one place.
 function computeAll(candles) {
   const o = candles.map(c => c.open), h = candles.map(c => c.high), l = candles.map(c => c.low),
-        c = candles.map(c => c.close), v = candles.map(c => c.volume);
+        c = candles.map(c => c.close), v = candles.map(c => c.volume), t = candles.map(c => c.timestamp);
   const i = candles.length - 1;
   const rsiArr = rsi(c, 14);
   const macdRes = macd(c);
@@ -475,7 +511,7 @@ function computeAll(candles) {
 
   const score = confluenceScore(latest, CONFIG.INDICATOR_WEIGHTS);
 
-  return { o, h, l, c, v, rsiArr, macdRes, bb, stoch, obvArr, atrArr, adxRes, psar, vwapArr, cmfArr, ich, fib, sr, ema50, sma20, ribbon, orderBlocks, latest, score, nearestSupport, nearestResistance };
+  return { o, h, l, c, v, t, rsiArr, macdRes, bb, stoch, obvArr, atrArr, adxRes, psar, vwapArr, cmfArr, ich, fib, sr, ema50, sma20, ribbon, orderBlocks, latest, score, nearestSupport, nearestResistance };
 }
 
 // ======================= DATA LAYER =======================
@@ -504,16 +540,17 @@ async function loadMarkets() {
   }
 }
 
-async function loadCandles(pair, duration) {
-  const key = `${pair}:${duration}`;
+async function loadCandles(pair, duration, lookbackCount) {
+  const count = lookbackCount || CONFIG.CANDLE_LOOKBACK_COUNT;
+  const key = `${pair}:${duration}:${count}`;
   if (state.mode !== 'live') {
     const seed = DEMO_MARKETS_SEED.find(m => m.pair === pair) || DEMO_MARKETS_SEED[0];
-    const candles = makeDemoCandles(seed.price, CONFIG.CANDLE_LOOKBACK_COUNT, pair.charCodeAt(0) + duration);
+    const candles = makeDemoCandles(seed.price, count, pair.charCodeAt(0) + duration);
     state.candleCache[key] = candles;
     return candles;
   }
   try {
-    const since = Date.now() - duration * 1000 * CONFIG.CANDLE_LOOKBACK_COUNT;
+    const since = Date.now() - duration * 1000 * count;
     const data = await apiFetch(`/api/candles?pair=${pair}&duration=${duration}&since=${since}`);
     const candles = (data.candles || []).map(c => ({ timestamp: c.timestamp, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume) }));
     state.candleCache[key] = candles;
@@ -521,7 +558,7 @@ async function loadCandles(pair, duration) {
   } catch (err) {
     console.warn('Candle fetch failed, using demo candles for this pair:', err.message);
     const seed = DEMO_MARKETS_SEED.find(m => m.pair === pair) || { price: 1000 };
-    const candles = makeDemoCandles(seed.price, CONFIG.CANDLE_LOOKBACK_COUNT, pair.charCodeAt(0) + duration);
+    const candles = makeDemoCandles(seed.price, count, pair.charCodeAt(0) + duration);
     state.candleCache[key] = candles;
     return candles;
   }
@@ -549,7 +586,7 @@ async function loadOrderbook(pair) {
 async function loadNews() {
   if (state.mode !== 'live') {
     state.news = [
-      { title: 'Connect a Worker to load live headlines here', link: '#', pubDate: '', source: 'Demo' },
+      { title: 'Set CONFIG.WORKER_URL in crypto-radar.js to load live headlines', link: '#', pubDate: '', source: 'Demo' },
     ];
     return;
   }
@@ -572,18 +609,67 @@ function formatMYR(v) {
   const decimals = v >= 100 ? 2 : v >= 1 ? 4 : 6;
   return 'RM' + Number(v).toLocaleString('en-MY', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
+// Luno's rolling_24_hour_volume is denominated in the BASE asset (XBT
+// amount for XBTMYR, DOGE amount for DOGEMYR, etc.) — comparing those raw
+// numbers directly across coins isn't meaningful (98,000 DOGE and 3.8 XBT
+// aren't remotely the same size trade). Every cross-coin liquidity
+// comparison needs the MYR-notional figure instead; the raw native-unit
+// number is still fine to *display* on a coin's own card, just not to sort
+// or rank across different coins by.
+function myrVolume(m) {
+  return Number(m.last_trade) * Number(m.rolling_24_hour_volume);
+}
 function badgeHtml(signal) {
   const cls = signal > 0 ? 'is-bullish' : signal < 0 ? 'is-bearish' : 'is-neutral';
   const label = signal > 0 ? 'Bullish' : signal < 0 ? 'Bearish' : 'Neutral';
   return `<span class="cr-badge ${cls}">${label}</span>`;
 }
 function liquidityTier(pair) {
-  const sorted = [...state.markets].sort((a, b) => Number(b.rolling_24_hour_volume) - Number(a.rolling_24_hour_volume));
+  const sorted = [...state.markets].sort((a, b) => myrVolume(b) - myrVolume(a));
   const rank = sorted.findIndex(m => m.pair === pair);
   const n = sorted.length || 1;
   if (rank < n / 3) return 'high';
   if (rank < (2 * n) / 3) return 'medium';
   return 'low';
+}
+
+// Confluence for every tracked coin, not just whichever one is open — this
+// is what lets the coin grid be sorted/starred by "worth trading" rather
+// than raw volume alone. Reuses computeAll() itself (not a separate,
+// parallel implementation) against a smaller candle set — RSI/MACD/
+// Stochastic/CMF are all stable well under 60 candles; SMA200/EMA144 come
+// back null, which confluenceScore() already handles by just not counting
+// that vote, so nothing here needs special-casing for the shorter history.
+async function computeOverviewScores() {
+  const results = await Promise.allSettled(state.markets.map(async (m) => {
+    const candles = await loadCandles(m.pair, 86400, CONFIG.OVERVIEW_LOOKBACK_COUNT);
+    if (candles.length < 20) return { pair: m.pair, confluence: null, blended: null, tier: liquidityTier(m.pair) };
+    const computed = computeAll(candles);
+    const tier = liquidityTier(m.pair);
+    const blended = Math.round(computed.score * CONFIG.LIQUIDITY_MULTIPLIERS[tier]);
+    return { pair: m.pair, confluence: computed.score, blended, tier };
+  }));
+  const scores = {};
+  results.forEach((r) => { if (r.status === 'fulfilled' && r.value) scores[r.value.pair] = r.value; });
+  state.overviewScores = scores;
+}
+
+// Top N by blended score, across every tier — a thin coin needing a much
+// more lopsided reading to get here (see LIQUIDITY_MULTIPLIERS) is the
+// whole point, not an oversight; it isn't capped to any one tier.
+function goldStarPairs() {
+  return new Set(
+    Object.entries(state.overviewScores)
+      .filter(([, s]) => s.blended != null)
+      .sort((a, b) => b[1].blended - a[1].blended)
+      .slice(0, CONFIG.GOLD_STAR_COUNT)
+      .map(([pair]) => pair)
+  );
+}
+
+function scoreLabel(value) {
+  if (value == null) return '—';
+  return (value >= 0 ? 'Bu' : 'Be') + Math.abs(value);
 }
 
 // ======================= CHARTS (hand-rolled SVG) =======================
@@ -608,25 +694,112 @@ function pathFor(values, xFn, yFn) {
   return d.trim();
 }
 
+// See CONFIG.CHART_VISIBLE_CANDLES for why this exists: indicators need the
+// full fetched history, the on-screen chart doesn't. Order-block indices
+// are relative to the FULL array, so they get re-based (and dropped if they
+// formed before the visible window starts) wherever they're used below.
+function windowSlice(computed, n) {
+  const take = (arr) => arr.slice(-n);
+  return {
+    o: take(computed.o), h: take(computed.h), l: take(computed.l), c: take(computed.c), v: take(computed.v), t: take(computed.t),
+    rsiArr: take(computed.rsiArr),
+    macdRes: { line: take(computed.macdRes.line), signal: take(computed.macdRes.signal), histogram: take(computed.macdRes.histogram) },
+    bb: { mid: take(computed.bb.mid), upper: take(computed.bb.upper), lower: take(computed.bb.lower) },
+    ribbon: {
+      ema21: take(computed.ribbon.ema21), sma50: take(computed.ribbon.sma50), ema55: take(computed.ribbon.ema55),
+      ema89: take(computed.ribbon.ema89), ema144: take(computed.ribbon.ema144), sma200: take(computed.ribbon.sma200),
+    },
+    offset: computed.c.length - Math.min(n, computed.c.length),
+  };
+}
+
+function rebasedOrderBlocks(orderBlocks, offset, visibleLength) {
+  const rebase = (arr) => (arr || [])
+    .map(z => ({ ...z, index: z.index - offset }))
+    .filter(z => z.index >= 0 && z.index < visibleLength);
+  return { bullish: rebase(orderBlocks.bullish), bearish: rebase(orderBlocks.bearish) };
+}
+
+// Same entry/TP-zone maths used both here (drawn as bands) and in
+// renderConfluence (written out as text) — one function, so the chart and
+// the summary can never quietly drift apart from each other.
+function computeWatchZones(computed) {
+  const s = computed.nearestSupport, r = computed.nearestResistance;
+  const bbLow = computed.bb.lower[computed.bb.lower.length - 1], bbHigh = computed.bb.upper[computed.bb.upper.length - 1];
+  const entryLow = Math.min(...[s?.price, bbLow].filter(v => v != null));
+  const entryHigh = Math.max(...[s?.price, bbLow].filter(v => v != null));
+  const tpLow = Math.min(...[r?.price, bbHigh].filter(v => v != null));
+  const tpHigh = Math.max(...[r?.price, bbHigh].filter(v => v != null));
+  return {
+    entryLow: Number.isFinite(entryLow) ? entryLow : null, entryHigh: Number.isFinite(entryHigh) ? entryHigh : null,
+    tpLow: Number.isFinite(tpLow) ? tpLow : null, tpHigh: Number.isFinite(tpHigh) ? tpHigh : null,
+  };
+}
+
+// Picks ~5 evenly-spaced candles and labels them with a time format that
+// adapts to how much time the visible window actually spans — HH:MM for an
+// intraday view, DD Mon for a multi-day one, so a 1m chart and an "All"
+// chart don't show the same (wrong) granularity of label.
+function xAxisLabels(t, xFn, y1) {
+  const n = t.length;
+  if (n < 2) return '';
+  const span = t[n - 1] - t[0];
+  const fmt = (ts) => {
+    const d = new Date(ts);
+    if (span < 26 * 3600000) return d.toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' });
+    if (span < 20 * 86400000) return d.toLocaleDateString('en-MY', { day: '2-digit', month: 'short' });
+    return d.toLocaleDateString('en-MY', { day: '2-digit', month: 'short', year: '2-digit' });
+  };
+  let content = '';
+  const count = 5;
+  for (let k = 0; k < count; k++) {
+    const idx = Math.round((k / (count - 1)) * (n - 1));
+    const anchor = k === 0 ? 'start' : k === count - 1 ? 'end' : 'middle';
+    content += `<text x="${xFn(idx).toFixed(1)}" y="${(y1 + 13).toFixed(1)}" font-size="9" fill="var(--muted)" text-anchor="${anchor}" font-family="IBM Plex Mono, monospace">${fmt(t[idx])}</text>`;
+  }
+  return content;
+}
+
+// Shaded, translucent horizontal bands (not single confident-looking lines)
+// for the entry/TP zones — same "zone, not a point" framing as the text
+// version in renderConfluence. A precise-looking arrow would claim more
+// certainty than a support/Bollinger/Fibonacci blend actually has.
+function watchZoneBands(zones, x0, x1, y) {
+  let content = '';
+  if (zones.entryLow != null && zones.entryHigh != null) {
+    const top = y(zones.entryHigh), bottom = y(zones.entryLow);
+    content += `<rect x="${x0}" y="${Math.min(top, bottom).toFixed(1)}" width="${x1 - x0}" height="${Math.max(2, Math.abs(bottom - top)).toFixed(1)}" fill="#0F6E56" fill-opacity="0.08"/>`;
+    content += `<text x="${(x1 - 4).toFixed(1)}" y="${(Math.max(top, bottom) - 4).toFixed(1)}" font-size="9" fill="#0F6E56" text-anchor="end">Entry zone</text>`;
+  }
+  if (zones.tpLow != null && zones.tpHigh != null) {
+    const top = y(zones.tpHigh), bottom = y(zones.tpLow);
+    content += `<rect x="${x0}" y="${Math.min(top, bottom).toFixed(1)}" width="${x1 - x0}" height="${Math.max(2, Math.abs(bottom - top)).toFixed(1)}" fill="#D4A017" fill-opacity="0.1"/>`;
+    content += `<text x="${(x1 - 4).toFixed(1)}" y="${(Math.min(top, bottom) + 11).toFixed(1)}" font-size="9" fill="#9C7A12" text-anchor="end">TP zone</text>`;
+  }
+  return content;
+}
+
 function renderPriceChart(computed) {
   const svg = document.getElementById('cr-price-chart');
   const legend = document.getElementById('cr-price-legend');
-  const W = 640, H = 320, x0 = 54, x1 = 630, y0 = 14, y1 = 280;
-  const { c, bb, ribbon, sr, orderBlocks } = computed;
-  const allForScale = [...c, ...bb.upper, ...bb.lower];
+  const x0 = 54, x1 = 630, y0 = 14, y1 = 266;
+  const w = windowSlice(computed, CONFIG.CHART_VISIBLE_CANDLES);
+  const { c, h, o, l, bb, ribbon, t } = w;
+  const sr = computed.sr; // levels, not per-candle — no rebasing needed
+  const orderBlocks = rebasedOrderBlocks(computed.orderBlocks, w.offset, c.length);
+  const zones = computeWatchZones(computed);
+  const allForScale = [...h, ...l, ...bb.upper, ...bb.lower, zones.entryLow, zones.entryHigh, zones.tpLow, zones.tpHigh].filter(v => v != null);
   const { x, y, yMin, yMax } = scaleFns(allForScale, x0, x1, y0, y1);
 
   let svgContent = '';
-  // gridlines + y-axis labels (4 rows)
   for (let g = 0; g <= 4; g++) {
     const gy = y0 + (g / 4) * (y1 - y0);
     const price = yMax - (g / 4) * (yMax - yMin);
     svgContent += `<line x1="${x0}" y1="${gy.toFixed(1)}" x2="${x1}" y2="${gy.toFixed(1)}" stroke="var(--line)" stroke-width="0.5"/>`;
     svgContent += `<text x="4" y="${gy.toFixed(1)}" dominant-baseline="middle" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${formatMYR(price)}</text>`;
   }
-  // Order-block zones drawn first so everything else layers on top. Extended
-  // from where they formed out to the right edge, same visual idea as a
-  // supply/demand zone box — see findOrderBlocks() for the exact rule used.
+  svgContent += watchZoneBands(zones, x0, x1, y);
+  // Order-block zones — drawn before the candles so the sticks sit on top.
   ['bullish', 'bearish'].forEach(type => {
     const color = type === 'bullish' ? '#0F6E56' : '#C0392B';
     const label = type === 'bullish' ? 'Demand' : 'Supply';
@@ -638,50 +811,66 @@ function renderPriceChart(computed) {
   });
   // Bollinger band shaded area
   const upperPath = pathFor(bb.upper, x, y);
-  const lowerXs = bb.lower.map((_, i) => bb.lower.length - 1 - i);
   let bandArea = upperPath;
-  lowerXs.forEach((origIdx) => { const v = bb.lower[origIdx]; if (v != null) bandArea += ` L${x(origIdx).toFixed(1)},${y(v).toFixed(1)}`; });
+  for (let i = bb.lower.length - 1; i >= 0; i--) { const v = bb.lower[i]; if (v != null) bandArea += ` L${x(i).toFixed(1)},${y(v).toFixed(1)}`; }
   bandArea += ' Z';
   svgContent += `<path d="${bandArea}" fill="var(--accent)" fill-opacity="0.06" stroke="none"/>`;
   svgContent += `<path d="${pathFor(bb.upper, x, y)}" fill="none" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>`;
   svgContent += `<path d="${pathFor(bb.lower, x, y)}" fill="none" stroke="var(--accent)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6"/>`;
-  // support / resistance
   sr.support.forEach(s => { svgContent += `<line x1="${x0}" y1="${y(s.price).toFixed(1)}" x2="${x1}" y2="${y(s.price).toFixed(1)}" stroke="#0F6E56" stroke-width="1" stroke-dasharray="5 3"/>`; });
   sr.resistance.forEach(r => { svgContent += `<line x1="${x0}" y1="${y(r.price).toFixed(1)}" x2="${x1}" y2="${y(r.price).toFixed(1)}" stroke="#C0392B" stroke-width="1" stroke-dasharray="5 3"/>`; });
-  // Fibonacci-period MA ribbon — 3 of the 6 ribbon lines shown here (21/55/200)
-  // to keep the chart readable; all 6 values are in the scorecard below.
+  // Fibonacci-period MA ribbon — 3 of the 6 shown here (21/55/200) to keep
+  // the chart readable; all 6 values are in the scorecard below.
   svgContent += `<path d="${pathFor(ribbon.ema21, x, y)}" fill="none" stroke="#2E5FA3" stroke-width="1.3"/>`;
   svgContent += `<path d="${pathFor(ribbon.ema55, x, y)}" fill="none" stroke="#D4A017" stroke-width="1.3"/>`;
   svgContent += `<path d="${pathFor(ribbon.sma200, x, y)}" fill="none" stroke="#7F77DD" stroke-width="1.3"/>`;
-  // Close price line (drawn last = on top)
-  svgContent += `<path d="${pathFor(c, x, y)}" fill="none" stroke="var(--text)" stroke-width="1.8"/>`;
+
+  // Candlesticks, common red/green convention: wick = high-low, body =
+  // open-close, green when the candle closed up, red when it closed down.
+  const slot = (x1 - x0) / Math.max(1, c.length);
+  const bodyW = Math.max(1.5, slot * 0.62);
+  for (let i = 0; i < c.length; i++) {
+    if (h[i] == null || l[i] == null || o[i] == null || c[i] == null) continue;
+    const cx = x(i);
+    const up = c[i] >= o[i];
+    const color = up ? '#0F6E56' : '#C0392B';
+    svgContent += `<line x1="${cx.toFixed(1)}" y1="${y(h[i]).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${y(l[i]).toFixed(1)}" stroke="${color}" stroke-width="1"/>`;
+    const bodyTop = y(Math.max(o[i], c[i])), bodyBottom = y(Math.min(o[i], c[i]));
+    svgContent += `<rect x="${(cx - bodyW / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyW.toFixed(1)}" height="${Math.max(1, bodyBottom - bodyTop).toFixed(1)}" fill="${color}"/>`;
+  }
+  svgContent += xAxisLabels(t, x, y1);
 
   svg.innerHTML = svgContent;
   legend.innerHTML = [
-    ['var(--text)', 'Price'], ['#2E5FA3', 'EMA 21'], ['#D4A017', 'EMA 55'], ['#7F77DD', 'SMA 200'],
-    ['var(--accent)', 'Bollinger Bands'], ['#0F6E56', 'Support / Demand zone'], ['#C0392B', 'Resistance / Supply zone'],
+    ['#0F6E56', 'Up candle'], ['#C0392B', 'Down candle'], ['#2E5FA3', 'EMA 21'], ['#D4A017', 'EMA 55'], ['#7F77DD', 'SMA 200'],
+    ['var(--accent)', 'Bollinger Bands'], ['#0F6E56', 'Support / Demand / Entry zone'], ['#C0392B', 'Resistance / Supply zone'], ['#D4A017', 'TP zone'],
   ].map(([color, label]) => `<span><i class="cr-legend-swatch" style="background:${color}"></i>${label}</span>`).join('');
 }
 
 function renderVolumeChart(computed) {
   const svg = document.getElementById('cr-volume-chart');
-  const W = 640, H = 80, x0 = 54, x1 = 630, y0 = 4, y1 = 74;
-  const { v, o, c } = computed;
+  const x0 = 54, x1 = 630, y0 = 4, y1 = 78;
+  const w = windowSlice(computed, CONFIG.CHART_VISIBLE_CANDLES);
+  const { v, o, c, t } = w;
   const maxV = Math.max(...v.filter(x => x != null)) || 1;
-  const barW = (x1 - x0) / v.length;
+  const x = (i) => x0 + (i / Math.max(1, v.length - 1)) * (x1 - x0);
+  const barW = (x1 - x0) / Math.max(1, v.length);
   let content = '';
   v.forEach((vol, i) => {
-    const h = (vol / maxV) * (y1 - y0);
+    const hgt = (vol / maxV) * (y1 - y0);
     const up = c[i] >= o[i];
-    content += `<rect x="${(x0 + i * barW).toFixed(1)}" y="${(y1 - h).toFixed(1)}" width="${Math.max(1, barW - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${up ? '#0F6E56' : '#C0392B'}" fill-opacity="0.55"/>`;
+    content += `<rect x="${(x0 + i * barW).toFixed(1)}" y="${(y1 - hgt).toFixed(1)}" width="${Math.max(1, barW - 1).toFixed(1)}" height="${hgt.toFixed(1)}" fill="${up ? '#0F6E56' : '#C0392B'}" fill-opacity="0.55"/>`;
   });
+  content += xAxisLabels(t, x, y1);
+  content += `<text x="${x0}" y="10" font-size="10" fill="var(--muted)">Volume</text>`;
   svg.innerHTML = content;
 }
 
 function renderRsiChart(computed) {
   const svg = document.getElementById('cr-rsi-chart');
   const x0 = 54, x1 = 630, y0 = 10, y1 = 100;
-  const x = (i) => x0 + (i / (computed.rsiArr.length - 1)) * (x1 - x0);
+  const w = windowSlice(computed, CONFIG.CHART_VISIBLE_CANDLES);
+  const x = (i) => x0 + (i / Math.max(1, w.rsiArr.length - 1)) * (x1 - x0);
   const y = (v) => y1 - (v / 100) * (y1 - y0);
   let content = '';
   content += `<rect x="${x0}" y="${y(70).toFixed(1)}" width="${x1 - x0}" height="${(y(30) - y(70)).toFixed(1)}" fill="var(--accent)" fill-opacity="0.05"/>`;
@@ -689,7 +878,8 @@ function renderRsiChart(computed) {
     content += `<line x1="${x0}" y1="${y(level).toFixed(1)}" x2="${x1}" y2="${y(level).toFixed(1)}" stroke="var(--line)" stroke-width="0.5" stroke-dasharray="${level === 50 ? '2 2' : '0'}"/>`;
     content += `<text x="4" y="${y(level).toFixed(1)}" dominant-baseline="middle" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono, monospace">${level}</text>`;
   });
-  content += `<path d="${pathFor(computed.rsiArr, x, y)}" fill="none" stroke="#7F77DD" stroke-width="1.6"/>`;
+  content += `<path d="${pathFor(w.rsiArr, x, y)}" fill="none" stroke="#7F77DD" stroke-width="1.6"/>`;
+  content += xAxisLabels(w.t, x, y1);
   content += `<text x="${x0}" y="8" font-size="10" fill="var(--muted)">RSI (14)</text>`;
   svg.innerHTML = content;
 }
@@ -697,12 +887,13 @@ function renderRsiChart(computed) {
 function renderMacdChart(computed) {
   const svg = document.getElementById('cr-macd-chart');
   const x0 = 54, x1 = 630, y0 = 10, y1 = 100;
-  const { line, signal, histogram } = computed.macdRes;
+  const w = windowSlice(computed, CONFIG.CHART_VISIBLE_CANDLES);
+  const { line, signal, histogram } = w.macdRes;
   const allVals = [...line, ...signal, ...histogram];
   const { x, y } = scaleFns(allVals, x0, x1, y0, y1);
   const zeroY = y(0);
   let content = `<line x1="${x0}" y1="${zeroY.toFixed(1)}" x2="${x1}" y2="${zeroY.toFixed(1)}" stroke="var(--line)" stroke-width="0.5"/>`;
-  const barW = (x1 - x0) / histogram.length;
+  const barW = (x1 - x0) / Math.max(1, histogram.length);
   histogram.forEach((val, i) => {
     if (val == null) return;
     const hy = y(val);
@@ -711,6 +902,7 @@ function renderMacdChart(computed) {
   });
   content += `<path d="${pathFor(line, x, y)}" fill="none" stroke="#2E5FA3" stroke-width="1.4"/>`;
   content += `<path d="${pathFor(signal, x, y)}" fill="none" stroke="#D4A017" stroke-width="1.4"/>`;
+  content += xAxisLabels(w.t, x, y1);
   content += `<text x="${x0}" y="8" font-size="10" fill="var(--muted)">MACD (12, 26, 9)</text>`;
   svg.innerHTML = content;
 }
@@ -729,25 +921,74 @@ function updateConnectionStatus() {
 function renderFearGreedCard() {
   document.getElementById('cr-feargreed-value').textContent = state.feargreed ? `${state.feargreed.value} · ${state.feargreed.classification}` : '—';
   document.getElementById('cr-coin-count').textContent = state.markets.length;
-  const sorted = [...state.markets].sort((a, b) => Number(b.rolling_24_hour_volume) - Number(a.rolling_24_hour_volume));
+  const sorted = [...state.markets].sort((a, b) => myrVolume(b) - myrVolume(a));
   document.getElementById('cr-most-active').textContent = sorted[0] ? sorted[0].pair : '—';
   document.getElementById('cr-least-active').textContent = sorted.length ? sorted[sorted.length - 1].pair : '—';
 }
 
+// Deterministic so the same coin always gets the same fallback colour
+// across reloads, rather than a random flash each time the icon 404s.
+function iconFallbackColor(symbol) {
+  const palette = ['#1F6F5C', '#2E5FA3', '#D4A017', '#7F77DD', '#C0392B'];
+  let hash = 0;
+  for (let i = 0; i < symbol.length; i++) hash = (hash * 31 + symbol.charCodeAt(i)) % 97;
+  return palette[Math.abs(hash) % palette.length];
+}
+const TIER_LABEL = { high: 'Active', medium: 'Medium', low: 'Thin' };
+
+function coinCardHtml(m, stars) {
+  const pair = m.pair, symbol = pair.replace('MYR', '');
+  const price = Number(m.last_trade);
+  const tier = liquidityTier(pair);
+  const s = state.overviewScores[pair];
+  const blended = s ? s.blended : null;
+  const confluence = s ? s.confluence : null;
+  return `<button type="button" class="cr-coin-card${state.selectedPair === pair ? ' is-selected' : ''}" data-pair="${pair}">
+    ${stars.has(pair) ? '<span class="cr-coin-star" title="Top ' + CONFIG.GOLD_STAR_COUNT + ' by blended score" aria-label="Top pick">\u2605</span>' : ''}
+    <div class="cr-coin-top">
+      <span class="cr-coin-icon" style="background:${iconFallbackColor(symbol)}">
+        <img src="icons/${symbol.toLowerCase()}.svg" alt="" loading="lazy" onerror="this.style.display='none'">
+        <span class="cr-coin-icon-fallback">${symbol.slice(0, 1)}</span>
+      </span>
+      <span class="cr-coin-name">${symbol}</span>
+    </div>
+    <span class="cr-coin-blended">${blended != null ? scoreLabel(blended) : '—'}</span>
+    <span class="cr-coin-sublabel">${confluence != null ? scoreLabel(confluence) + '/100' : 'Scoring…'} &middot; ${TIER_LABEL[tier]}</span>
+    <span class="cr-coin-price">${formatMYR(price)}</span>
+    <div class="cr-coin-meta"><span>Vol 24h: ${Number(m.rolling_24_hour_volume).toLocaleString('en-MY', { maximumFractionDigits: 2 })} ${symbol}</span></div>
+  </button>`;
+}
+
+// Sorts within a tier by blended score when available; falls back to
+// MYR-notional volume so the grid still has a sensible order during the
+// brief window before computeOverviewScores() finishes (see refreshAll —
+// this renders once immediately, then again once scores land).
+function sortCoins(list) {
+  return [...list].sort((a, b) => {
+    const sa = state.overviewScores[a.pair]?.blended, sb = state.overviewScores[b.pair]?.blended;
+    if (sa != null && sb != null) return sb - sa;
+    if (sa != null) return -1;
+    if (sb != null) return 1;
+    return myrVolume(b) - myrVolume(a);
+  });
+}
+
 function renderMarketGrid() {
-  const grid = document.getElementById('cr-market-grid');
-  const sorted = [...state.markets].sort((a, b) => Number(b.rolling_24_hour_volume) - Number(a.rolling_24_hour_volume));
-  grid.innerHTML = sorted.map(m => {
-    const price = Number(m.last_trade);
-    const tier = liquidityTier(m.pair);
-    const tierLabel = tier === 'high' ? 'Active' : tier === 'medium' ? 'Moderate' : 'Thin';
-    return `<button type="button" class="cr-coin-card${state.selectedPair === m.pair ? ' is-selected' : ''}" data-pair="${m.pair}">
-      <div class="cr-coin-top"><span class="cr-coin-name">${m.pair.replace('MYR', '')}</span><span class="cr-liquidity-tag is-${tier}">${tierLabel}</span></div>
-      <span class="cr-coin-price">${formatMYR(price)}</span>
-      <div class="cr-coin-meta"><span>Vol 24h: ${Number(m.rolling_24_hour_volume).toLocaleString('en-MY', { maximumFractionDigits: 2 })}</span></div>
-    </button>`;
-  }).join('');
-  grid.querySelectorAll('.cr-coin-card').forEach(btn => btn.addEventListener('click', () => selectCoin(btn.dataset.pair)));
+  const tiers = { high: [], medium: [], low: [] };
+  state.markets.forEach(m => tiers[liquidityTier(m.pair)].push(m));
+  const stars = goldStarPairs();
+  const idFor = { high: 'active', medium: 'medium', low: 'thin' };
+  ['high', 'medium', 'low'].forEach(tier => {
+    const sorted = sortCoins(tiers[tier]);
+    const grid = document.getElementById(`cr-market-grid-${idFor[tier]}`);
+    const count = document.getElementById(`cr-tier-${idFor[tier]}-count`);
+    if (count) count.textContent = `(${sorted.length})`;
+    if (!grid) return;
+    grid.innerHTML = sorted.length
+      ? sorted.map(m => coinCardHtml(m, stars)).join('')
+      : '<p class="cr-source-note">No coins currently in this tier.</p>';
+    grid.querySelectorAll('.cr-coin-card').forEach(btn => btn.addEventListener('click', () => selectCoin(btn.dataset.pair)));
+  });
 }
 
 function renderTimeframeTabs() {
@@ -808,15 +1049,9 @@ function renderConfluence(computed) {
   const lean = score > 25 ? 'leaning bullish' : score < -25 ? 'leaning bearish' : 'roughly balanced';
   summaryEl.textContent = `Confluence score: ${score} / 100 — indicators are currently ${lean}. This reflects the snapshot above, not a prediction of what happens next.`;
 
-  const price = computed.latest.price;
-  const s = computed.nearestSupport, r = computed.nearestResistance;
-  const bbLow = computed.bb.lower[computed.bb.lower.length - 1], bbHigh = computed.bb.upper[computed.bb.upper.length - 1];
-  const entryLow = Math.min(...[s?.price, bbLow].filter(v => v != null));
-  const entryHigh = Math.max(...[s?.price, bbLow].filter(v => v != null));
-  const tpLow = Math.min(...[r?.price, bbHigh].filter(v => v != null));
-  const tpHigh = Math.max(...[r?.price, bbHigh].filter(v => v != null));
-  document.getElementById('cr-entry-zone').textContent = (Number.isFinite(entryLow) && Number.isFinite(entryHigh)) ? `${formatMYR(entryLow)} – ${formatMYR(entryHigh)}` : 'Not enough data';
-  document.getElementById('cr-tp-zone').textContent = (Number.isFinite(tpLow) && Number.isFinite(tpHigh)) ? `${formatMYR(tpLow)} – ${formatMYR(tpHigh)}` : 'Not enough data';
+  const zones = computeWatchZones(computed); // same function that draws the bands on the chart — one source of truth
+  document.getElementById('cr-entry-zone').textContent = (zones.entryLow != null && zones.entryHigh != null) ? `${formatMYR(zones.entryLow)} – ${formatMYR(zones.entryHigh)}` : 'Not enough data';
+  document.getElementById('cr-tp-zone').textContent = (zones.tpLow != null && zones.tpHigh != null) ? `${formatMYR(zones.tpLow)} – ${formatMYR(zones.tpHigh)}` : 'Not enough data';
 }
 
 function renderOrderbookUI(book) {
@@ -841,9 +1076,18 @@ function renderGlossary() {
 async function renderDetail() {
   const pair = state.selectedPair;
   if (!pair) return;
+  // Selection-token guard: bump the token for THIS call, capture it locally,
+  // and bail before ever touching the DOM if a newer selectCoin() has
+  // started since. Without this, clicking a second coin before the first
+  // one's fetches resolve lets whichever finishes LAST win the render —
+  // regardless of which one was clicked last. That was a real, confirmed
+  // bug (not hypothetical): it's exactly what made a detail view show one
+  // coin's title with a completely different coin's price/chart data.
+  const myToken = ++state.selectionToken;
   document.getElementById('cr-detail-title').textContent = `${pair.replace('MYR', '')} / MYR detail`;
   renderTimeframeTabs();
   const [candles, book] = await Promise.all([loadCandles(pair, state.timeframe), loadOrderbook(pair)]);
+  if (state.selectionToken !== myToken) return; // a newer selection has since started — discard this one
 
   // Luno's ticker has no built-in "24h change" field (confirmed against its
   // actual response shape: pair/bid/ask/last_trade/rolling_24_hour_volume/
@@ -876,6 +1120,7 @@ async function renderDetail() {
   // Worker-side cache) rather than a special-case fetch, just requesting
   // duration=86400 instead of whatever's currently selected.
   const dailyCandles = state.timeframe === 86400 ? candles : await loadCandles(pair, 86400);
+  if (state.selectionToken !== myToken) return; // check again — this was a second await point
   let htf = null;
   if (dailyCandles.length >= 2) {
     const prevDay = dailyCandles[dailyCandles.length - 2];
@@ -911,12 +1156,15 @@ async function renderDetail() {
 
 async function selectCoin(pair) {
   state.selectedPair = pair;
+  document.getElementById('cr-confluence-section').hidden = false;
   document.getElementById('cr-detail-section').hidden = false;
-  document.getElementById('cr-ai-insight').textContent = 'Connect a Worker with a Gemini key to see an AI-generated read of this coin (Settings above). Optional — the scorecard above works fully without it.';
+  document.getElementById('cr-quicknav-confluence').hidden = false;
+  document.getElementById('cr-quicknav-detail').hidden = false;
+  document.getElementById('cr-ai-insight').textContent = 'AI insight needs a Worker with a Gemini key set in CONFIG.WORKER_URL (crypto-radar.js). Optional — the scorecard above works fully without it.';
   document.getElementById('cr-ai-insight').classList.add('is-empty');
   renderMarketGrid();
   await renderDetail();
-  document.getElementById('cr-detail-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('cr-confluence-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ======================= EVENTS + INIT =======================
@@ -924,9 +1172,11 @@ async function refreshAll() {
   await Promise.all([loadMarkets(), loadFearGreed(), loadNews()]);
   updateConnectionStatus();
   renderFearGreedCard();
-  renderMarketGrid();
+  renderMarketGrid(); // first pass: grouped + volume-sorted, before per-coin scores exist yet
   renderNewsUI();
   if (state.selectedPair) await renderDetail();
+  await computeOverviewScores();
+  renderMarketGrid(); // second pass: same cards, now blended-sorted with real Bu/Be labels and stars
 }
 
 function startAutoRefresh() {
@@ -935,14 +1185,6 @@ function startAutoRefresh() {
 }
 
 function wireEvents() {
-  document.getElementById('cr-save-settings').addEventListener('click', async () => {
-    const url = document.getElementById('cr-worker-url').value.trim();
-    state.workerUrl = url;
-    const params = new URLSearchParams(window.location.search);
-    if (url) params.set('worker', url); else params.delete('worker');
-    history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`);
-    await refreshAll();
-  });
   document.getElementById('cr-update-now').addEventListener('click', refreshAll);
   document.getElementById('cr-refresh-interval').addEventListener('change', (e) => {
     state.refreshSeconds = Number(e.target.value);
@@ -951,7 +1193,7 @@ function wireEvents() {
   document.getElementById('cr-get-insight').addEventListener('click', async () => {
     if (!state.selectedPair || !state.lastComputed) return;
     const box = document.getElementById('cr-ai-insight');
-    if (state.mode !== 'live') { box.textContent = 'AI insight needs a connected Worker with a Gemini key — see Settings above.'; box.classList.add('is-empty'); return; }
+    if (state.mode !== 'live') { box.textContent = 'AI insight needs a Worker with a Gemini key set in CONFIG.WORKER_URL — see SETUP_AND_GLOSSARY.md.'; box.classList.add('is-empty'); return; }
     box.textContent = 'Asking Gemini for a read on this coin…';
     try {
       const l = state.lastComputed.latest;
@@ -964,9 +1206,15 @@ function wireEvents() {
       box.classList.add('is-empty');
     }
   });
-  const backToTop = document.getElementById('cr-back-to-top');
-  backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
-  window.addEventListener('scroll', () => { backToTop.hidden = window.scrollY < window.innerHeight * 0.6; });
+  const quickNav = document.getElementById('cr-quick-nav');
+  document.getElementById('cr-back-to-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  quickNav.querySelectorAll('.cr-quick-nav-btn[data-target]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  window.addEventListener('scroll', () => { quickNav.hidden = window.scrollY < window.innerHeight * 0.6; });
 }
 
 let rzInitialized = false;
@@ -974,10 +1222,7 @@ async function init() {
   if (rzInitialized) return;
   rzInitialized = true;
   document.title = `Reysourcez Enterprise — ${CONFIG.SITE_NAME} (Luno Malaysia)`;
-  const params = new URLSearchParams(window.location.search);
-  const workerFromUrl = params.get('worker') || '';
-  document.getElementById('cr-worker-url').value = workerFromUrl;
-  state.workerUrl = workerFromUrl;
+  state.workerUrl = CONFIG.WORKER_URL;
   state.refreshSeconds = CONFIG.DEFAULT_REFRESH_SECONDS;
   wireEvents();
   renderGlossary();
