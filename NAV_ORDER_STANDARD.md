@@ -6,11 +6,13 @@
 
 **2026-09-07 update — seventh tool added:** `crypto-radar.html` is live and correctly appended itself at position 7 (per the "new tool = append to the end" rule below) — this doc and `AI_BUILD_BRIEF.md` are now updated to match, and all seven other pages have been synced to include it. Note it's a genuinely different kind of tool (crypto market analysis, not F&B costing) sharing the same "Business Analysis" dropdown as everything else — that label may be worth revisiting at some point, flagging rather than deciding here.
 
+**2026-09-07 update — eighth tool planned, not built yet:** `Rental Calculator` is next in line, expected at **position 8**, once it actually exists. Do NOT add it to any page's live nav yet — every current page must still only link to pages that actually exist, and there's no `rental-calculator.html` yet. This is here so whoever builds it (or builds something else in the meantime) knows position 8 is reserved and doesn't need to guess where it slots in. Once it's built and appended to the end here as normal, delete this paragraph.
+
 ## The problem this fixes
 
 Right now the "Business Analysis" dropdown doesn't match across pages — some list Margin Audit, some don't, and where it does appear the order differs page to page. The dropdown must be byte-for-byte identical everywhere except for which single item carries `aria-current="page"`.
 
-## The standard order
+## The standard order (live pages only — see Rental Calculator note above for what's next but not live)
 
 Every page's `.nav-dropdown-menu` must list all seven tools in exactly this order:
 

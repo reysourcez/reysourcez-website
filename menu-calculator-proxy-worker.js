@@ -35,6 +35,15 @@
    describable comes through, it returns an empty ingredients array
    rather than force a guess.
 
+   Uses Gemini's standard generateContent endpoint (POST
+   /v1beta/models/{model}:generateContent) with responseMimeType +
+   responseSchema in generationConfig for structured JSON back —
+   this is the same well-documented endpoint crypto-radar-worker.js
+   already uses successfully elsewhere on this site, deliberately
+   NOT the newer Interactions API (a different, less-documented
+   endpoint and request shape this file used in an earlier version,
+   which is what caused it to fail with "Missing request type").
+
    DEPLOY STEPS (Cloudflare dashboard, no local tooling needed):
      1. dash.cloudflare.com -> Workers & Pages -> Create -> Create Worker.
      2. Name it (e.g. menu-calculator-proxy) -> Deploy the default
@@ -51,8 +60,11 @@
 
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
 
-const GEMINI_MODEL = 'gemini-3.5-flash-lite';
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+// "-latest" alias rather than a specific version number, matching
+// crypto-radar-worker.js's own DEFAULT_GEMINI_MODEL convention — one
+// less thing to manually update if Google renames a specific version.
+const GEMINI_MODEL = 'gemini-flash-lite-latest';
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const INGREDIENT_SCHEMA = {
   type: 'object',
@@ -75,7 +87,7 @@ const INGREDIENT_SCHEMA = {
 };
 
 const PROMPT_PREFIX = 'You are estimating the ingredient-level cost of ONE PORTION of a dish for an F&B costing tool used in Malaysia. '
-  + 'The dish may be a well-known standard dish or a vendor\u2019s own custom or house-special creation \u2014 give your best-effort '
+  + 'The dish may be a well-known standard dish or a vendor’s own custom or house-special creation — give your best-effort '
   + 'breakdown either way, rather than only answering for famous dishes. Break the dish down into its main ingredients with a '
   + 'realistic quantity for one portion and an estimated cost for that quantity at average Malaysian wet-market or grocery '
   + 'prices, in Ringgit. Keep the ingredient list to what actually matters for cost (skip token garnishes). If nothing that '
@@ -110,11 +122,16 @@ function sanitizeIngredients(raw) {
     .slice(0, 40);
 }
 
+// generateContent's response shape: candidates[0].content.parts[0].text
+// holds the model's output — already plain JSON text here (not fenced
+// in ```json, that convention is for models replying without a
+// responseSchema forcing the format), but the fence-stripping stays
+// as a harmless safety net in case a future model variant adds one.
 function extractIngredients(data) {
-  const outputStep = (data.steps || []).find((s) => s.type === 'model_output');
-  const textBlock = outputStep && (outputStep.content || []).find((c) => c.type === 'text');
-  if (!textBlock) return [];
-  let raw = textBlock.text.trim();
+  const candidate = data.candidates && data.candidates[0];
+  const textPart = candidate && candidate.content && candidate.content.parts && candidate.content.parts[0];
+  if (!textPart || typeof textPart.text !== 'string') return [];
+  let raw = textPart.text.trim();
   raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
   try {
     const parsed = JSON.parse(raw);
@@ -149,15 +166,16 @@ export default {
     }
 
     if (!env.GEMINI_API_KEY) {
-      return json({ error: 'Server is missing its Gemini key \u2014 add the GEMINI_API_KEY secret in this Worker\u2019s Settings.' }, 500, origin);
+      return json({ error: 'Server is missing its Gemini key — add the GEMINI_API_KEY secret in this Worker’s Settings.' }, 500, origin);
     }
 
-    const input = [{ type: 'text', text: PROMPT_PREFIX + (description ? ' Description: ' + description : '') }];
+    const parts = [{ text: PROMPT_PREFIX + (description ? ' Description: ' + description : '') }];
     if (hasImage) {
-      input.push({
-        type: 'image',
-        data: body.image,
-        mime_type: typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg',
+      parts.push({
+        inlineData: {
+          mimeType: typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg',
+          data: body.image,
+        },
       });
     }
 
@@ -167,10 +185,12 @@ export default {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
         body: JSON.stringify({
-          model: GEMINI_MODEL,
-          input,
-          generation_config: { thinking_level: 'low' },
-          response_format: { type: 'text', mime_type: 'application/json', schema: INGREDIENT_SCHEMA },
+          contents: [{ parts }],
+          generationConfig: {
+            temperature: 0.4,
+            responseMimeType: 'application/json',
+            responseSchema: INGREDIENT_SCHEMA,
+          },
         }),
       });
     } catch (e) {
@@ -199,3 +219,4 @@ export default {
     return json({ ingredients, total_ingredient_cost_myr: total }, 200, origin);
   },
 };
+

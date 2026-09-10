@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-06-multi-menu-dropdown');
+console.info('[Interactive Costing Analysis] script build: 2026-09-06-multi-menu-dropdown-unicode-cleanup');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -226,7 +226,7 @@ function recalculate() {
   beMonthEl.closest('.result-card').classList.toggle('is-loss', !isFinite(r.beMonth));
   document.getElementById('res-be-day').textContent = isFinite(r.beDay)
     ? Math.ceil(r.beDay).toLocaleString() + ' portions'
-    : '\u2014';
+    : '—';
   document.getElementById('res-profit').textContent =
     formatRM(Math.abs(r.netProfit)) + (r.netProfit < 0 ? ' loss' : ' profit');
   document.getElementById('res-profit-card').classList.toggle('is-loss', r.netProfit < 0);
@@ -468,7 +468,7 @@ function markSynced(labelSelector, sourceLabel) {
     badge.className = 'synced-badge';
     label.appendChild(badge);
   }
-  badge.textContent = '\u2190 ' + sourceLabel;
+  badge.textContent = '← ' + sourceLabel;
 }
 
 // Every menu item that's ever broadcast a blockId lands here, so this
@@ -679,7 +679,7 @@ async function rzLoadToolIntoDock(key) {
   dock.className = 'tool-dock ' + dockConfig.theme;
   dock.dataset.openTool = key;
   titleEl.textContent = tool.label;
-  body.innerHTML = '<p class="tool-dock-status">Loading\u2026</p>';
+  body.innerHTML = '<p class="tool-dock-status">Loading…</p>';
   setDockVisible(true);
   updateConnectorActiveState(key);
   dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -691,7 +691,7 @@ async function rzLoadToolIntoDock(key) {
     });
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const main = doc.querySelector('main');
-    if (!main) throw new Error('couldn\u2019t find that page\u2019s content');
+    if (!main) throw new Error('couldn’t find that page’s content');
 
     // Drop the marketing intro + "how it's calculated" footer note —
     // already flagged rz-embed-hide in the source HTML from an
@@ -729,7 +729,7 @@ async function rzLoadToolIntoDock(key) {
 
     rzRunIsolated(scriptText, key);
   } catch (err) {
-    body.innerHTML = '<p class="tool-dock-status is-error">Couldn\u2019t load this here (' + err.message + '). <a href="' + tool.url + '" target="_blank" rel="noopener">Open ' + tool.label + ' in a new tab instead</a>.</p>';
+    body.innerHTML = '<p class="tool-dock-status is-error">Couldn’t load this here (' + err.message + '). <a href="' + tool.url + '" target="_blank" rel="noopener">Open ' + tool.label + ' in a new tab instead</a>.</p>';
   }
 }
 

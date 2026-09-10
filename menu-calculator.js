@@ -59,7 +59,7 @@ function makeSortable(theadEl, tbodyEl, getSortValue, onSorted) {
 
       theadEl.querySelectorAll('.sort-indicator').forEach((s) => { s.textContent = ''; });
       const indicator = th.querySelector('.sort-indicator');
-      if (indicator) indicator.textContent = state.dir === 1 ? '\u25B2' : '\u25BC';
+      if (indicator) indicator.textContent = state.dir === 1 ? '▲' : '▼';
 
       const rows = Array.from(tbodyEl.children);
       rows.sort((a, b) => {
@@ -236,7 +236,7 @@ function menuItemOptionsHTML(selectedId) {
   if (ingredients.length === 0) {
     return `<option value="">Add an item above first</option>`;
   }
-  let html = `<option value="">\u2014 Select an item \u2014</option>`;
+  let html = `<option value="">— Select an item —</option>`;
   ingredients.forEach((ing) => {
     const sel = ing.id === selectedId ? ' selected' : '';
     html += `<option value="${ing.id}"${sel}>${escapeHTML(ing.name)}</option>`;
@@ -267,7 +267,7 @@ function updateMenuRow(tr) {
 
   const ing = getIngredients().find((i) => i.id === selectedId);
 
-  tr.querySelector('.m-unit-label').textContent = ing ? ing.baseUnit : '\u2014';
+  tr.querySelector('.m-unit-label').textContent = ing ? ing.baseUnit : '—';
 
   const price = ing ? amount * ing.trueCost : 0;
   tr.querySelector('.m-price').textContent = formatRM(price);
@@ -296,7 +296,7 @@ function createMenuRow(block) {
     <td>
       <div class="amount-cell">
         <input type="number" class="m-amount" name="amount" inputmode="decimal" min="0" step="0.01" value="0">
-        <span class="m-unit-label">\u2014</span>
+        <span class="m-unit-label">—</span>
       </div>
     </td>
     <td class="calc m-price">RM0.00</td>
@@ -400,7 +400,7 @@ function updateMenuBlockSummary(block) {
   const sstAmount = useSST && isFinite(listedPrice) ? listedPrice * (sstPct / 100) : 0;
   const netAmount = isFinite(listedPrice) ? listedPrice - commissionAmount - commissionTaxAmount - sstAmount : 0;
 
-  block.querySelector('.listed-price').textContent = isFinite(listedPrice) ? formatRM(listedPrice) : '\u2014';
+  block.querySelector('.listed-price').textContent = isFinite(listedPrice) ? formatRM(listedPrice) : '—';
   block.querySelector('.commission-amount').textContent = formatRM(commissionAmount);
   block.querySelector('.commission-tax-amount').textContent = formatRM(commissionTaxAmount);
   block.querySelector('.sst-amount').textContent = formatRM(sstAmount);
@@ -485,10 +485,10 @@ async function handleMenuAiPhoto(block, file) {
     const base64 = await resizeImageToBase64(file, MENU_AI_MAX_IMAGE_EDGE);
     block.dataset.aiPhotoBase64 = base64;
     nameEl.hidden = false;
-    nameEl.textContent = '\u2713 Photo attached: ' + file.name;
+    nameEl.textContent = '✓ Photo attached: ' + file.name;
   } catch (e) {
     nameEl.hidden = false;
-    nameEl.textContent = 'Could not read that photo \u2014 try a different file.';
+    nameEl.textContent = 'Could not read that photo — try a different file.';
   }
 }
 
@@ -581,11 +581,11 @@ async function estimateMenuBlockCost(block) {
     return;
   }
   if (MENU_AI_PROXY_ENDPOINT.indexOf('PASTE_YOUR') === 0) {
-    showStatus('AI estimate isn\u2019t connected yet \u2014 this needs a Cloudflare Worker URL pasted into MENU_AI_PROXY_ENDPOINT.', true);
+    showStatus('AI estimate isn’t connected yet — this needs a Cloudflare Worker URL pasted into MENU_AI_PROXY_ENDPOINT.', true);
     return;
   }
 
-  showStatus('Estimating\u2026', false);
+  showStatus('Estimating…', false);
   const body = {};
   if (description) body.description = description;
   if (photoBase64) { body.image = photoBase64; body.mime_type = 'image/jpeg'; }
@@ -604,13 +604,13 @@ async function estimateMenuBlockCost(block) {
     const ingredients = Array.isArray(data.ingredients) ? data.ingredients : [];
     renderMenuAiRows(block, ingredients);
     if (ingredients.length) {
-      showStatus('\u2713 Estimated \u2014 review the amounts below before it feeds your price.', false);
+      showStatus('✓ Estimated — review the amounts below before it feeds your price.', false);
     } else {
-      showStatus('Could not identify ingredients from that \u2014 try adding more detail.', true);
+      showStatus('Could not identify ingredients from that — try adding more detail.', true);
     }
     updateMenuBlockSummary(block);
   } catch (e) {
-    showStatus('Could not reach the estimator \u2014 check your connection and try again.', true);
+    showStatus('Could not reach the estimator — check your connection and try again.', true);
   }
 }
 
@@ -666,7 +666,7 @@ function createMenuBlock() {
         <div class="manual-sub-panel" data-manual-panel="detailed">
           <div class="table-scroll">
             <table class="menu-table">
-              <caption class="sr-only">Menu portion builder \u2014 combine ingredients from the table above into one dish</caption>
+              <caption class="sr-only">Menu portion builder — combine ingredients from the table above into one dish</caption>
               <thead>
                 <tr>
                   <th scope="col"><span class="sr-only">Include in total</span></th>
@@ -695,14 +695,14 @@ function createMenuBlock() {
         </div>
 
         <div class="manual-sub-panel" data-manual-panel="simple" hidden>
-          <label for="simple-cost-${n}">Cost per portion (RM)<span class="tooltip-icon" data-tooltip="For when you already worked out the cost elsewhere \u2014 type it in directly, no ingredient breakdown needed">?</span></label>
+          <label for="simple-cost-${n}">Cost per portion (RM)<span class="tooltip-icon" data-tooltip="For when you already worked out the cost elsewhere — type it in directly, no ingredient breakdown needed">?</span></label>
           <input type="number" id="simple-cost-${n}" class="menu-simple-cost" inputmode="decimal" min="0" step="0.01" value="0.00">
         </div>
       </div>
     </div>
 
     <div class="cost-mode-panel" data-cost-panel="ai" hidden>
-      <label for="ai-desc-${n}">Describe the dish \u2014 main ingredients and rough portions</label>
+      <label for="ai-desc-${n}">Describe the dish — main ingredients and rough portions</label>
       <textarea id="ai-desc-${n}" class="menu-ai-description" rows="3" placeholder="e.g. 200g rice, fried chicken thigh, sambal, egg, cucumber"></textarea>
       <div class="ai-actions no-print">
         <button type="button" class="menu-ai-photo-btn btn btn-secondary">Or snap a photo</button>
@@ -866,7 +866,7 @@ function renderMenuTabs() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-09-06-ai-rows-editable');
+console.info('[Menu Calculator] script build: 2026-09-07-gemini-endpoint-fix-unicode-cleanup');
 
 let rzInitialized = false;
 
