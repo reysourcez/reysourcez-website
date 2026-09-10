@@ -28,7 +28,7 @@ const CONFIG = {
   // it belongs here rather than as something each person types in. Left
   // empty, the page runs entirely on demo data — a safe default, not a
   // broken one.
-  WORKER_URL: 'https://crypto-radar-worker.reysourcez-ent.workers.dev/',
+  WORKER_URL: '',
   DEFAULT_REFRESH_SECONDS: 30,
   DEFAULT_TIMEFRAME: 86400, // 1 day, in seconds — must be one of TIMEFRAMES below
   SUPPORT_RESISTANCE_SENSITIVITY: 3,
@@ -556,11 +556,21 @@ async function loadCandles(pair, duration, lookbackCount) {
     state.candleCache[key] = candles;
     return candles;
   } catch (err) {
-    console.warn('Candle fetch failed, using demo candles for this pair:', err.message);
-    const seed = DEMO_MARKETS_SEED.find(m => m.pair === pair) || { price: 1000 };
-    const candles = makeDemoCandles(seed.price, count, pair.charCodeAt(0) + duration);
-    state.candleCache[key] = candles;
-    return candles;
+    // Live mode, one coin's candles unavailable (wrong/renamed pair on
+    // Luno's side, not enough history for this lookback, transient error —
+    // whatever the cause). This must NEVER fall back to fabricated demo
+    // data here: that was the actual bug behind "POL priced at RM0.39 in
+    // the list but RM800-1000 on its own chart" — DEMO_MARKETS_SEED has no
+    // entry for POL (Luno's post-rebrand ticker; the seed list still has
+    // the old "MATICMYR"), so the old fallback silently used a hardcoded
+    // {price: 1000} default and rendered a fully-formed, real-looking
+    // chart and confluence score from a random walk around that number.
+    // Fake numbers that look real are worse than an honest gap — return
+    // empty and let callers show that plainly. Not cached, so the next
+    // attempt (manual refresh, reselecting the coin) retries for real
+    // rather than being stuck replaying the same failure.
+    console.warn(`Candle fetch failed for ${pair} (duration=${duration}):`, err.message);
+    return [];
   }
 }
 
@@ -1073,6 +1083,26 @@ function renderGlossary() {
     </details>`).join('');
 }
 
+// Shown instead of charts/scorecard/confluence when loadCandles genuinely
+// has nothing for this coin — clears anything left over from a previously
+// viewed coin too, so switching to a broken pair can't leave stale numbers
+// from whatever was open before it looking like they belong to this one.
+function clearDetailToNoData(pair) {
+  const msg = `No candle history available for ${pair.replace('MYR', '')} right now — this pair may not have enough listing history on Luno yet for this timeframe, or the request failed. Try a shorter timeframe, hit "Update now," or pick a different coin.`;
+  document.getElementById('cr-detail-change').textContent = '';
+  document.getElementById('cr-confluence-summary').textContent = msg;
+  document.getElementById('cr-confluence-needle').style.left = '50%';
+  document.getElementById('cr-regime-label').textContent = '—';
+  document.getElementById('cr-regime-label').className = 'cr-badge is-neutral';
+  document.getElementById('cr-regime-votes').textContent = '';
+  document.getElementById('cr-regime-score').textContent = '';
+  document.getElementById('cr-entry-zone').textContent = 'No data';
+  document.getElementById('cr-tp-zone').textContent = 'No data';
+  ['cr-price-chart', 'cr-volume-chart', 'cr-rsi-chart', 'cr-macd-chart'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+  document.getElementById('cr-price-legend').innerHTML = '';
+  document.getElementById('cr-scorecard-grid').innerHTML = `<p class="cr-source-note">${msg}</p>`;
+}
+
 async function renderDetail() {
   const pair = state.selectedPair;
   if (!pair) return;
@@ -1088,6 +1118,13 @@ async function renderDetail() {
   renderTimeframeTabs();
   const [candles, book] = await Promise.all([loadCandles(pair, state.timeframe), loadOrderbook(pair)]);
   if (state.selectionToken !== myToken) return; // a newer selection has since started — discard this one
+
+  if (candles.length === 0) {
+    clearDetailToNoData(pair);
+    renderOrderbookUI(book); // a separate Luno endpoint — can still work even when candles don't
+    state.lastComputed = null;
+    return;
+  }
 
   // Luno's ticker has no built-in "24h change" field (confirmed against its
   // actual response shape: pair/bid/ask/last_trade/rolling_24_hour_volume/
