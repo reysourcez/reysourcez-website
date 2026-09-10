@@ -28,7 +28,7 @@ const CONFIG = {
   // it belongs here rather than as something each person types in. Left
   // empty, the page runs entirely on demo data — a safe default, not a
   // broken one.
-  WORKER_URL: '',
+  WORKER_URL: 'https://crypto-radar-worker.reysourcez-ent.workers.dev/',
   DEFAULT_REFRESH_SECONDS: 30,
   DEFAULT_TIMEFRAME: 86400, // 1 day, in seconds — must be one of TIMEFRAMES below
   SUPPORT_RESISTANCE_SENSITIVITY: 3,
