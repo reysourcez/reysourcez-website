@@ -1,5 +1,21 @@
 # Food Worth Calculator — change notes
 
+## 2026-09-08 — CRITICAL FIX: Gemini endpoint and request shape were fabricated, likely broken since day one
+
+Flagged by the AI session working on Menu Calculator, who hit the same bug independently on `margin-audit-proxy-worker.js`'s sibling pattern and traced it to its root cause before passing word along. Verified independently against current `ai.google.dev` docs before touching anything here — not taken on trust, confirmed.
+
+**What was wrong.** `food-worth-proxy-worker.js` called `https://generativelanguage.googleapis.com/v1beta/interactions` with a body shaped `{ model, input: [...], generation_config: { thinking_level }, response_format: { type, mime_type, schema } }`, and parsed the response as `{ steps: [{ type: 'model_output', content: [...] }] }`. **None of this is a real Gemini API endpoint or shape.** The actual endpoint is `v1beta/models/{model}:generateContent` (model in the URL, not the body), the real request body is `{ contents: [{ parts: [...] }], generationConfig: { thinkingConfig: { thinkingLevel }, responseMimeType, responseSchema } }`, parts are `{ text }` or `{ inlineData: { mimeType, data } }` (no `type` tag), and the real response shape is `{ candidates: [{ content: { parts: [{ text }] } }] }`.
+
+**Practical impact:** every real request this Worker ever sent to Gemini was very likely rejected outright, the same "Missing request type"-class failure the Menu Calculator session actually saw and diagnosed. If Food Worth's AI analysis has never worked for you in a real browser, this is almost certainly why — the JSON schemas themselves (`ITEM_SCHEMA`, `RECIPE_SCHEMA`) were already valid and didn't need to change, only the envelope around them was fabricated.
+
+**What changed** (`food-worth-proxy-worker.js` only): `GEMINI_ENDPOINT` replaced with `GEMINI_API_BASE` + `buildGeminiUrl(model)`, building the URL with the model in the path; request body rebuilt to `contents`/`parts`/`generationConfig`; a new shared `extractGeminiText()` replaces the old `data.steps` walk in both `extractAnalysis()` and `extractRecipe()`, reading `data.candidates[0].content.parts[0].text` instead, defensively at every level (an empty `candidates` array — e.g. a safety block — now degrades to the same empty-result shape as any other parse failure, rather than throwing). `thinking_level: 'low'` is now `thinkingConfig: { thinkingLevel: 'low' }`, confirmed as the current real parameter name for Gemini 3-series models specifically (Gemini 2.5 uses the different, legacy `thinkingBudget` token-count parameter instead — not relevant here since this Worker is on a 3-series model, but worth knowing if the model ever changes).
+
+**Not touched, not my scope, but flagging clearly since it's almost certainly the identical bug:** `margin_audit_proxy_worker.js` uses the exact same `/v1beta/interactions` endpoint and body shape, copied from this file's own pattern on purpose per its own header comment. That Worker needs the identical fix. Passing this along rather than touching it myself, same as the Menu Calculator session did for this file.
+
+**Redeploy required** — same Worker, same URL, same secret, just the code: Cloudflare dashboard → this Worker → Edit code → select all → paste `food-worth-proxy-worker.js` above → Deploy. This is a server-side-only fix; no GitHub Pages push needed for this specific change, though the other files from today's earlier round still do need one (see their own entries below).
+
+**Testing done, given I still can't make a real network call from here:** `node --check`'d clean; grepped for every trace of the old shape (`GEMINI_ENDPOINT`, `data.steps`, `inputParts`, `response_format`, `thinking_level`, `generation_config`) to confirm nothing was missed; the new request/response shape was checked line-by-line against multiple current, independent sources (Google's own `ai.google.dev` reference docs, Google Cloud's Vertex AI docs, and working third-party examples), not just against the other AI's description of its own fix. **What this can't confirm from here, and matters more than anything else in this entry: whether a real request to the real Gemini API actually succeeds now.** That needs an actual redeploy and a real click from a real browser — please report back either way once you've tried it, since this is the one thing in this file I have the least ability to verify myself.
+
 ## 2026-09-07 (later same day) — Photo/Text analyze tabs, drinks, auto-recipe, nav standard update
 
 Five changes this round, three of them from direct feedback, two (nav label, Crypto Radar position) from the newly-shared `NAV_ORDER_STANDARD.md`/`AI_BUILD_BRIEF.md` catching a rename this page's nav hadn't picked up yet.
@@ -186,8 +202,10 @@ Everything below lives inside the code (this site has no separate settings file)
 
 ## Deploy checklist
 
-- [ ] `food-worth-calculator.html` and `food-worth-calculator.js` → push to GitHub Pages as usual (JS cache-bust bumped to `?v=15`).
-- [ ] `food-worth-proxy-worker.js` — **no changes this round**, no Cloudflare redeploy needed.
-- [ ] Once live, check the tooltip wrapping fix actually took visual effect — it's a best-guess override on `.tooltip-icon`, not a same-file edit to `styles.css`. If it didn't take, the real fix belongs in `styles.css` itself.
-- [ ] Compare the new "Save as PDF" top-right placement against `interactive-costing-analysis.html`'s actual pattern — this round guessed at it without that file open side by side.
-- [ ] Confirm `nav-dropdown.js` and `margin-audit-calculator.html` already exist in the repo (the nav now links to Margin Audit, matching the other pages).
+- [ ] **`food-worth-proxy-worker.js` — redeploy required, today's most important step.** Cloudflare dashboard → this Worker → Edit code → select all → paste the new file → Deploy. Fixes the fabricated `/v1beta/interactions` endpoint (see the 2026-09-08 entry above) — nothing else in this file changed today besides that fix and yesterday's food/drink prompt rewrite.
+- [ ] `food-worth-calculator.html` and `food-worth-calculator.js` → push to GitHub Pages as usual (JS cache-bust at `?v=17`).
+- [ ] **Report back either way** once you've tried a real Analyze click after redeploying — this is the one thing in today's Worker fix that couldn't be verified from here.
+- [ ] Pass the same `/v1beta/interactions` bug along for `margin_audit_proxy_worker.js` — same pattern, same fix needed, not done here (out of this page's scope).
+- [ ] Still unconfirmed: whether `.fw-top-actions`'s Save-as-PDF placement actually matches `interactive-costing-analysis.html`'s real markup — still couldn't get that file to compare directly.
+- [ ] Once live, watch for whether the two parallel Gemini calls per Analyze click (main breakdown + recipe breakdown, since yesterday) behave under Cloudflare's free-tier concurrency limits on a real device — flagged as untested in yesterday's entry, still true today.
+

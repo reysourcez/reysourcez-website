@@ -49,8 +49,20 @@
 // reuse even though it doesn't stop a determined non-browser client.
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
 
-const GEMINI_MODEL = 'gemini-3.5-flash-lite'; // swapped from gemini-3.7-flash for latency — see thinking_level note below
-const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+const GEMINI_MODEL = 'gemini-3.5-flash-lite'; // swapped from gemini-3.7-flash for latency — see thinkingLevel note below
+// 2026-09-08 CRITICAL FIX: this used to point at /v1beta/interactions
+// with an { input, generation_config, response_format } body shape —
+// that endpoint doesn't exist on the real Gemini API and every field
+// name in that shape was fabricated. Confirmed against ai.google.dev's
+// current docs (not just copied from the sibling fix that caught
+// this): the real endpoint is v1beta/models/{model}:generateContent,
+// model goes in the URL path (not the body), and the body is
+// { contents: [{ parts: [...] }], generationConfig: {...} } — see
+// buildGeminiUrl()/callGemini() below for what actually changed.
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+function buildGeminiUrl(model) {
+  return `${GEMINI_API_BASE}/${model}:generateContent`;
+}
 
 const ITEM_SCHEMA = {
   type: 'object',
@@ -231,18 +243,28 @@ function sanitizePriceRange(raw) {
   return { low, high };
 }
 
-// Same nested-response walk that used to live in the browser file —
-// this is just where that logic lives now. Returns a safe empty
-// shape rather than throwing on anything unexpected, so the Worker
-// always answers with valid JSON either way.
+// The real Gemini response shape: { candidates: [{ content: { parts:
+// [{ text }] } }] } — replaces the fabricated data.steps/model_output
+// walk this file used until 2026-09-08 (see the note above
+// GEMINI_API_BASE). Defensive at every level since any of these can
+// legitimately be missing — an empty candidates array on a safety
+// block, for instance — and this should return '' rather than throw
+// either way, same "always answer with valid JSON" rule as before.
+function extractGeminiText(data) {
+  const candidate = Array.isArray(data.candidates) ? data.candidates[0] : null;
+  const parts = candidate && candidate.content && Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
+  const textPart = parts.find((p) => typeof p.text === 'string');
+  return textPart ? textPart.text : '';
+}
+
+// Returns a safe empty shape rather than throwing on anything
+// unexpected, so the Worker always answers with valid JSON either way.
 function extractAnalysis(data) {
-  const outputStep = (data.steps || []).find((s) => s.type === 'model_output');
-  const textBlock = outputStep && (outputStep.content || []).find((c) => c.type === 'text');
-  if (!textBlock) return { items: [], micronutrients: EMPTY_MICRONUTRIENTS, typical_price_myr: EMPTY_TYPICAL_PRICE };
-  let raw = textBlock.text.trim();
-  raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
+  const raw = extractGeminiText(data).trim();
+  if (!raw) return { items: [], micronutrients: EMPTY_MICRONUTRIENTS, typical_price_myr: EMPTY_TYPICAL_PRICE };
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(cleaned);
     return {
       items: Array.isArray(parsed.items) ? parsed.items : [],
       micronutrients: (parsed.micronutrients && typeof parsed.micronutrients === 'object')
@@ -271,18 +293,16 @@ function sanitizeIngredients(raw) {
     });
 }
 
-// Same nested-response walk as extractAnalysis, for recipe mode.
+// Same extractGeminiText() walk as extractAnalysis, for recipe mode.
 // Recomputes the total from the ingredient list rather than trusting
 // Gemini's stated total at face value \u2014 cheap to verify, and
 // keeps the number on screen always consistent with the list above it.
 function extractRecipe(data) {
-  const outputStep = (data.steps || []).find((s) => s.type === 'model_output');
-  const textBlock = outputStep && (outputStep.content || []).find((c) => c.type === 'text');
-  if (!textBlock) return { ...EMPTY_RECIPE };
-  let raw = textBlock.text.trim();
-  raw = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
+  const raw = extractGeminiText(data).trim();
+  if (!raw) return { ...EMPTY_RECIPE };
+  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
   try {
-    const parsed = JSON.parse(raw);
+    const parsed = JSON.parse(cleaned);
     const ingredients = sanitizeIngredients(parsed.ingredients);
     const recognized = !!parsed.recognized && ingredients.length > 0;
     if (!recognized) return { ...EMPTY_RECIPE };
@@ -327,27 +347,35 @@ export default {
     // Text goes in ahead of the image (when both are given) so it
     // reads as context for what follows, matching how the prompt
     // itself describes the text as clarifying the photo rather than
-    // a second, separate thing to identify.
-    const inputParts = [{ type: 'text', text: isRecipeMode ? RECIPE_PROMPT : PROMPT }];
-    if (description) inputParts.push({ type: 'text', text: 'Description: ' + description });
-    if (hasImage) inputParts.push({ type: 'image', data: body.image, mime_type: mimeType });
+    // a second, separate thing to identify. Real Gemini part shapes —
+    // { text } or { inlineData: { mimeType, data } } — not the
+    // fabricated { type: 'text'/'image', ... } tagged shape this file
+    // used until 2026-09-08.
+    const geminiParts = [{ text: isRecipeMode ? RECIPE_PROMPT : PROMPT }];
+    if (description) geminiParts.push({ text: 'Description: ' + description });
+    if (hasImage) geminiParts.push({ inlineData: { mimeType: mimeType, data: body.image } });
 
     let geminiResp;
     try {
-      geminiResp = await fetch(GEMINI_ENDPOINT, {
+      geminiResp = await fetch(buildGeminiUrl(GEMINI_MODEL), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
         body: JSON.stringify({
-          model: GEMINI_MODEL,
-          input: inputParts,
-          // Gemini 3-series models default to thinking_level "high" if this
-          // is left unset — meaning extended internal reasoning before
-          // producing any output. Fine for hard problems, unnecessary for
-          // "name what's on this plate and estimate some numbers", and very
-          // likely the actual cause of the 524s: the model was probably
-          // taking well over a minute to even start responding.
-          generation_config: { thinking_level: 'low' },
-          response_format: { type: 'text', mime_type: 'application/json', schema: isRecipeMode ? RECIPE_SCHEMA : ITEM_SCHEMA },
+          contents: [{ parts: geminiParts }],
+          generationConfig: {
+            // Gemini 3-series models default to thinking level "high" if
+            // this is left unset — meaning extended internal reasoning
+            // before producing any output. Fine for hard problems,
+            // unnecessary for "name what's on this plate and estimate
+            // some numbers", and very likely the actual cause of the
+            // 524s: the model was probably taking well over a minute to
+            // even start responding. (The field is thinkingConfig.thinkingLevel
+            // on the real API — this file had it as a fabricated
+            // top-level generation_config.thinking_level until 2026-09-08.)
+            thinkingConfig: { thinkingLevel: 'low' },
+            responseMimeType: 'application/json',
+            responseSchema: isRecipeMode ? RECIPE_SCHEMA : ITEM_SCHEMA,
+          },
         }),
       });
     } catch (e) {
