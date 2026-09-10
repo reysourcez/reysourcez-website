@@ -2,6 +2,32 @@
 
 (Title/page renamed from "Margin Audit" to "Margin Analysis" 2026-09-06, per `NAV_ORDER_STANDARD.md`. The file itself is still `margin-audit-calculator.html`/`.js` — only the visitor-facing name changed. Earlier entries below use whichever name was current when they were written; not retroactively edited.)
 
+## 2026-09-09 — Diagnosed and fixed: Menu Calculator's tool dock was hiding this page's own dish panels
+
+**The bug, as reported.** Dish 1 (and any other dish) in the Menu tab would become inaccessible after opening "Pull from Menu Portion Creator." Creating a dish seemed to interfere with Menu Calculator's own tabs. Clicking a tab *inside* the Menu Calculator instance in the dock would close the price/sold-per-day form back on this page.
+
+**Root cause.** The tool dock injects Menu Calculator's *actual, live script* into this page — not a sandboxed copy. The injection wraps it in a function so its variable and function *names* can't collide with this file's own, but that wrapper does nothing to scope its **DOM queries** — `document.querySelectorAll(...)` inside the injected script still searches the entire page, dock or not. Menu Calculator's own tab-switcher does exactly that, with no container prefix:
+
+```js
+document.querySelectorAll('.menu-block').forEach((b) => {
+  b.hidden = (b.dataset.blockId !== blockId);
+});
+```
+
+This page's dish panels were built as `class="ma-dish-panel menu-block"` — `.menu-block` was reused purely to borrow its box styling (border/radius/background/padding), the same shortcut Food Worth's dish panels and Printing Calculator's job blocks also take. That shared name was the entire vulnerability: whichever system's tab-switcher ran, it grabbed *every* `.menu-block` on the page, including the other system's, and hid whatever didn't match its own active id. Margin Analysis has no `dataset.blockId` matching anything Menu Calculator tracks, so its dish panels got hidden wholesale the moment Menu Calculator's switcher ran for any reason — including on its own initial load inside the dock.
+
+**The fix.** Stopped sharing the class. `.ma-dish-panel` no longer carries `.menu-block` at all — it has its own rule now (copied, not inherited: same border/radius/background/padding/margin, plus the matching print rule) in this page's own `<style>` block. This isn't a narrower version of the same risk — it makes the collision **structurally impossible**, regardless of what Menu Calculator's code does or changes to next, since the two systems' queries can no longer find each other's elements at all. Deliberately did **not** try to patch this by scoping Menu Calculator's own query (can't — that file isn't touched here) or by monkey-patching `document.querySelectorAll` during injection (fragile, and treats the symptom rather than the cause).
+
+**Other shared classes, checked and left alone.** `.menu-block-header`, `.menu-name-input`, and `.remove-block-btn` are also reused from Menu Calculator's own visual vocabulary, but none of them have a confirmed unscoped query touching them the way `.menu-block` did — every usage I could find is scoped to a specific block/container on both sides. Left as-is rather than renamed defensively; flagging them here in case a future change on either page ever adds an unscoped query against one of these.
+
+**A bigger option, recommended but NOT done here — needs one thing confirmed first.** The tool dock's whole reason for existing is to avoid opening a second tab; its `rzRunIsolated` wrapper has to go to real lengths (shadowing `rzBroadcast` itself) purely to work around same-page BroadcastChannel not delivering messages back to itself. Since dish cost is 100% sync-based now (see 2026-09-08 entry) and cross-tab sync already works independently of the dock, the cleanest long-term fix is probably: **stop embedding Menu Calculator at all — replace "Pull from Menu Portion Creator" with a plain link that opens `menu-calculator.html` in a new tab**, and let the existing BroadcastChannel sync do the rest. That would remove this entire class of risk, not just this one instance of it, and delete a meaningful amount of fetch-inject-execute complexity along with it.
+
+Not implemented this round because it hinges on one thing I can't verify without `costing-sync.js` in front of me: whether its real `rzBroadcast` (the non-dock one) reliably tags outgoing payloads with `source: 'menu-calculator'` on its own. I *know* the dock path does, because `rzRunIsolated` adds that tag itself, explicitly, in the shadow wrapper — that's the one path I've actually read. If the same tagging doesn't happen for a normal standalone tab, removing the dock would silently stop dish sync from working at all, which is a far worse regression than the bug just fixed. **Before making this change: either test it directly (open Menu Calculator in a genuinely separate tab with the current code, edit a dish, confirm it syncs into Margin Analysis live with the dock never touched), or ask whoever has `costing-sync.js` open to confirm the source-tagging behavior for non-dock broadcasts.** Happy to make this change the moment that's confirmed either way.
+
+**Renamed "Menu" tab \u2192 "Menu Analyzer".** Requested directly, to keep "the dish list on this page" and "Menu Calculator, the other tool" unambiguous in conversation. Panel heading updated to match; the old heading text ("Your menu, at today's prices") kept as the lead sentence of the intro paragraph rather than dropped.
+
+**Testing done, given I can't render a browser here:** `node --check` clean; grepped for any remaining `class="ma-dish-panel menu-block"` (or reversed order) — none found; re-verified every `getElementById` call in the JS against the HTML; HTML tag balance re-checked. **What I can't verify without a browser, and what actually matters most here:** that opening the dock, switching dishes in it, and switching Menu Calculator's own tabs no longer touch each other's visibility. That's the one thing worth testing directly before considering this closed.
+
 ## 2026-09-08 — Ingredient cost now comes from Menu Calculator only; own AI-estimate/manual entry removed
 
 **Where this came from.** Two docs from the session that owns Menu Calculator and Costing Analysis — `MARGIN_AUDIT_HANDOFF.md` and `MULTI_MENU_SYNC_PLAN.md` — plus a direct steer in chat. Both are worth keeping around; this entry summarizes what actually shipped from them, not the full brief.

@@ -58,6 +58,34 @@
     .ma-sync-line strong { font-family: "IBM Plex Mono", monospace; color: var(--accent-dark); }
     .ma-sync-source { font-size: 0.8rem; color: var(--muted); margin-left: 8px; }
 
+    /* ---- Dish panel box styling ----
+         2026-09-09: deliberately NOT sharing Menu Calculator's own
+         .menu-block class anymore, even though the look is identical
+         on purpose (border/radius/bg/padding/margin copied straight
+         from it). The tool dock injects Menu Calculator's actual
+         script into this page, and its own switchToMenuBlock() does
+         an UNSCOPED document.querySelectorAll('.menu-block') to hide
+         every non-active block \u2014 with no dock/page boundary, that
+         call was also finding and hiding THESE panels, and the
+         reverse was true too (this page has no equivalent unscoped
+         query, but the shared name was the whole vulnerability).
+         Renaming this page's own class is what actually closes that
+         gap \u2014 it doesn't rely on knowing what Menu Calculator's
+         current code does or doesn't query, it just makes the two
+         systems unable to see each other's elements at all. See
+         MARGIN_AUDIT_CHANGE_NOTES.md, 2026-09-09 entry, for the full
+         diagnosis. */
+    .ma-dish-panel {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    @media print {
+      .ma-dish-panel { border: 1px solid #ccc; break-inside: avoid; }
+    }
+
     .ma-dish-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; margin-bottom: 14px; }
     .ma-dish-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--text); }
     .ma-dish-grid input[type="number"] { width: 110px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: "IBM Plex Mono", monospace; }
@@ -450,7 +478,7 @@
         </div>
 
         <div class="ma-calc-tabs no-print" id="ma-calc-tabs">
-          <button type="button" class="ma-calc-tab is-active" data-calc-tab="menu" aria-expanded="true" aria-controls="ma-panel-menu">Menu</button>
+          <button type="button" class="ma-calc-tab is-active" data-calc-tab="menu" aria-expanded="true" aria-controls="ma-panel-menu">Menu Analyzer</button>
           <button type="button" class="ma-calc-tab" data-calc-tab="fixed" aria-expanded="false" aria-controls="ma-panel-fixed">Fixed Overhead</button>
           <button type="button" class="ma-calc-tab" data-calc-tab="variable" aria-expanded="false" aria-controls="ma-panel-variable">Variable Overhead</button>
           <button type="button" class="ma-calc-tab" data-calc-tab="manpower" aria-expanded="false" aria-controls="ma-panel-manpower">Manpower</button>
@@ -460,8 +488,8 @@
         <!-- ============ MENU ============ -->
         <div class="ma-calc-panel" id="ma-panel-menu" data-calc-panel="menu">
           <div class="ma-box">
-            <h3>Your menu, at today's prices</h3>
-            <p class="menu-builder-intro">Add each item you sell, what you currently charge for it, and roughly how many you sell a day — the two numbers only you know. Ingredient cost comes from Menu Calculator now, not from here: pull an item in below, and it'll keep itself up to date automatically as you edit that item in Menu Calculator, in this tab or another browser tab.</p>
+            <h3>Menu Analyzer</h3>
+            <p class="menu-builder-intro">Your menu, at today's prices. Add each item you sell, what you currently charge for it, and roughly how many you sell a day — the two numbers only you know. Ingredient cost comes from Menu Calculator now, not from here: pull an item in below, and it'll keep itself up to date automatically as you edit that item in Menu Calculator, in this tab or another browser tab.</p>
             <div class="calc-actions no-print">
               <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator" id="ma-pull-menu">Pull from Menu Portion Creator</button>
             </div>
@@ -589,6 +617,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="margin-audit-calculator.js?v=4" defer></script>
+  <script src="margin-audit-calculator.js?v=5" defer></script>
 </body>
 </html>

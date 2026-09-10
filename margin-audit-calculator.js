@@ -129,7 +129,7 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Analysis] script build: 2026-09-08-v4-sync-only-cost');
+console.info('[Margin Analysis] script build: 2026-09-09-v5-menu-block-collision-fix');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
@@ -380,7 +380,7 @@ function createDishPanel() {
   dishIdCounter++;
   const id = 'ma-dish-' + dishIdCounter;
   const panel = document.createElement('div');
-  panel.className = 'ma-dish-panel menu-block';
+  panel.className = 'ma-dish-panel';
   panel.dataset.dishId = id;
   panel.innerHTML = `
     <div class="menu-block-header">
