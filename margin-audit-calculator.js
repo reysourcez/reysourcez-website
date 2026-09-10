@@ -129,7 +129,7 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Analysis] script build: 2026-09-09-v5-menu-block-collision-fix');
+console.info('[Margin Analysis] script build: 2026-09-09-v6-menu-analyzer-blank-by-default');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
@@ -278,7 +278,12 @@ function finishWizard() {
     : 'Manpower';
   const guideSelect = document.getElementById('guide-venue-select');
   if (guideSelect && wizardAnswers.venue) guideSelect.value = wizardAnswers.venue;
-  if (!document.querySelector('.ma-dish-panel')) createDishPanel();
+  // No default dish anymore \u2014 Menu Analyzer starts blank on purpose
+  // (see 2026-09-09 change notes). renderDishTabs() sets the correct
+  // empty-state/pull-button visibility either way, whether this is a
+  // brand-new session (zero dishes) or importData() already
+  // populated some before calling finishWizard().
+  renderDishTabs();
   recalculateAll();
 }
 
@@ -332,8 +337,7 @@ function resetAllCalculationData() {
 
   document.getElementById('ma-dish-panels').innerHTML = '';
   dishIdCounter = 0;
-  createDishPanel();
-  renderDishTabs();
+  renderDishTabs(); // shows the empty state again, no orphan dish recreated
 
   document.getElementById('ma-rent').value = RENT_DEFAULT;
   document.getElementById('ma-manpower').value = MANPOWER_DEFAULT;
@@ -459,9 +463,26 @@ function switchToDish(dishId) {
   renderDishTabs();
 }
 
+// Menu Analyzer starts with zero dishes and stays that way until
+// something syncs in from Menu Calculator \u2014 there's no manual
+// "+ Add" anymore (see 2026-09-09 change notes: a manually-created
+// dish had no blockId, so it could never connect to anything, which
+// read as "broken" rather than "empty"). This toggles between the
+// big call-to-action (#ma-dish-empty-state) and the normal
+// pull-another-item row (#ma-pull-menu-row) based purely on whether
+// any .ma-dish-panel currently exists.
+function updateDishEmptyState() {
+  const hasAnyDish = !!document.querySelector('.ma-dish-panel');
+  const emptyState = document.getElementById('ma-dish-empty-state');
+  const pullRow = document.getElementById('ma-pull-menu-row');
+  if (emptyState) emptyState.hidden = hasAnyDish;
+  if (pullRow) pullRow.hidden = !hasAnyDish;
+}
+
 // Tabs only appear once there's something to switch between — a
 // single item just shows its card directly, no tab row overhead.
 function renderDishTabs() {
+  updateDishEmptyState();
   const panels = Array.from(document.querySelectorAll('.ma-dish-panel'));
   const tabsContainer = document.getElementById('ma-dish-tabs');
   if (!tabsContainer) return;
@@ -841,7 +862,7 @@ function renderStructureComparison(mix, guideVenue) {
 
 function renderDishResults(dishes, fixedPerPortion) {
   const container = document.getElementById('ma-dish-results');
-  if (!dishes.length) { container.innerHTML = '<p class="structure-note">Add an item in Margin Calculation to see its breakdown here.</p>'; return; }
+  if (!dishes.length) { container.innerHTML = '<p class="structure-note">Nothing here yet \u2014 price a dish in Menu Calculator and it\u2019ll show up in Menu Analyzer, then here.</p>'; return; }
   container.innerHTML = dishes.map((d) => {
     const trueCost = d.ingredientCost + fixedPerPortion;
     const trueMargin = d.price - trueCost;
@@ -869,7 +890,7 @@ function renderTrueCostSection(dishes, overheadPerPortion, manpowerPerPortion) {
 
   const rowsEl = document.getElementById('ma-true-cost-rows');
   if (!dishes.length) {
-    rowsEl.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); font-family:var(--font-body);">Add an item in Margin Calculation to see its breakdown here.</td></tr>';
+    rowsEl.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted); font-family:var(--font-body);">Nothing here yet \u2014 price a dish in Menu Calculator and it\u2019ll show up in Menu Analyzer, then here.</td></tr>';
     return;
   }
   rowsEl.innerHTML = dishes.map((d) => {
@@ -1221,7 +1242,6 @@ function init() {
     if (e.target.files[0]) importData(e.target.files[0]);
   });
 
-  document.getElementById('ma-add-dish').addEventListener('click', () => createDishPanel());
   document.getElementById('guide-venue-select').addEventListener('change', recalculateAll);
 
   ['ma-rent', 'ma-manpower', 'ma-operating-days', 'ma-elec-rate', 'ma-water-actual',

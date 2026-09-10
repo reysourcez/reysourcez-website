@@ -2,6 +2,23 @@
 
 (Title/page renamed from "Margin Audit" to "Margin Analysis" 2026-09-06, per `NAV_ORDER_STANDARD.md`. The file itself is still `margin-audit-calculator.html`/`.js` — only the visitor-facing name changed. Earlier entries below use whichever name was current when they were written; not retroactively edited.)
 
+## 2026-09-09 (later same day) — Menu Analyzer starts blank; no manual "+ Add" anymore
+
+**What was still wrong after the collision fix.** A "Dish 1" placeholder kept showing up and would never connect to anything, no matter what. Root cause: `finishWizard()` auto-created one empty dish panel on every fresh session (a leftover from before ingredient cost went sync-only), and that panel had no `syncedBlockId` — nothing broadcast from Menu Calculator could ever match it, by construction. It wasn't hidden or malfunctioning, it was just permanently unreachable, which reads exactly like "broken."
+
+**The fix — decided by direct instruction, not guessed.** Menu Analyzer now starts with zero dishes, always. There is no more manual "+ Add menu item" button anywhere on this page. A dish exists here for exactly one reason: it synced in from Menu Calculator, tagged with that item's `blockId`. This resolves, definitively, the "should an unsynced dish even be allowed to exist" question the original `MARGIN_AUDIT_HANDOFF.md` deliberately left open — the answer is now no.
+
+**Reframed what this panel actually is.** Menu Analyzer isn't a place to build a menu — it's a confirmation step for a menu you've already built in Menu Calculator. Intro copy rewritten to say that directly. When it's empty, a call-to-action takes over the whole panel: "No menu items yet — Open Menu Calculator and price your dishes there first." Once at least one dish has synced in, that call-to-action is replaced by the normal dish panels plus a smaller "Pull in another item" button for adding more.
+
+**What changed, mechanically:**
+- `finishWizard()` no longer creates a starter dish; it calls `renderDishTabs()` instead, which sets the correct empty/non-empty display either way.
+- `resetAllCalculationData()` (Reset all) no longer recreates a dish after clearing — it goes back to genuinely empty, matching a fresh session.
+- New `updateDishEmptyState()`, called from inside `renderDishTabs()` — so every existing dish add/remove/sync path already picks up the empty-state toggle for free, nothing had to be threaded through separately.
+- `createDishPanel()` itself is unchanged and still exists — it's just no longer reachable from a button. It's only ever called now from `handleSyncPayload()` (a real sync arriving) and `importData()` (restoring a previously-saved file).
+- The two "nothing to show" messages elsewhere on the page (per-item breakdown, true-cost table) now point at Menu Calculator by name instead of a generic "add an item" — consistent with the rest of this change.
+
+**Testing done, given I can't render a browser here:** `node --check` clean; grepped for every remaining reference to the removed button/id (`ma-add-dish`) — none found; re-verified every `getElementById` call in the JS against the HTML; confirmed `createDishPanel()`'s only two call sites left are the sync and import paths. **Worth testing directly:** a genuinely fresh session (clear the page / hard reload) shows the empty-state message with no phantom dish, and syncing one item in from Menu Calculator correctly swaps the empty state out for that dish's panel.
+
 ## 2026-09-09 — Diagnosed and fixed: Menu Calculator's tool dock was hiding this page's own dish panels
 
 **The bug, as reported.** Dish 1 (and any other dish) in the Menu tab would become inaccessible after opening "Pull from Menu Portion Creator." Creating a dish seemed to interfere with Menu Calculator's own tabs. Clicking a tab *inside* the Menu Calculator instance in the dock would close the price/sold-per-day form back on this page.

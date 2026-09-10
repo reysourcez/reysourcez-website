@@ -87,6 +87,33 @@
     }
 
     .ma-dish-grid { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: end; margin-bottom: 14px; }
+
+    /* ---- Menu Analyzer empty state ----
+         2026-09-09: shown instead of any dish content whenever
+         .ma-dish-panel count is zero. Calm, not alarming — an empty
+         Menu Analyzer is the normal starting state now, not an
+         error, so this reads as an instruction rather than a warning
+         (no red, no icon, just the paper background already used
+         elsewhere for a quiet inset block). */
+    .ma-dish-empty-state {
+      text-align: center;
+      padding: 40px 24px;
+      background: var(--paper);
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .ma-dish-empty-title {
+      font-family: var(--font-display);
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin: 0 0 8px;
+    }
+    .ma-dish-empty-body {
+      color: var(--muted);
+      max-width: 52ch;
+      margin: 0 auto 20px;
+    }
     .ma-dish-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--text); }
     .ma-dish-grid input[type="number"] { width: 110px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: "IBM Plex Mono", monospace; }
     .ma-dish-grid input[type="text"] { padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); min-width: 200px; }
@@ -489,14 +516,29 @@
         <div class="ma-calc-panel" id="ma-panel-menu" data-calc-panel="menu">
           <div class="ma-box">
             <h3>Menu Analyzer</h3>
-            <p class="menu-builder-intro">Your menu, at today's prices. Add each item you sell, what you currently charge for it, and roughly how many you sell a day — the two numbers only you know. Ingredient cost comes from Menu Calculator now, not from here: pull an item in below, and it'll keep itself up to date automatically as you edit that item in Menu Calculator, in this tab or another browser tab.</p>
-            <div class="calc-actions no-print">
-              <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator" id="ma-pull-menu">Pull from Menu Portion Creator</button>
+            <p class="menu-builder-intro">Confirms pricing for a menu you've already built in Menu Calculator — it isn't where you build one. Every dish you price there appears here automatically; your job here is just two things per dish, what you currently charge and roughly how many you sell a day.</p>
+
+            <!-- Shown whenever there are zero dishes — a fresh
+                 session, or after Reset all. No manual "+ Add" exists
+                 anymore (see MARGIN_AUDIT_CHANGE_NOTES.md, 2026-09-09):
+                 a manually-created dish had no blockId, so it could
+                 never connect to anything in Menu Calculator, which
+                 read as broken rather than simply empty. Toggled by
+                 updateDishEmptyState() in the JS, called from
+                 renderDishTabs() so every dish add/remove path picks
+                 it up automatically. -->
+            <div class="ma-dish-empty-state" id="ma-dish-empty-state">
+              <p class="ma-dish-empty-title">No menu items yet</p>
+              <p class="ma-dish-empty-body">Open Menu Calculator and price your dishes there first — each one shows up here on its own, ready for you to confirm what you charge and how many you sell a day.</p>
+              <button type="button" class="btn btn-primary" data-open-tool="menu-calculator" id="ma-pull-menu-empty">Open Menu Calculator</button>
+            </div>
+
+            <div class="calc-actions no-print" id="ma-pull-menu-row" hidden>
+              <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator" id="ma-pull-menu">Pull in another item from Menu Calculator</button>
             </div>
             <div id="ma-dish-panels"></div>
             <div class="calc-actions no-print">
               <div class="menu-tabs" id="ma-dish-tabs"><!-- populated by JS once there's more than one item --></div>
-              <button type="button" id="ma-add-dish" class="btn btn-primary">+ Add menu item</button>
             </div>
           </div>
         </div>
@@ -617,6 +659,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="margin-audit-calculator.js?v=5" defer></script>
+  <script src="margin-audit-calculator.js?v=6" defer></script>
 </body>
 </html>
