@@ -28,7 +28,7 @@ const CONFIG = {
   // it belongs here rather than as something each person types in. Left
   // empty, the page runs entirely on demo data — a safe default, not a
   // broken one.
-  WORKER_URL: 'https://crypto-radar-worker.reysourcez-ent.workers.dev/',
+  WORKER_URL: '',
   DEFAULT_REFRESH_SECONDS: 30,
   DEFAULT_TIMEFRAME: 86400, // 1 day, in seconds — must be one of TIMEFRAMES below
   SUPPORT_RESISTANCE_SENSITIVITY: 3,
@@ -157,6 +157,8 @@ const state = {
   timeframe: CONFIG.DEFAULT_TIMEFRAME,
   candleCache: {}, // key: `${pair}:${duration}:${count}` -> candle array
   overviewScores: {}, // pair -> { confluence, blended, tier }
+  overviewScoresComplete: false, // true once computeOverviewScores() has run at least once — lets the grid distinguish "still scoring" from "scored, genuinely unavailable"
+  lastCandleError: null, // most recent candle-fetch failure reason, surfaced in the no-data message rather than swallowed
   selectionToken: 0, // bumped on every selectCoin() call; a renderDetail()
                       // in flight checks this before writing to the DOM, so
                       // a slow, stale response from a previously-clicked
@@ -570,6 +572,7 @@ async function loadCandles(pair, duration, lookbackCount) {
     // attempt (manual refresh, reselecting the coin) retries for real
     // rather than being stuck replaying the same failure.
     console.warn(`Candle fetch failed for ${pair} (duration=${duration}):`, err.message);
+    state.lastCandleError = err.message;
     return [];
   }
 }
@@ -662,6 +665,7 @@ async function computeOverviewScores() {
   const scores = {};
   results.forEach((r) => { if (r.status === 'fulfilled' && r.value) scores[r.value.pair] = r.value; });
   state.overviewScores = scores;
+  state.overviewScoresComplete = true;
 }
 
 // Top N by blended score, across every tier — a thin coin needing a much
@@ -963,7 +967,7 @@ function coinCardHtml(m, stars) {
       <span class="cr-coin-name">${symbol}</span>
     </div>
     <span class="cr-coin-blended">${blended != null ? scoreLabel(blended) : '—'}</span>
-    <span class="cr-coin-sublabel">${confluence != null ? scoreLabel(confluence) + '/100' : 'Scoring…'} &middot; ${TIER_LABEL[tier]}</span>
+    <span class="cr-coin-sublabel">${confluence != null ? scoreLabel(confluence) + '/100' : (state.overviewScoresComplete ? 'No data' : 'Scoring…')} &middot; ${TIER_LABEL[tier]}</span>
     <span class="cr-coin-price">${formatMYR(price)}</span>
     <div class="cr-coin-meta"><span>Vol 24h: ${Number(m.rolling_24_hour_volume).toLocaleString('en-MY', { maximumFractionDigits: 2 })} ${symbol}</span></div>
   </button>`;
@@ -1087,8 +1091,9 @@ function renderGlossary() {
 // has nothing for this coin — clears anything left over from a previously
 // viewed coin too, so switching to a broken pair can't leave stale numbers
 // from whatever was open before it looking like they belong to this one.
-function clearDetailToNoData(pair) {
-  const msg = `No candle history available for ${pair.replace('MYR', '')} right now — this pair may not have enough listing history on Luno yet for this timeframe, or the request failed. Try a shorter timeframe, hit "Update now," or pick a different coin.`;
+function clearDetailToNoData(pair, reason) {
+  const why = reason ? ` (${reason})` : '';
+  const msg = `No candle data for ${pair.replace('MYR', '')} right now${why}. If this is happening for every coin — including Bitcoin, which always has full history — it's almost certainly not a per-coin gap: open <your-worker-url>/api/health in a browser tab and check "hasLunoKeys" is true. False means LUNO_KEY_ID/LUNO_KEY_SECRET aren't set correctly in the Worker's Settings → Variables and Secrets (see SETUP_AND_GLOSSARY.md). If it's just this one coin, it may genuinely lack enough history yet — try a different coin to compare.`;
   document.getElementById('cr-detail-change').textContent = '';
   document.getElementById('cr-confluence-summary').textContent = msg;
   document.getElementById('cr-confluence-needle').style.left = '50%';
@@ -1120,7 +1125,7 @@ async function renderDetail() {
   if (state.selectionToken !== myToken) return; // a newer selection has since started — discard this one
 
   if (candles.length === 0) {
-    clearDetailToNoData(pair);
+    clearDetailToNoData(pair, state.lastCandleError);
     renderOrderbookUI(book); // a separate Luno endpoint — can still work even when candles don't
     state.lastComputed = null;
     return;
