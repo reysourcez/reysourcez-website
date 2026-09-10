@@ -224,7 +224,7 @@ let menuRowIdCounter = 0;
 // though all three share the same photo/description -> Gemini ->
 // structured JSON shape — see menu-calculator-proxy-worker.js's own
 // header comment for why they're kept apart rather than shared.
-const MENU_AI_PROXY_ENDPOINT = 'PASTE_YOUR_CLOUDFLARE_WORKER_URL_HERE';
+const MENU_AI_PROXY_ENDPOINT = 'https://margin-audit-proxy.reysourcez-ent.workers.dev/';
 const MENU_AI_MAX_IMAGE_EDGE = 1024;
 
 function menuTypeOptionsHTML() {
