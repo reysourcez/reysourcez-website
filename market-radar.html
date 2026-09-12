@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — Market Radar</title>
+  <meta name="description" content="Drop a pin anywhere in Miri, Kuching, Sibu or Bintulu and see real competitor density, catchment reach, and an editable opportunity score — free, official Malaysian open data, nothing scraped.">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=16">
+
+  <!-- Two deliberate exceptions to this site's usual zero-dependency
+       rule, both free, both loaded as plain <script>/<link> tags with
+       no build step and no npm — see market-radar.js's header comment
+       for why an actual interactive street map isn't something that
+       can reasonably be hand-rolled in SVG the way this site's other
+       charts are. Pin these version numbers; don't switch to an
+       unpinned "@latest" URL, since that can silently break the page
+       on a future release. -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+
+  <!-- Page-specific styles only — everything reusable (buttons, tables,
+       result cards, wizard, tooltips) comes from styles.css as-is, per
+       AI_BUILD_BRIEF.md. New here: the map container and legend, the
+       provenance tags, the weight-editor row, and the pin-coordinate
+       readout. -->
+  <style>
+    #mr-map { height: 480px; width: 100%; border-radius: 10px; border: 1px solid var(--line); z-index: 1; }
+    /* Leaflet needs an explicit height on its container or it renders
+       as a blank 0px strip — the single most common integration bug
+       with this library, so calling it out here rather than leaving
+       someone to discover it the hard way. */
+
+    .mr-map-wrap { margin-bottom: 16px; }
+    .mr-map-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 4px 0; font-size: 0.82rem; color: var(--muted); }
+    .mr-map-legend span { display: flex; align-items: center; gap: 6px; }
+    .mr-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .mr-legend-line { width: 16px; height: 0; border-top: 2px dashed var(--muted); display: inline-block; }
+
+    .mr-pin-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 0.88rem; color: var(--muted); }
+    .mr-pin-row strong { color: var(--text); font-family: "IBM Plex Mono", monospace; font-weight: 600; }
+    .mr-pin-hint { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
+
+    .mr-controls-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
+    .mr-controls-row > div { display: flex; flex-direction: column; gap: 6px; }
+    .mr-controls-row label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+    .mr-controls-row select, .mr-controls-row input[type="text"] {
+      padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text);
+    }
+    .mr-controls-row select:focus-visible, .mr-controls-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    #mr-custom-tag-row { display: none; gap: 8px; }
+    #mr-custom-tag-row.is-visible { display: flex; }
+    #mr-custom-tag-row input { width: 120px; }
+
+    /* Provenance tags — every stat on the page carries one of these so
+       an "Official" district figure never reads with the same
+       confidence as an "Estimated" OpenStreetMap count. Deliberately
+       plain text, not a colored badge — the point is to be read, not
+       to decorate. */
+    .mr-provenance { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 500; margin-top: 2px; text-transform: none; }
+
+    .mr-weights-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .mr-weights-table th, .mr-weights-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+    .mr-weights-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; }
+    .mr-weights-table input { width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-family: "IBM Plex Mono", monospace; text-align: right; }
+    .mr-weights-table input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    #mr-weight-total { font-weight: 700; }
+    #mr-weight-total.is-off { color: #C0392B; }
+
+    .mr-score-banner {
+      display: flex; align-items: center; gap: 18px; flex-wrap: wrap; border: 3px solid var(--accent);
+      border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; background: var(--accent-soft);
+    }
+    .mr-score-number { font-family: var(--font-display); font-size: 2.4rem; font-weight: 700; color: var(--accent-dark); line-height: 1; }
+    .mr-score-text { display: flex; flex-direction: column; gap: 2px; }
+    .mr-score-text strong { font-family: var(--font-display); font-size: 1.2rem; }
+    .mr-score-text small { font-size: 0.78rem; color: var(--muted); }
+
+    .mr-ai-box { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); font-size: 0.92rem; line-height: 1.55; margin-top: 10px; }
+    .mr-ai-box.is-empty { color: var(--muted); font-style: italic; }
+
+    .mr-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 10px; }
+    .mr-status.is-error { color: #C0392B; font-weight: 600; }
+
+    @media (max-width: 800px) {
+      #mr-map { height: 360px; }
+      .mr-controls-row { flex-direction: column; align-items: stretch; }
+    }
+    @media print {
+      #mr-map { border: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
+            <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="market-radar.html" aria-current="page">Market Radar</a></li>
+          </ul>
+        </li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; official &amp; open data only &middot; nothing scraped</span>
+        <h1>Market Radar</h1>
+        <p class="lead">Drop a pin on a candidate spot, pick what you're thinking of opening, and see who's already there, how many people you'd actually reach, and an editable opportunity score — built entirely from OpenStreetMap and Malaysia's own open data API, never scraped from Google Maps, CTOS, or Mudah.</p>
+      </div>
+    </section>
+
+    <!-- ============ WIZARD ============ -->
+    <section class="ica-panel" id="wizard">
+      <div class="wrap">
+        <div class="wizard-card" id="wizard-question"><!-- populated by JS --></div>
+        <button type="button" id="wizard-back" class="btn btn-secondary" hidden>Back</button>
+      </div>
+    </section>
+
+    <!-- ============ ANALYSIS ============ -->
+    <section class="ica-panel" id="mr-analysis" hidden>
+      <div class="wrap">
+        <div class="analysis-top-bar no-print">
+          <button type="button" id="mr-edit-answers" class="link-btn">&larr; Edit answers</button>
+          <button type="button" id="mr-save-pdf" class="btn btn-secondary">Save as PDF</button>
+        </div>
+
+        <p class="structure-note">Scouting <strong id="mr-town-label">Miri</strong>. Click anywhere on the map below to move the pin to an exact spot — a specific shoplot, not just the town centre.</p>
+
+        <div class="mr-controls-row no-print">
+          <div>
+            <label for="mr-category-select">What are you thinking of opening?</label>
+            <select id="mr-category-select"><!-- populated by JS from CATEGORY_TAGS --></select>
+          </div>
+          <div id="mr-custom-tag-row">
+            <div>
+              <label for="mr-custom-key">OSM key</label>
+              <input type="text" id="mr-custom-key" placeholder="e.g. shop">
+            </div>
+            <div>
+              <label for="mr-custom-value">OSM value</label>
+              <input type="text" id="mr-custom-value" placeholder="e.g. bicycle">
+            </div>
+          </div>
+          <div>
+            <label for="mr-catchment-select">Catchment</label>
+            <select id="mr-catchment-select"><!-- populated by JS from CATCHMENT_MODES --></select>
+          </div>
+          <button type="button" id="mr-analyze-btn" class="btn btn-primary">Analyze this spot</button>
+        </div>
+
+        <div class="mr-pin-row">
+          <span>Pin: <strong id="mr-pin-coords">—</strong></span>
+        </div>
+        <p class="mr-status" id="mr-status" role="status" aria-live="polite"></p>
+
+        <div class="mr-map-wrap">
+          <div id="mr-map"></div>
+          <div class="mr-map-legend">
+            <span><i class="mr-legend-dot" style="background:#C0392B;"></i>Competitor</span>
+            <span><i class="mr-legend-line" style="border-top-style:solid; border-color:var(--accent);"></i>Real catchment (isochrone)</span>
+            <span><i class="mr-legend-line"></i>Estimated catchment (radius fallback)</span>
+          </div>
+        </div>
+
+        <div class="mr-score-banner" id="mr-score-banner" hidden>
+          <div class="mr-score-number" id="mr-score-number">—</div>
+          <div class="mr-score-text">
+            <strong id="mr-score-verdict">Analyze a spot to see this</strong>
+            <small>Opportunity score</small>
+            <span class="mr-provenance">Calculated — your own weights below</span>
+          </div>
+        </div>
+
+        <div class="ica-results" id="mr-result-cards" hidden>
+          <div class="result-card">
+            <span class="result-label">Competitors in catchment<span class="tooltip-icon" data-tooltip="Same category you picked above, inside the real catchment shape (or the radius fallback), not just a raw radius search.">?</span></span>
+            <span class="result-value" id="mr-competitor-count">—</span>
+            <span class="mr-provenance">Estimated — OpenStreetMap</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">Category mix nearby<span class="tooltip-icon" data-tooltip="How mixed the surrounding businesses are, not just your one category — a healthily diverse area scores higher than one already flooded with a single type.">?</span></span>
+            <span class="result-value" id="mr-diversity-value">—</span>
+            <span class="mr-provenance">Estimated — OpenStreetMap</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">District population<span class="tooltip-icon" data-tooltip="The whole district's population from DOSM, then scaled down by how much of the district your catchment shape actually covers — assumes people are spread evenly across the district, which is a simplification.">?</span></span>
+            <span class="result-value" id="mr-population-value">—</span>
+            <span class="mr-provenance">Official — DOSM</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">Median household income<span class="tooltip-icon" data-tooltip="District-level, from DOSM's Household Income & Expenditure Survey — gives a sense of local spending power, not a per-household lookup.">?</span></span>
+            <span class="result-value" id="mr-income-value">—</span>
+            <span class="mr-provenance">Official — DOSM</span>
+          </div>
+        </div>
+
+        <details class="fw-collapsible" id="mr-weights-panel" hidden>
+          <summary class="cr-collapsible-summary" style="cursor:pointer; list-style:none; padding:8px 0;"><h3 style="display:inline;">Opportunity score weights <span class="toggle-hint">— edit and the score above updates live</span></h3></summary>
+          <table class="mr-weights-table">
+            <thead><tr><th>Signal</th><th>Weight</th></tr></thead>
+            <tbody>
+              <tr><td>Low competition (fewer competitors = higher)</td><td><input type="number" id="mr-weight-lowCompetition" min="0" max="1" step="0.05" value="0.35"></td></tr>
+              <tr><td>Population reached</td><td><input type="number" id="mr-weight-population" min="0" max="1" step="0.05" value="0.25"></td></tr>
+              <tr><td>Household income band</td><td><input type="number" id="mr-weight-income" min="0" max="1" step="0.05" value="0.15"></td></tr>
+              <tr><td>Category diversity nearby</td><td><input type="number" id="mr-weight-diversity" min="0" max="1" step="0.05" value="0.15"></td></tr>
+              <tr><td>Momentum <span class="toggle-hint">(neutral until snapshot history exists)</span></td><td><input type="number" id="mr-weight-momentum" min="0" max="1" step="0.05" value="0.10"></td></tr>
+            </tbody>
+          </table>
+          <p class="structure-note">Weights should add up to 1.00 — current total: <span id="mr-weight-total">1.00</span></p>
+        </details>
+
+        <div class="mr-ai-box is-empty no-print" id="mr-ai-insight">Click "Get a plain-English read" below once you've analyzed a spot.</div>
+        <div class="calc-actions no-print">
+          <button type="button" id="mr-get-insight" class="btn btn-secondary">Get a plain-English read</button>
+        </div>
+        <p class="structure-note" style="margin-top:20px;">Every number above is tagged where it came from. "Official" is government open data (DOSM); "Estimated" is crowd-sourced map data or a modelled travel-time shape; the AI read only ever describes the numbers already on this page — it never invents a business or a figure of its own.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+  <script src="costing-sync.js?v=4" defer></script>
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="market-radar.js?v=1" defer></script>
+</body>
+</html>
