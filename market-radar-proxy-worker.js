@@ -9,8 +9,17 @@
 
      1. Query OpenStreetMap's free Overpass API for every business
         matching whichever categories the browser asked about,
-        within a generous radius of one point.
-     2. Ask OpenRouteService for a real walk/drive-time isochrone
+        within a generous radius of one point. Tries a short list of
+        public mirrors in order (see OVERPASS_MIRRORS) rather than
+        trusting one \u2014 the original single-endpoint version of this
+        file hit a real, widely-reported reliability problem with
+        overpass-api.de specifically (intermittent 406s affecting
+        unrelated users too, not a bug in this Worker \u2014 see
+        github.com/drolbr/Overpass-API/issues/791 and the OSM
+        community forum thread on the same error) within days of
+        this tool going live for real testing.
+     2. Ask OpenRouteService (now under the HeiGIT domain, see
+        ORS_ISOCHRONE_ENDPOINT) for a real walk/drive-time isochrone
         shape around that same point \u2014 or return null if that
         fails or ORS_API_KEY isn't set yet, so the browser can fall
         back to drawing a plain circle instead of breaking.
@@ -49,10 +58,16 @@
      4. Settings -> Variables and Secrets -> Add, as Secret (not
         plain text):
           GEMINI_API_KEY  \u2014 same key your other Workers use
-          ORS_API_KEY     \u2014 free at openrouteservice.org/dev-dashboard
-                              (sign up, create a token under the
-                              default "Isochrones" plan \u2014 500/day,
-                              20/minute, no card required)
+          ORS_API_KEY     \u2014 free at account.heigit.org (openrouteservice
+                              moved its whole account system there;
+                              the key shown as "Basic Key" on that
+                              dashboard is what goes here) \u2014 500
+                              isochrones total, 20/minute, no card
+                              required. openrouteservice.org's OLD
+                              signup path still exists but funnels
+                              through the same account.heigit.org
+                              system now, so either route ends up
+                              the same place.
         Both are optional in the sense that the Worker won't crash
         without them \u2014 no ORS key just means every catchment falls
         back to a plain circle; no Gemini key just means the "Get a
@@ -70,12 +85,44 @@
    this is the first place to look: fetch
    https://api.data.gov.my/data-catalogue?id=hh_income_district&limit=3
    directly in a browser and match the real field name.
+
+   FIXED, 2026-09-13 (day-one live testing turned this up immediately):
+   Overpass calls were failing with a 406 on the very first real
+   "Analyze" click. Traced to overpass-api.de itself, not this file \u2014
+   see the note in item 1 above. Two changes: (a) fetchOverpassPOIs
+   now tries OVERPASS_MIRRORS in order instead of one hardcoded
+   endpoint, and sends an explicit Accept: application/json header,
+   which several of the same public bug reports suggested helps; (b)
+   Overpass failing now returns an honest { pois: [], error: "..." }
+   instead of throwing \u2014 previously, if Overpass alone failed, the
+   whole Promise.all rejected and isochrone + demographics results
+   were thrown away too, even on requests where THEY had already
+   succeeded. Also moved ORS_ISOCHRONE_ENDPOINT to the api.heigit.org
+   domain per openrouteservice's own migration notice (api.openrouteservice.org
+   still works today but has had its quota deliberately reduced since
+   28 April 2026 to push this migration, and will presumably be
+   switched off eventually) \u2014 the request/response shape and
+   Authorization header are unchanged per that same notice, only the
+   domain moved.
    ============================================================ */
 
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
 
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
-const ORS_ISOCHRONE_ENDPOINT = 'https://api.openrouteservice.org/v2/isochrones/';
+// Tried in order; first one that answers wins. All three run the
+// identical Overpass QL language, so nothing about how the query is
+// BUILT changes based on which one responds \u2014 see the 2026-09-13
+// fix note above for why this is a list now instead of one endpoint.
+const OVERPASS_MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
+// Moved from api.openrouteservice.org per openrouteservice's own
+// migration notice \u2014 same request shape, same Authorization header,
+// just a different domain. If isochrones ever start failing again
+// after this, check ask.openrouteservice.org's Announcements category
+// first; this is clearly still a service in the middle of a move.
+const ORS_ISOCHRONE_ENDPOINT = 'https://api.heigit.org/openrouteservice/v2/isochrones/';
 const DATA_GOV_MY_ENDPOINT = 'https://api.data.gov.my/data-catalogue';
 const GEMINI_MODEL = 'gemini-flash-lite-latest';
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
@@ -130,32 +177,59 @@ function categorize(tags, categories) {
 // meaningfully change hour to hour, and this respects Overpass's own
 // shared fair-use policy across everyone using this Worker, not just
 // whoever's visiting right now.
+//
+// Returns { pois, error } rather than a bare array, and NEVER throws
+// on a data-source failure \u2014 every mirror failing is a real, honest
+// possibility (see the 2026-09-13 fix note at the top of this file),
+// and the router below still has an isochrone and demographics result
+// worth returning even when this one comes back empty. Throwing here
+// used to take all three down together over one flaky dependency.
 async function fetchOverpassPOIs(lat, lng, radiusM, categories) {
   const query = buildOverpassQuery(lat, lng, radiusM, categories);
-  if (!query) return [];
+  if (!query) return { pois: [], error: null };
 
   const cache = caches.default;
   const cacheKey = new Request('https://cache.internal/overpass/' + hashString(query));
   const cached = await cache.match(cacheKey);
   if (cached) return cached.json();
 
-  const resp = await fetch(OVERPASS_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: query });
-  if (!resp.ok) throw new Error('Overpass returned ' + resp.status + ' \u2014 it may be under heavy load, try again shortly');
-  const data = await resp.json();
+  let lastError = 'no mirrors configured';
+  for (const endpoint of OVERPASS_MIRRORS) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        // Accept: application/json is deliberate, not decorative \u2014
+        // several independent reports of the same 406 this tool hit
+        // point at a missing/mismatched Accept header as one likely
+        // trigger. Cheap to send, and correct regardless.
+        headers: { 'Content-Type': 'text/plain', Accept: 'application/json' },
+        body: query,
+      });
+      if (!resp.ok) { lastError = endpoint + ' returned ' + resp.status; continue; }
+      const data = await resp.json();
 
-  const pois = (data.elements || []).map((el) => {
-    const lat2 = el.lat != null ? el.lat : (el.center && el.center.lat);
-    const lng2 = el.lon != null ? el.lon : (el.center && el.center.lon);
-    if (lat2 == null || lng2 == null) return null;
-    const category = categorize(el.tags || {}, categories);
-    if (!category) return null;
-    const name = (el.tags && (el.tags.name || el.tags['name:en'])) || 'Unnamed';
-    return { name, lat: lat2, lng: lng2, category };
-  }).filter(Boolean);
+      const pois = (data.elements || []).map((el) => {
+        const lat2 = el.lat != null ? el.lat : (el.center && el.center.lat);
+        const lng2 = el.lon != null ? el.lon : (el.center && el.center.lon);
+        if (lat2 == null || lng2 == null) return null;
+        const category = categorize(el.tags || {}, categories);
+        if (!category) return null;
+        const name = (el.tags && (el.tags.name || el.tags['name:en'])) || 'Unnamed';
+        return { name, lat: lat2, lng: lng2, category };
+      }).filter(Boolean);
 
-  const response = new Response(JSON.stringify(pois), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
-  await cache.put(cacheKey, response.clone());
-  return pois;
+      const result = { pois, error: null };
+      const response = new Response(JSON.stringify(result), { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=86400' } });
+      await cache.put(cacheKey, response.clone());
+      return result;
+    } catch (e) {
+      lastError = endpoint + ': ' + e.message;
+    }
+  }
+  // Every mirror failed. Not cached \u2014 a genuine outage shouldn't be
+  // remembered for 24 hours; the next Analyze click should try again
+  // for real rather than replaying this same failure from cache.
+  return { pois: [], error: 'Every Overpass mirror failed (' + lastError + '). Competitor data is unavailable right now \u2014 the catchment shape and district numbers below are unaffected.' };
 }
 
 /* ================= 2. OPENROUTESERVICE (real catchment shape) ================= */
@@ -309,12 +383,17 @@ export default {
     }
 
     try {
-      const [pois, isochrone, demographics] = await Promise.all([
+      const [overpassResult, isochrone, demographics] = await Promise.all([
         fetchOverpassPOIs(lat, lng, radiusM, categories),
         body.isochrone ? fetchIsochrone(env, lat, lng, body.isochrone.profile, body.isochrone.seconds) : Promise.resolve(null),
         district ? fetchDemographics(district) : Promise.resolve({ population: 0, medianIncome: 0 }),
       ]);
-      return json({ pois, isochrone, demographics }, 200, origin);
+      // 200, not an error status, even when overpassResult.error is
+      // set \u2014 this IS a successful response, it just carries a
+      // partial-data flag inside it. market-radar.js checks
+      // data.poisError itself and shows the catchment/demographics
+      // results it DID get rather than a blank failure screen.
+      return json({ pois: overpassResult.pois, poisError: overpassResult.error, isochrone, demographics }, 200, origin);
     } catch (err) {
       return json({ error: 'Analysis failed: ' + (err.message || 'unknown error') }, 502, origin);
     }

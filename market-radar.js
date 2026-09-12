@@ -427,7 +427,9 @@ function renderScore() {
   const result = computeOpportunityScore(lastAnalysis, currentWeights());
   document.getElementById('mr-score-banner').hidden = false;
   document.getElementById('mr-score-number').textContent = Math.round(result.total * 100);
-  document.getElementById('mr-score-verdict').textContent = scoreVerdict(result.total);
+  document.getElementById('mr-score-verdict').textContent = lastAnalysis.poisAvailable
+    ? scoreVerdict(result.total)
+    : scoreVerdict(result.total) + ' \u2014 based on partial data, competitor count unavailable';
 }
 
 async function analyzeSpot() {
@@ -491,10 +493,22 @@ async function analyzeSpot() {
       catchmentIsReal: catchment.isReal,
       districtLabel: town.district,
       categoryLabel: categoryKey === 'custom' ? categoriesForRequest.custom.label : CATEGORY_TAGS[categoryKey].label,
+      // False when the Worker's Overpass call failed entirely (see
+      // market-radar-proxy-worker.js's poisError). "0 competitors"
+      // and "we couldn't check" must never look the same on screen —
+      // the first is a real, useful finding; the second is a data
+      // outage that would otherwise read as a suspiciously perfect
+      // opportunity score.
+      poisAvailable: !data.poisError,
     };
 
-    document.getElementById('mr-competitor-count').innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback)}`;
-    document.getElementById('mr-diversity-value').textContent = Math.round(lastAnalysis.diversityIndex * 100) + '% mixed';
+    if (lastAnalysis.poisAvailable) {
+      document.getElementById('mr-competitor-count').innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback)}`;
+      document.getElementById('mr-diversity-value').textContent = Math.round(lastAnalysis.diversityIndex * 100) + '% mixed';
+    } else {
+      document.getElementById('mr-competitor-count').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
+      document.getElementById('mr-diversity-value').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
+    }
     document.getElementById('mr-population-value').textContent = lastAnalysis.districtPopulation ? lastAnalysis.districtPopulation.toLocaleString() : 'Not available';
     document.getElementById('mr-income-value').textContent = lastAnalysis.districtIncome ? ('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString() + '/mo') : 'Not available';
     document.getElementById('mr-result-cards').hidden = false;
@@ -505,7 +519,11 @@ async function analyzeSpot() {
     document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below for a summary of what these numbers suggest.';
     document.getElementById('mr-ai-insight').classList.add('is-empty');
 
-    setStatus(`Found ${lastAnalysis.competitorCount} matching ${lastAnalysis.categoryLabel} competitor${lastAnalysis.competitorCount === 1 ? '' : 's'} in this catchment.`);
+    if (data.poisError) {
+      setStatus(data.poisError, true);
+    } else {
+      setStatus(`Found ${lastAnalysis.competitorCount} matching ${lastAnalysis.categoryLabel} competitor${lastAnalysis.competitorCount === 1 ? '' : 's'} in this catchment.`);
+    }
 
     // Broadcasts if costing-sync.js is loaded and a listener exists —
     // see this file's own KIV note: Interactive Costing Analysis and

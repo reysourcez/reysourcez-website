@@ -28,9 +28,15 @@ Business density (OpenStreetMap/Overpass) and district demographics (data.gov.my
 
 ### Getting a free OpenRouteService key
 
-1. Sign up at [openrouteservice.org/dev-dashboard](https://openrouteservice.org/dev-dashboard) — free, no card.
-2. Create a token under the standard plan. This gives isochrone access at 500 requests/day and 20/minute — since this is only called once per "Analyze" click (not per visitor, per click), that's generous for personal use, and the Worker caches every isochrone for 30 days on top of that.
-3. Paste the token as `ORS_API_KEY` above.
+openrouteservice moved its whole account system to HeiGIT (the org behind it) partway through this build — sign up at **[account.heigit.org](https://account.heigit.org)**, not the old openrouteservice.org dashboard, though that old link should still redirect through to the same place.
+
+1. Sign up — free, no card.
+2. Your key appears on the dashboard as **"Basic Key"** — that's what goes in `ORS_API_KEY`. Total quota is 500 isochrones (renewing periodically) at 20/minute — since this is only called once per "Analyze" click, that's generous for personal use, and the Worker caches every isochrone for 30 days on top of that.
+3. The underlying API also moved domains, from `api.openrouteservice.org` to `api.heigit.org` — already updated in `market-radar-proxy-worker.js`. The old domain still works today but has had its quota deliberately throttled since 28 April 2026 to push people off it, so there was no reason to keep using it.
+
+### A note on Overpass, since it broke on day one of real testing
+
+The very first live "Analyze" click during testing hit a `406` from `overpass-api.de` — not a bug in this build, but a real, currently ongoing reliability problem with that specific public server, independently reported by unrelated people on GitHub and the OSM community forum around the same time. Fixed by trying three public mirrors in order (`overpass-api.de`, `overpass.kumi.systems`, `overpass.private.coffee`) instead of trusting one, and by making an Overpass failure show up as an honest "competitor data unavailable" rather than taking the whole analysis down — the catchment shape and district numbers still come through even if every mirror is down. If competitor counts ever go quiet again, that's the Worker's own `OVERPASS_MIRRORS` list, and a fourth mirror is a one-line add.
 
 ## Settings reference
 
