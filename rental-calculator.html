@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — Rental Calculator</title>
+  <meta name="description" content="Work out true cost, competitive pricing, and real margin for equipment rental (JCB, excavators, and similar) — ownership cost, wear and tear, operator statutory cost, revenue-share partners, member pricing, and local market comparison, calculated instantly in your browser.">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=15">
+
+  <!-- Page-specific styles only — everything reusable (buttons, cards, tables,
+       tooltips, tool dock, structure pies) comes from styles.css or is ported
+       from an existing tool page's own <style> block, per AI_BUILD_BRIEF.md.
+       New here: the equipment tab-panel box (.rc-equipment-panel — deliberately
+       NOT named .menu-block; see MARGIN_AUDIT_CHANGE_NOTES.md's 2026-09-09
+       entry on why a shared class name between an outer page and whatever the
+       tool dock injects is a real, already-documented bug, not a theoretical
+       one), the dynamic partner/market-row lists, and the collapsible formula
+       reference + glossary (ported from food-worth-calculator.html's
+       .fw-collapsible / crypto-radar.html's .cr-collapsible pattern, same
+       mechanics, page-scoped again rather than assumed global). -->
+  <style>
+    .rc-box { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+    .rc-box > h2:first-child, .rc-box > h3:first-child { margin-top: 0; }
+    .rc-section-intro { margin-bottom: 20px; }
+    .rc-section-intro h2 { font-size: clamp(1.4rem, 2.8vw, 1.9rem); margin: 6px 0 8px; }
+    .rc-calc-section { border-top: 3px solid var(--line); padding-top: 44px; margin-top: 8px; }
+
+    /* ---- Equipment tabs + panel ----
+       Same "hide siblings, show one" tab-queue pattern as Menu Calculator's
+       .menu-block / Food Worth's dish panels / Margin Analysis's dish panels
+       — but its own class, not .menu-block, precisely to avoid the
+       cross-tool collision documented in MARGIN_AUDIT_CHANGE_NOTES.md. */
+    .rc-equipment-panel {
+      border: 1px solid var(--line); border-radius: 10px; background: var(--surface);
+      padding: 24px; margin-bottom: 28px;
+    }
+    @media print { .rc-equipment-panel { border: 1px solid #ccc; break-inside: avoid; } }
+    .rc-eq-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+    .rc-eq-name-row { display: flex; gap: 10px; flex-wrap: wrap; flex: 1 1 320px; }
+    .rc-eq-name-row input[type="text"] {
+      font-family: var(--font-display); font-size: clamp(1.2rem, 2.4vw, 1.5rem); font-weight: 600; color: var(--ink);
+      background: transparent; border: none; border-bottom: 2px dashed var(--line); padding: 6px 2px; flex: 1 1 220px; max-width: 380px;
+    }
+    .rc-eq-name-row input[type="text"]:hover, .rc-eq-name-row input[type="text"]:focus-visible { border-bottom-color: var(--accent); outline: none; }
+    .rc-eq-name-row select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); background: var(--paper); }
+
+    .rc-eq-subsection { margin: 22px 0; padding-top: 18px; border-top: 1px dashed var(--line); }
+    .rc-eq-subsection:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+    .rc-eq-subsection h4 { font-size: 0.98rem; margin: 0 0 12px; color: var(--ink); }
+    .rc-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 18px; }
+    .rc-field-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 0.86rem; font-weight: 600; color: var(--text); }
+    .rc-field-grid label .rc-hint { font-weight: 400; color: var(--muted); font-size: 0.78rem; }
+    .rc-field-grid input[type="number"], .rc-field-grid input[type="text"] {
+      padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: "IBM Plex Mono", monospace; font-size: 0.9rem; background: var(--surface); color: var(--text);
+    }
+    .rc-field-grid input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .rc-toggle-row { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; cursor: pointer; margin-bottom: 12px; }
+    .rc-toggle-row input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--accent); }
+    .rc-conditional-fields { padding: 4px 0 4px 25px; }
+    .rc-conditional-fields[hidden] { display: none; }
+    .rc-live-note { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px; font-size: 0.86rem; color: var(--text); margin-top: 10px; }
+    .rc-live-note strong { font-family: "IBM Plex Mono", monospace; color: var(--accent-dark); }
+
+    /* ---- Dynamic row lists (commission partners, market comparables) ---- */
+    .rc-row-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+    .rc-row-item { display: grid; grid-template-columns: 1.4fr 0.7fr 0.9fr auto; gap: 10px; align-items: center; background: var(--paper); border-radius: 8px; padding: 10px 12px; }
+    .rc-row-item.rc-row-item-3col { grid-template-columns: 1.4fr 0.9fr auto; }
+    .rc-row-item input, .rc-row-item select {
+      padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.88rem; background: var(--surface); width: 100%;
+    }
+    .rc-row-item input[type="number"] { font-family: "IBM Plex Mono", monospace; }
+    @media (max-width: 700px) { .rc-row-item, .rc-row-item.rc-row-item-3col { grid-template-columns: 1fr; } }
+
+    /* ---- Results ---- */
+    .rc-compare-table { border-collapse: collapse; width: 100%; min-width: 640px; }
+    .rc-compare-table th, .rc-compare-table td { padding: 11px 13px; text-align: right; border-bottom: 1px solid var(--line); font-size: 0.88rem; font-family: "IBM Plex Mono", monospace; }
+    .rc-compare-table th:first-child, .rc-compare-table td:first-child { text-align: left; font-family: var(--font-body); font-weight: 600; }
+    .rc-compare-table thead th { font-family: var(--font-body); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--paper); white-space: nowrap; }
+    .rc-compare-table td.is-loss { color: #C0392B; font-weight: 700; }
+    .rc-per-portion-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+
+    .rc-insight-list { display: grid; gap: 10px; }
+    .rc-insight-card { display: flex; gap: 12px; padding: 14px 16px; border-radius: 8px; background: var(--paper); border-left: 3px solid var(--accent); font-size: 0.92rem; }
+    .rc-insight-card.is-warn { border-left-color: #D4A017; background: #FBF3E1; }
+    .rc-insight-card.is-alert { border-left-color: #C0392B; background: #F7E6E2; }
+    .rc-insight-card.is-good { border-left-color: #0F6E56; background: #E9F6F1; }
+    .rc-insight-icon { flex-shrink: 0; font-size: 1.1rem; }
+
+    .rc-deposit-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 14px; }
+
+    /* ---- Tabs (equipment switcher + margin-calc accordion) ---- reuse .menu-tabs/.menu-tab-btn + .ma-calc-tab pattern already in styles.css */
+    .rc-calc-tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 28px; }
+    .rc-calc-tab {
+      background: var(--surface); border: 2px solid var(--line); border-radius: 999px; padding: 10px 20px;
+      font-family: var(--font-body); font-weight: 600; font-size: 0.92rem; color: var(--text); cursor: pointer;
+    }
+    .rc-calc-tab:hover { border-color: var(--accent); color: var(--accent-dark); }
+    .rc-calc-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .rc-calc-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .rc-calc-tab.rc-calc-reset { margin-left: auto; border-color: #C0392B; color: #C0392B; }
+    .rc-calc-tab.rc-calc-reset:hover { background: #C0392B; color: #fff; }
+    .rc-calc-panel { margin-bottom: 24px; }
+    @media print { .rc-calc-panel[hidden] { display: block !important; } }
+
+    .rc-dock-feedback { font-size: 0.88rem; color: var(--accent-dark); font-weight: 600; margin: 0 0 10px; min-height: 1.3em; }
+
+    /* ---- Collapsible formulas + glossary (ported mechanics, see comment above) ---- */
+    .rc-collapsible-summary { cursor: pointer; list-style: none; padding: 4px 0; }
+    .rc-collapsible-summary::-webkit-details-marker { display: none; }
+    .rc-collapsible-summary h2, .rc-collapsible-summary h3 { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+    .rc-collapsible-summary h2::after, .rc-collapsible-summary h3::after { content: '\25be'; font-size: 0.65em; color: var(--muted); position: relative; top: -1px; transition: transform 0.15s ease; }
+    .rc-collapsible[open] .rc-collapsible-summary h2::after, .rc-collapsible[open] .rc-collapsible-summary h3::after { transform: rotate(180deg); }
+    .rc-collapsible-summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .rc-collapsible-body { padding-top: 16px; }
+    @media print { .rc-collapsible-body { display: block !important; } .rc-collapsible-summary h2::after, .rc-collapsible-summary h3::after { display: none; } }
+
+    .rc-formula-block { background: var(--paper); border-radius: 8px; padding: 14px 18px; font-family: "IBM Plex Mono", monospace; font-size: 0.86rem; margin: 10px 0 18px; overflow-x: auto; white-space: pre; }
+    .rc-formula-group h4 { font-size: 0.95rem; margin: 22px 0 4px; }
+    .rc-formula-group:first-child h4 { margin-top: 0; }
+    .rc-formula-note { font-size: 0.85rem; color: var(--muted); margin: 0 0 10px; max-width: 72ch; }
+
+    .rc-glossary-table { width: 100%; border-collapse: collapse; }
+    .rc-glossary-table th, .rc-glossary-table td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); font-size: 0.88rem; vertical-align: top; }
+    .rc-glossary-table th { width: 220px; font-weight: 700; color: var(--ink); }
+
+    /* ---- Floating quick-nav (ported from Food Worth's #fw-quick-nav) ---- */
+    #rc-quick-nav { position: fixed; bottom: 24px; right: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .rc-quick-nav-btn {
+      background: #fff; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-dark);
+      padding: 8px 14px; font-family: var(--font-body); font-weight: 600; font-size: 0.78rem;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.14); white-space: nowrap;
+    }
+    .rc-quick-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .rc-quick-nav-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    #rc-back-to-top { background: var(--accent); color: #fff; border: none; padding: 12px 18px; font-size: 0.88rem; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
+    #rc-back-to-top:hover { background: var(--accent-dark); color: #fff; }
+    @media print { #rc-quick-nav { display: none !important; } }
+
+    @media (max-width: 800px) {
+      .rc-field-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <!-- 8th tool appended per NAV_ORDER_STANDARD.md's own rule ("new
+               tool = append to the end"). The other 7 pages' copies of this
+               dropdown don't have this <li> yet — per AI_BUILD_BRIEF.md
+               that's reconciled centrally, same as when Crypto Radar itself
+               was added (see that page's own identical note). -->
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
+            <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="rental-calculator.html" aria-current="page">Rental Calculator</a></li>
+          </ul>
+        </li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; nothing is saved</span>
+        <h1>Rental Calculator</h1>
+        <p class="lead">Built for renting out equipment (JCB backhoe loaders, excavators, and similar) — work out what a machine genuinely costs you per day, price it to beat the local market without losing money, and see what's actually left after your revenue-share partners and member pricing. Add every machine you run as its own tab; shared costs split fairly across all of them.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         RESULTS — read-only. Everything here is calculated from what's
+         entered in Rental Calculation, further down. Detail cards below
+         the comparison table follow whichever equipment tab is active.
+         ============================================================ -->
+    <section class="ica-panel" id="rc-results">
+      <div class="wrap">
+        <div class="analysis-top-bar no-print">
+          <span class="rc-section-intro-label"></span>
+          <button type="button" id="rc-save-pdf" class="btn btn-secondary">Save as PDF</button>
+        </div>
+
+        <div class="rc-section-intro">
+          <span class="eyebrow">Results</span>
+          <h2>What each machine actually costs, and what to charge</h2>
+          <p class="structure-note">Everything below updates automatically from what you enter in <strong>Rental Calculation</strong>, further down this page.</p>
+        </div>
+
+        <div class="rc-box">
+          <h2>All equipment at a glance</h2>
+          <p class="menu-builder-intro">Standard price already includes your target margin after revenue-share partners and SST. Non-member is the walk-in rate. Tap a row's name in Rental Calculation to see its full breakdown below.</p>
+          <div class="table-scroll">
+            <table class="rc-compare-table">
+              <caption class="sr-only">All equipment compared — true cost, standard and non-member price, and margin achieved</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Equipment</th>
+                  <th scope="col">True cost / day</th>
+                  <th scope="col">Standard (member) / day</th>
+                  <th scope="col">Non-member / day</th>
+                  <th scope="col">Margin achieved</th>
+                </tr>
+              </thead>
+              <tbody id="rc-compare-rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="rc-box">
+          <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+            <h2 id="rc-detail-heading">Detail — <span id="rc-detail-name">Equipment 1</span></h2>
+          </div>
+
+          <h3 style="font-size:1rem;">How the true cost is built</h3>
+          <div class="rc-formula-block" id="rc-tc-formula">true cost / day&nbsp;=&nbsp;ownership&nbsp;+&nbsp;operating&nbsp;+&nbsp;operator&nbsp;+&nbsp;overhead share&nbsp;+&nbsp;mobilization</div>
+          <div class="rc-per-portion-cards">
+            <div class="result-card"><span class="result-label">Ownership / day<span class="tooltip-icon" data-tooltip="Depreciation + financing interest + insurance + registration, spread over your expected rental days this month">?</span></span><span class="result-value" id="rc-tc-ownership">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Operating / day<span class="tooltip-icon" data-tooltip="Fuel + scheduled maintenance + wear &amp; tear reserve + repair buffer, for your hours per rental day">?</span></span><span class="result-value" id="rc-tc-operating">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Operator / day<span class="tooltip-icon" data-tooltip="Wet-hire wage plus estimated EPF/SOCSO/EIS, spread over your expected rental days. RM0 for dry hire.">?</span></span><span class="result-value" id="rc-tc-operator">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Overhead share / day<span class="tooltip-icon" data-tooltip="Your shared fixed overhead, split equally across every equipment tab, spread over this machine's expected rental days">?</span></span><span class="result-value" id="rc-tc-overhead">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Mobilization / day<span class="tooltip-icon" data-tooltip="One-off transport/setup fee for a job, spread over how many rental days you said it should cover">?</span></span><span class="result-value" id="rc-tc-mobilization">RM0.00</span></div>
+            <div class="result-card" style="background:var(--accent-soft);"><span class="result-label">True cost / day</span><span class="result-value" id="rc-tc-total">RM0.00</span></div>
+          </div>
+
+          <h3 style="font-size:1rem;">Pricing</h3>
+          <div class="ica-results" style="margin-bottom:18px;">
+            <div class="result-card"><span class="result-label">Target price / day<span class="tooltip-icon" data-tooltip="True cost grossed up for your target margin — before revenue-share partners or SST are added">?</span></span><span class="result-value" id="rc-res-target">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Standard (member) / day<span class="tooltip-icon" data-tooltip="Target price grossed up for SST and every revenue-share partner, so you still net your target after they're paid">?</span></span><span class="result-value" id="rc-res-standard">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Non-member / day</span><span class="result-value" id="rc-res-nonmember">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Margin achieved (standard)</span><span class="result-value" id="rc-res-margin-standard">0%</span></div>
+            <div class="result-card"><span class="result-label">Margin achieved (non-member)</span><span class="result-value" id="rc-res-margin-nonmember">0%</span></div>
+            <div class="result-card"><span class="result-label">Break-even rental days / month<span class="tooltip-icon" data-tooltip="Fixed monthly costs ÷ contribution margin per day at your standard price — how many days you need before this machine turns a profit this month">?</span></span><span class="result-value" id="rc-res-breakeven">0 days</span></div>
+            <div class="result-card"><span class="result-label">Monthly revenue at expected utilization</span><span class="result-value" id="rc-res-monthly-revenue">RM0.00</span></div>
+          </div>
+          <p class="structure-note" id="rc-utilization-insight"></p>
+
+          <div class="rc-deposit-cards">
+            <div class="result-card"><span class="result-label">Suggested deposit — member<span class="tooltip-icon" data-tooltip="Reference only — doesn't feed cost or margin math. Refundable security deposit, as % of the standard price, set below.">?</span></span><span class="result-value" id="rc-res-deposit-member">RM0.00</span></div>
+            <div class="result-card"><span class="result-label">Suggested deposit — non-member</span><span class="result-value" id="rc-res-deposit-nonmember">RM0.00</span></div>
+          </div>
+        </div>
+
+        <div class="rc-box">
+          <h2>Cost structure: this machine vs. a guide</h2>
+          <div class="structure-layout">
+            <div class="structure-info">
+              <p class="structure-key">
+                <span><i class="legend-swatch legend-ingredients"></i>Equipment costs</span>
+                <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
+                <span><i class="legend-swatch legend-manpower"></i>Operator</span>
+                <span><i class="legend-swatch legend-margin"></i>Margin</span>
+              </p>
+              <p class="structure-note">The guide is a rough, editable rule of thumb for the category you pick — not a fact about your market. Reflects the standard (member) price above.</p>
+            </div>
+            <div class="structure-charts">
+              <div class="structure-pie-card">
+                <div class="structure-pie-card-header">
+                  <span class="structure-pie-title">This machine</span>
+                  <span class="loss-flag" id="rc-structure-loss-flag" hidden>LOSING MONEY</span>
+                </div>
+                <div class="structure-pie-body" id="rc-structure-pie-yours"></div>
+              </div>
+              <div class="structure-pie-card">
+                <div class="structure-pie-card-header">
+                  <select id="rc-guide-category-select" class="structure-pie-select" aria-label="Guide equipment category">
+                    <option value="mini_excavator">Mini excavator</option>
+                    <option value="excavator" selected>Excavator</option>
+                    <option value="backhoe">Backhoe loader</option>
+                    <option value="crane">Crane</option>
+                    <option value="forklift">Forklift</option>
+                    <option value="other">Other / general</option>
+                  </select>
+                </div>
+                <div class="structure-pie-body" id="rc-structure-pie-guide"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rc-box">
+          <h2>Local market comparison</h2>
+          <p class="menu-builder-intro">Enter rates you've actually found — competitor quotes, marketplace listings, past jobs. Add them under this machine's tab in Rental Calculation; they'll compare here automatically.</p>
+          <p class="structure-note" id="rc-market-summary">Add a market rate below to compare.</p>
+        </div>
+
+        <div class="rc-box">
+          <h2>What stands out</h2>
+          <div class="rc-insight-list" id="rc-insights"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         RENTAL CALCULATION — every actual input. Menu-style tabs, same
+         independent show/hide accordion as Margin Analysis's four tabs
+         (see toggleCalcTab in the JS) — opening one never closes or
+         clears another.
+         ============================================================ -->
+    <section class="ica-panel rc-calc-section" id="rc-calculation">
+      <div class="wrap">
+        <div class="rc-section-intro">
+          <span class="eyebrow">Rental Calculation</span>
+          <h2>Enter your numbers</h2>
+          <p class="structure-note">Fill in each tab below — <strong>Results</strong>, further up the page, updates automatically as you go.</p>
+        </div>
+
+        <div class="rc-calc-tabs no-print" id="rc-calc-tabs">
+          <button type="button" class="rc-calc-tab is-active" data-calc-tab="equipment" aria-expanded="true" aria-controls="rc-panel-equipment">Equipment</button>
+          <button type="button" class="rc-calc-tab" data-calc-tab="overhead" aria-expanded="false" aria-controls="rc-panel-overhead">Shared Overhead</button>
+          <button type="button" class="rc-calc-tab" data-calc-tab="partners" aria-expanded="false" aria-controls="rc-panel-partners">Revenue-Share &amp; Tax</button>
+          <button type="button" class="rc-calc-tab" data-calc-tab="pricing" aria-expanded="false" aria-controls="rc-panel-pricing">Margin &amp; Member Pricing</button>
+          <button type="button" class="rc-calc-tab rc-calc-reset" id="rc-reset-all">Reset all</button>
+        </div>
+
+        <!-- ============ EQUIPMENT ============ -->
+        <div class="rc-calc-panel" id="rc-panel-equipment" data-calc-panel="equipment">
+          <div class="rc-box">
+            <h3>Your equipment</h3>
+            <p class="menu-builder-intro">One tab per machine. Ownership, wear &amp; tear, and operator all live here — shared overhead, revenue-share partners, and pricing policy are set once in the other tabs and applied to every machine.</p>
+            <div id="rc-equipment-panels"></div>
+            <div class="calc-actions no-print">
+              <div class="menu-tabs" id="rc-equipment-tabs"></div>
+              <button type="button" id="rc-add-equipment" class="btn btn-primary">+ Add equipment</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ============ SHARED OVERHEAD ============ -->
+        <div class="rc-calc-panel" id="rc-panel-overhead" data-calc-panel="overhead" hidden>
+          <div class="rc-box">
+            <h3>Shared fixed overhead</h3>
+            <p class="menu-builder-intro">Rent for your yard/depot, admin staff, licenses, insurance on the business itself — costs that exist regardless of which machine is out on a job. Split equally across every equipment tab above.</p>
+            <label id="rc-shared-overhead-label" style="display:flex; flex-direction:column; gap:6px; max-width:260px; font-weight:600; font-size:0.9rem;">Shared fixed overhead (RM/month)
+              <input type="number" id="rc-shared-overhead" inputmode="decimal" min="0" step="10" value="0">
+            </label>
+            <p class="rc-live-note" id="rc-overhead-split-note">Add equipment above to see this split per machine.</p>
+            <div class="calc-actions no-print">
+              <button type="button" class="btn btn-secondary" data-open-tool="overhead-manpower-calculator" id="rc-pull-overhead">Pull from Overhead &amp; Manpower Calculator</button>
+            </div>
+            <p class="structure-note" id="rc-manpower-pull-note" hidden></p>
+          </div>
+        </div>
+
+        <!-- ============ REVENUE-SHARE & TAX ============ -->
+        <div class="rc-calc-panel" id="rc-panel-partners" data-calc-panel="partners" hidden>
+          <div class="rc-box">
+            <h3>Revenue-share partners</h3>
+            <p class="menu-builder-intro">Anyone you owe a percentage of the rental to — a referring branch, a holding company, the actual machine owner if you sub-lease. Charged on the price you quote; every price below is grossed up so you still net your target after they're paid, the same way delivery-app commission works on the Menu Calculator. Pre-filled with a 5/10/15% split as a starting point — rename and adjust freely.</p>
+            <div class="rc-row-list" id="rc-partner-rows"></div>
+            <div class="calc-actions no-print"><button type="button" id="rc-add-partner" class="btn btn-secondary">+ Add partner</button></div>
+          </div>
+
+          <div class="rc-box">
+            <h3>SST — Sales &amp; Service Tax</h3>
+            <p class="menu-builder-intro">As of 1 January 2026, rental/leasing of equipment for industrial or commercial use is subject to service tax at 6% — but only once your rental revenue passes RM1.5 million in a 12-month period (the current MSME exemption threshold). Leave this off if you're below that, or not yet registered.</p>
+            <label class="rc-toggle-row"><input type="checkbox" id="rc-sst-toggle"> Charge SST on rental price</label>
+            <div class="rc-conditional-fields" id="rc-sst-fields" hidden>
+              <label style="display:inline-flex; gap:8px; align-items:center; font-weight:600; font-size:0.9rem;">SST rate % <input type="number" id="rc-sst-pct" min="0" max="100" step="0.1" value="6" style="width:70px; padding:6px 8px; border:1px solid var(--line); border-radius:4px; font-family:'IBM Plex Mono',monospace;"></label>
+            </div>
+            <p class="fee-warning" id="rc-fee-warning" hidden>Revenue-share and SST together add up to 100% or more of the price — there's no price that recovers your target. Lower a rate below.</p>
+          </div>
+        </div>
+
+        <!-- ============ MARGIN & MEMBER PRICING ============ -->
+        <div class="rc-calc-panel" id="rc-panel-pricing" data-calc-panel="pricing" hidden>
+          <div class="rc-box">
+            <h3>Member pricing</h3>
+            <p class="menu-builder-intro">Your target margin per machine is set on that machine's own tab (it genuinely varies by equipment). This section only decides how the member discount applies on top.</p>
+            <label style="display:flex; flex-direction:column; gap:6px; max-width:220px; font-weight:600; font-size:0.9rem; margin-bottom:16px;">Member discount %
+              <input type="number" id="rc-member-discount" min="0" max="99" step="1" value="20" style="width:100px; padding:8px 9px; border:1px solid var(--line); border-radius:4px; font-family:'IBM Plex Mono',monospace;">
+            </label>
+            <fieldset style="border:1px solid var(--line); border-radius:10px; padding:16px 18px;">
+              <legend style="font-weight:700; font-size:0.9rem; padding:0 6px;">How should it apply?</legend>
+              <label style="display:flex; gap:10px; align-items:flex-start; margin-bottom:12px; cursor:pointer;">
+                <input type="radio" name="rc-member-mode" value="protect_standard" id="rc-mode-protect" checked style="margin-top:4px;">
+                <span><strong>Standard (member) price hits my target margin; non-members pay more.</strong><br><span class="toggle-hint">Non-member price = Standard ÷ (1 − discount%). This is closer to how your own old sheet worked — margin is protected at the price most of your volume likely sells at.</span></span>
+              </label>
+              <label style="display:flex; gap:10px; align-items:flex-start; cursor:pointer;">
+                <input type="radio" name="rc-member-mode" value="discount_list" id="rc-mode-discount" style="margin-top:4px;">
+                <span><strong>Non-member (list) price hits my target margin; members get the discount off that.</strong><br><span class="toggle-hint">Member price = Non-member × (1 − discount%). Simpler, but margin at member price will usually come in below target — Results will show you by how much.</span></span>
+              </label>
+            </fieldset>
+          </div>
+
+          <div class="rc-box">
+            <h3>Security deposit (reference only)</h3>
+            <p class="menu-builder-intro">Doesn't feed cost or margin math — just carried through to Results so it's on the same page as your pricing when you're quoting a job.</p>
+            <div class="rc-field-grid" style="max-width:420px;">
+              <label>Member deposit % of standard price <input type="number" id="rc-deposit-member-pct" min="0" max="100" step="1" value="20"></label>
+              <label>Non-member deposit % of non-member price <input type="number" id="rc-deposit-nonmember-pct" min="0" max="100" step="1" value="30"></label>
+            </div>
+          </div>
+        </div>
+
+        <p class="rc-dock-feedback no-print" id="rc-dock-feedback"></p>
+
+        <div class="tool-dock no-print" id="tool-dock" hidden>
+          <div class="tool-dock-header">
+            <span class="tool-dock-title" id="tool-dock-title"></span>
+            <button type="button" class="tool-dock-close" id="tool-dock-close" aria-label="Close this panel">&times;</button>
+          </div>
+          <div class="tool-dock-body" id="tool-dock-body"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         FORMULAS — every calculation on this page, in one place,
+         collapsed by default so it doesn't compete with the numbers
+         above. Requested explicitly: "show all calculations formula
+         used at end of page (in a collapsible category)".
+         ============================================================ -->
+    <section class="ica-panel no-print" id="rc-formulas" style="padding-top:8px;">
+      <div class="wrap">
+        <details class="rc-collapsible rc-box">
+          <summary class="rc-collapsible-summary"><h2>How every number here is calculated</h2></summary>
+          <div class="rc-collapsible-body">
+
+            <div class="rc-formula-group">
+              <h4>1. Ownership cost (fixed, time-based)</h4>
+              <p class="rc-formula-note">Capital consumption and standing costs of simply owning the machine — recovered regardless of how much it's actually used this month.</p>
+              <div class="rc-formula-block">monthly depreciation = (purchase price − residual value) ÷ (useful life years × 12)
+
+IF financed:
+  r = (annual interest rate ÷ 100) ÷ 12
+  n = tenure years × 12
+  monthly installment = principal × r × (1+r)^n ÷ ((1+r)^n − 1)      [r = 0 → principal ÷ n]
+  total interest = monthly installment × n − principal
+  avg monthly interest = total interest ÷ n
+ELSE: avg monthly interest = 0
+
+monthly ownership = monthly depreciation + avg monthly interest
+                   + (insurance/year ÷ 12) + (registration &amp; permits/year ÷ 12)
+                   + overhead share per machine
+
+ownership / day = monthly ownership ÷ expected rental days this month</div>
+            </div>
+
+            <div class="rc-formula-group">
+              <h4>2. Operating cost (variable, usage-based — includes wear &amp; tear)</h4>
+              <p class="rc-formula-note">Everything that scales with actual running hours, not calendar time.</p>
+              <div class="rc-formula-block">operating cost / hour = fuel/hour + (scheduled maintenance cost ÷ service interval hours) + wear &amp; tear reserve/hour
+operating cost / hour (buffered) = operating cost/hour × (1 + unscheduled repair buffer % ÷ 100)
+
+operating / day = operating cost/hour (buffered) × hours per rental day</div>
+            </div>
+
+            <div class="rc-formula-group">
+              <h4>3. Operator cost (wet hire only)</h4>
+              <p class="rc-formula-note">A quick estimate, not the exact PERKESO/KWSP banded tables — see the Manpower note in the Glossary for the precise route.</p>
+              <div class="rc-formula-block">estimated employer cost / month = basic monthly wage × multiplier
+  multiplier ≈ 1.155 for a Malaysian/PR employee under 60 (EPF + SOCSO + EIS, ballpark)
+  multiplier ≈ 1.04  for a foreign worker (EPF 2% employer only, since Oct 2025; SOCSO Employment Injury applies; no EIS)
+
+operator / day = (wet hire ? estimated employer cost / month : 0) ÷ expected rental days this month</div>
+            </div>
+
+            <div class="rc-formula-group">
+              <h4>4. Overhead share &amp; mobilization</h4>
+              <div class="rc-formula-block">overhead share per machine = shared fixed overhead ÷ number of equipment tabs
+mobilization / day = mobilization fee ÷ number of rental days it should cover</div>
+            </div>
+
+            <div class="rc-formula-group">
+              <h4>5. True cost, target price, and the revenue-share/SST gross-up</h4>
+              <p class="rc-formula-note">Same gross-up shape already used for delivery-app commission and SST on the Menu Calculator: dividing by (1 − rate), not multiplying by it, is what makes sure the cut comes out of the quoted price rather than off your own target.</p>
+              <div class="rc-formula-block">true cost / day = ownership + operating + operator + overhead share + mobilization
+
+target price / day = true cost / day ÷ (1 − target margin % ÷ 100)
+
+combined share = (SST % + Σ every partner's %) ÷ 100      [must be &lt; 1, else no price recovers target]
+
+IF "standard hits target margin" mode:
+  standard (member) / day = target price / day ÷ (1 − combined share)
+  non-member / day        = standard / day ÷ (1 − member discount % ÷ 100)
+ELSE ("non-member hits target margin" mode):
+  non-member / day = target price / day ÷ (1 − combined share)
+  standard (member) / day = non-member / day × (1 − member discount % ÷ 100)</div>
+            </div>
+
+            <div class="rc-formula-group">
+              <h4>6. Margin actually achieved, and break-even</h4>
+              <div class="rc-formula-block">net received / day = quoted price / day × (1 − combined share)
+margin achieved %   = (net received / day − true cost / day) ÷ quoted price / day × 100
+
+fixed monthly cost  = monthly ownership (excl. the ÷days step) + operator monthly cost (if wet hire)
+contribution margin / day = standard price / day − operating / day − mobilization / day
+break-even rental days / month = fixed monthly cost ÷ contribution margin / day</div>
+              <p class="rc-formula-note">Every rental day beyond break-even in a given month is largely pure profit, since the fixed costs are already covered by that point — this is the single biggest lever for margin: utilization, not price.</p>
+            </div>
+
+            <div class="rc-formula-group">
+              <h4>7. Cost-structure guide ratios (rough starting points, not facts)</h4>
+              <div class="rc-formula-block">Mini excavator : 55% equipment / 15% overhead / 12% operator / 18% margin
+Excavator       : 50% equipment / 17% overhead / 13% operator / 20% margin
+Backhoe loader  : 48% equipment / 17% overhead / 15% operator / 20% margin
+Crane           : 45% equipment / 18% overhead / 17% operator / 20% margin
+Forklift        : 55% equipment / 15% overhead / 10% operator / 20% margin
+Other / general : 50% equipment / 17% overhead / 13% operator / 20% margin</div>
+            </div>
+
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- ============================================================
+         GLOSSARY — plain-language jargon index, collapsible, same
+         reasoning as the Formulas section above.
+         ============================================================ -->
+    <section class="ica-panel no-print" id="rc-glossary" style="padding-top:0;">
+      <div class="wrap">
+        <details class="rc-collapsible rc-box">
+          <summary class="rc-collapsible-summary"><h2>Jargon index</h2></summary>
+          <div class="rc-collapsible-body">
+            <table class="rc-glossary-table">
+              <tbody>
+                <tr><th scope="row">Ownership cost</th><td>The fixed cost of simply owning the machine, whether or not it's rented out this month: depreciation, financing interest, insurance, registration/permits.</td></tr>
+                <tr><th scope="row">Operating cost</th><td>The variable cost of actually running the machine: fuel, scheduled service, wear &amp; tear, repair buffer. Scales with hours, not calendar time.</td></tr>
+                <tr><th scope="row">Depreciation</th><td>The accounting cost of a machine losing value with age/use — (purchase price − residual value) spread over its useful life. Not a cash outflow by itself, but a real cost that must be recovered in your price.</td></tr>
+                <tr><th scope="row">Residual value</th><td>What you expect to resell the machine for at the end of its useful life. Higher residual value means lower monthly depreciation.</td></tr>
+                <tr><th scope="row">Wear &amp; tear reserve</th><td>A per-hour set-aside for parts that wear out faster than the whole machine — undercarriage, hydraulic hoses, bucket teeth, tires. Separate from scheduled maintenance, which is routine service, not replacement.</td></tr>
+                <tr><th scope="row">Wet hire / Dry hire</th><td>Wet hire includes an operator; dry hire is the machine only, and the renter supplies their own operator.</td></tr>
+                <tr><th scope="row">Mobilization / demobilization</th><td>Transporting the machine to and from a job site — lowbed trailer, permits, and any travel to inspect the site beforehand.</td></tr>
+                <tr><th scope="row">Utilization</th><td>How many of your available days a machine is actually rented out. The single biggest lever on cost per day — fixed ownership costs are the same whether a machine works 10 days or 25 days a month.</td></tr>
+                <tr><th scope="row">Break-even rental days</th><td>How many days a month you need to rent this machine out, at your standard price, before its fixed costs are covered. Days beyond that are largely pure profit.</td></tr>
+                <tr><th scope="row">Revenue-share partner</th><td>Anyone owed a percentage of what a job brings in — a referring branch, a holding company, or the actual owner of the machine if you're sub-leasing it. Charged on the price you quote, not deducted from your own target.</td></tr>
+                <tr><th scope="row">Gross-up</th><td>Dividing by (1 − rate) instead of multiplying by rate, so that after a cut is taken out of the price, you still net exactly your target. The same shape as commission and SST elsewhere on this site.</td></tr>
+                <tr><th scope="row">Standard / Member price</th><td>The price built to hit your target margin after every revenue-share partner and SST are paid.</td></tr>
+                <tr><th scope="row">Non-member / list price</th><td>The walk-in rate. Depending on the mode you choose, this either builds up from the standard price (member protected) or is the base the standard price is discounted from.</td></tr>
+                <tr><th scope="row">EPF / KWSP</th><td>Employees Provident Fund — Malaysia's mandatory retirement savings scheme. As of 2026: 11% employee, 13% employer (wage ≤ RM5,000) or 12% employer (above), rounded up to the next ringgit for wages under RM20,000. Foreign workers have been mandatorily included since October 2025, at 2% employer / 2% employee.</td></tr>
+                <tr><th scope="row">SOCSO / PERKESO</th><td>Social Security Organisation — covers workplace injury and invalidity. Table-based (not a flat percentage), wage ceiling RM6,000/month as of October 2024. Applies to foreign workers too.</td></tr>
+                <tr><th scope="row">EIS</th><td>Employment Insurance System — 0.2% employer + 0.2% employee, same RM6,000 ceiling as SOCSO. Malaysian citizens and PRs only; foreign workers and staff aged 60+ are excluded.</td></tr>
+                <tr><th scope="row">SST on rental/leasing</th><td>Service tax on the rental or leasing of equipment for industrial/commercial use — 6% as of 1 January 2026 (reduced from 8%), with an exemption for businesses under RM1.5 million in rental revenue over 12 months.</td></tr>
+                <tr><th scope="row">CIDB / competency cards</th><td>Malaysia-specific heavy-equipment operator certifications (e.g. a CIDB green card, backhoe/excavator competency cards) — real, recurring compliance costs worth budgeting as part of an operator's true cost, not just their wage.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <div id="rc-quick-nav" class="no-print" hidden>
+    <button type="button" class="rc-quick-nav-btn" data-target="rc-results">Results</button>
+    <button type="button" class="rc-quick-nav-btn" data-target="rc-calculation">Calculation</button>
+    <button type="button" class="rc-quick-nav-btn" data-target="rc-formulas">Formulas</button>
+    <button type="button" class="rc-quick-nav-btn" data-target="rc-glossary">Glossary</button>
+    <button type="button" id="rc-back-to-top" class="rc-quick-nav-btn">&uarr; Top</button>
+  </div>
+
+  <script src="costing-sync.js?v=4" defer></script>
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="rental-calculator.js?v=1" defer></script>
+</body>
+</html>
