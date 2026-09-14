@@ -375,30 +375,35 @@ function updateMenuBlockSummary(block) {
   const commissionTaxPct = parsePercent(block.querySelector('.commission-tax-pct'), 8, 0);
   const sstPct = parsePercent(block.querySelector('.sst-pct'), 6, 0);
 
-  // Commission is charged on the LISTED price, and its own tax is
-  // charged on the commission amount — so as a share of the listed
-  // price, the commission side alone costs commissionPct * (1 + tax).
+  // Commission is a real deduction the platform takes out of what's
+  // charged, so recovering the target means dividing it back out.
+  // Food SST is a different kind of thing entirely: money collected
+  // from the customer and remitted straight to JKDM, never part of
+  // what the restaurant keeps or needs protecting from — see
+  // SST_VERIFICATION_NOTES.md for the sources this was checked
+  // against. It's multiplied on afterward as a straight pass-through,
+  // not folded into the same divisor as commission.
   const commissionShare = useDelivery ? (commissionPct / 100) * (1 + commissionTaxPct / 100) : 0;
-  const sstShare = useSST ? sstPct / 100 : 0;
-  const combinedShare = commissionShare + sstShare;
+  const sstMultiplier = useSST ? (1 + sstPct / 100) : 1;
 
   const warningEl = block.querySelector('.fee-warning');
-  let listedPrice;
-  if (combinedShare >= 1) {
-    // Fees alone would consume the entire listed price (or more) —
-    // there's no price that recovers the target, so don't pretend
-    // there is one.
-    listedPrice = NaN;
+  let priceBeforeSST;
+  if (commissionShare >= 1) {
+    // Commission alone would consume the entire listed price (or
+    // more) — there's no price that recovers the target, so don't
+    // pretend there is one.
+    priceBeforeSST = NaN;
     warningEl.hidden = false;
   } else {
-    listedPrice = totalTargetPrice / (1 - combinedShare);
+    priceBeforeSST = totalTargetPrice / (1 - commissionShare);
     warningEl.hidden = true;
   }
+  const listedPrice = isFinite(priceBeforeSST) ? priceBeforeSST * sstMultiplier : NaN;
 
-  const commissionAmount = useDelivery && isFinite(listedPrice) ? listedPrice * (commissionPct / 100) : 0;
-  const commissionTaxAmount = useDelivery && isFinite(listedPrice) ? commissionAmount * (commissionTaxPct / 100) : 0;
-  const sstAmount = useSST && isFinite(listedPrice) ? listedPrice * (sstPct / 100) : 0;
-  const netAmount = isFinite(listedPrice) ? listedPrice - commissionAmount - commissionTaxAmount - sstAmount : 0;
+  const commissionAmount = useDelivery && isFinite(priceBeforeSST) ? priceBeforeSST * (commissionPct / 100) : 0;
+  const commissionTaxAmount = useDelivery && isFinite(priceBeforeSST) ? commissionAmount * (commissionTaxPct / 100) : 0;
+  const sstAmount = useSST && isFinite(listedPrice) ? listedPrice - priceBeforeSST : 0;
+  const netAmount = isFinite(priceBeforeSST) ? priceBeforeSST - commissionAmount - commissionTaxAmount : 0;
 
   block.querySelector('.listed-price').textContent = isFinite(listedPrice) ? formatRM(listedPrice) : '—';
   block.querySelector('.commission-amount').textContent = formatRM(commissionAmount);
@@ -736,7 +741,7 @@ function createMenuBlock() {
 
     <div class="pricing-panel">
       <div class="pricing-row">
-        <label for="tfc-${n}">Target Food Cost %<span class="tooltip-icon" data-tooltip="As % of selling price — lower % means higher margin">?</span></label>
+        <label for="tfc-${n}">Target Food Cost % <span class="toggle-hint">(Cost-Plus Pricing)</span><span class="tooltip-icon" data-tooltip="As % of selling price — lower % means higher margin">?</span></label>
         <input type="number" id="tfc-${n}" class="target-food-cost" name="target-food-cost" inputmode="decimal" min="1" max="100" step="0.1" value="30">
         <span class="toggle-hint">drives the Target Selling Price column above</span>
       </div>
@@ -753,19 +758,19 @@ function createMenuBlock() {
 
         <label class="toggle-row">
           <input type="checkbox" class="use-sst-toggle" name="use-sst">
-          SST registered <span class="tooltip-icon" data-tooltip="Sales & Service Tax on the selling price">?</span>
+          SST registered <span class="tooltip-icon" data-tooltip="Adds Sales &amp; Service Tax on top of your price for the customer to pay at checkout. This money passes straight through to JKDM, so it never affects your own target margin the way commission does.">?</span>
         </label>
         <div class="sst-fields" hidden>
           <label>SST on food % <input type="number" class="sst-pct" name="sst-pct" inputmode="decimal" min="0" max="100" step="0.1" value="6"></label>
         </div>
 
-        <p class="fee-warning" hidden>These rates add up to 100% or more of the listed price — there's no price that recovers your target. Lower the commission, tax, or SST rate.</p>
+        <p class="fee-warning" hidden>Commission and its tax alone would add up to 100% or more of the listed price — there's no price that recovers your target. Lower the commission or tax rate.</p>
 
         <div class="net-summary">
-          <div>Price to list <span class="listed-price">RM0.00</span></div>
+          <div>Price to list (what the customer pays) <span class="listed-price">RM0.00</span></div>
+          <div>of which SST, passed to JKDM <span class="sst-amount">RM0.00</span></div>
           <div>&minus; Commission <span class="commission-amount">RM0.00</span></div>
           <div>&minus; Tax on commission <span class="commission-tax-amount">RM0.00</span></div>
-          <div>&minus; SST <span class="sst-amount">RM0.00</span></div>
           <div class="net-received">= You keep <strong class="net-amount">RM0.00</strong></div>
         </div>
       </div>
@@ -866,7 +871,7 @@ function renderMenuTabs() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-09-07-gemini-endpoint-fix-unicode-cleanup');
+console.info('[Menu Calculator] script build: 2026-09-08-sst-formula-fix-cost-plus-label');
 
 let rzInitialized = false;
 

@@ -20,7 +20,7 @@
    the calc step in that row's update function.
    ============================================================ */
 
-console.info('[Overhead & Manpower Calculator] script build: 2026-08-24-cross-tab-sync');
+console.info('[Overhead & Manpower Calculator] script build: 2026-09-08-advertising-category');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -40,7 +40,7 @@ const OVERHEAD_CATEGORIES = [
   'Trade License', 'Business License', 'Health / Food Premise License',
   'Food Handling Course', 'Typhoid Vaccination',
   'Halal Certification', 'HACCP', 'GMP', 'GAP', 'ISO 9001',
-  'Logistics / Delivery', 'Insurance', 'Other',
+  'Advertising / Marketing', 'Logistics / Delivery', 'Insurance', 'Other',
 ];
 
 // Months each frequency represents, for converting to a monthly

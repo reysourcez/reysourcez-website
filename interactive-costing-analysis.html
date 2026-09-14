@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=16">
+  <link rel="stylesheet" href="styles.css?v=17">
 </head>
 <body>
 
@@ -44,6 +44,7 @@
             <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
             <li><a href="food-worth-calculator.html">Food Worth</a></li>
             <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="rental-calculator.html">Rental Calculator</a></li>
           </ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
@@ -134,6 +135,14 @@
             <div class="result-card">
               <span class="result-label">Break-even / Target Volume (day)</span>
               <span class="result-value" id="res-be-day">0 portions</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Gross Profit Margin<span class="tooltip-icon" data-tooltip="(Selling price \u2212 ingredients &amp; packaging) \u00f7 selling price. Healthy F&amp;B range is roughly 65\u201375%.">?</span></span>
+              <span class="result-value" id="res-gpm">0.0%</span>
+            </div>
+            <div class="result-card" id="res-npm-card">
+              <span class="result-label">Net Profit Margin<span class="tooltip-icon" data-tooltip="Selling price minus ingredients, packaging, overhead, and manpower, as a % of selling price \u2014 what's actually left after every cost on this page. Healthy F&amp;B range is roughly 10\u201320%.">?</span></span>
+              <span class="result-value" id="res-npm">0.0%</span>
             </div>
           </div>
         </div>
@@ -253,6 +262,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="interactive-costing-analysis.js?v=11" defer></script>
+  <script src="interactive-costing-analysis.js?v=13" defer></script>
 </body>
 </html>

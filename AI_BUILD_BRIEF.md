@@ -49,6 +49,14 @@ If a page's nav doesn't match this exactly, that mismatch is what causes the nav
   document.addEventListener('DOMContentLoaded', init);
   ```
 
+## UI/UX standards (2026-09-08)
+
+- **Save as PDF button**: top right of the page/results area, `class="btn btn-secondary"`, wired to `window.print()`. This is already the pattern on every existing page (menu-calculator, overhead-manpower, printing, costing-analysis, margin-audit, food-worth, rental-calculator all do this identically) — don't reach for a PDF-generation library, the browser's own print dialog is the established mechanism.
+- **Floating quick-jump button(s)**: bottom right, one per major section a long page needs to jump between (Margin Audit's Analysis/Calculation two-button split is the reference). A page with three or more sections worth jumping between gets a third/fourth button — the pattern scales by adding buttons, not by redesigning it.
+- **Theme/visual style**: already standardized via `styles.css`'s shared tokens (see Non-negotiables above) — not a per-page decision, nothing new to add here.
+- **Tooltips**: `.tooltip-icon`'s CSS now wraps long text automatically (`white-space: normal`, `max-width: 240px`, fixed 2026-09-08 — it used to be `nowrap` with no max-width, which is why long ones ran off the page edge). Write tooltip text at whatever natural length it needs; don't manually insert line breaks or artificially shorten one to fit on one line. If a tooltip still looks cut off after this fix, flag it as a bug rather than routing around it by shortening the text.
+- **One form/panel open at a time**: if clicking a button reveals a form, panel, or tab's content, clicking a *different* button that reveals its own should close whatever was open before — never two at once. See menu-calculator.js's `setCostTab`/`setManualSub` for the reference pattern: every click hides all sibling panels and shows only the one just selected. Applies to cost-mode tabs, an "add row" form, or anything similarly toggled — if you're building more than one independently-togglable panel, make opening one close the others rather than letting them stack.
+
 ## The cross-tool sync system (`costing-sync.js`)
 Only include `<script src="costing-sync.js?v=X" defer></script>` (current version — check any live tool page) and `<div id="rz-switcher" class="no-print" hidden></div>` if the page is actually meant to **exchange cost data** with the other tools (broadcast a cost/price, or listen for one). If it's standalone, leave both out entirely — a switcher button that does nothing is worse than no button.
 
@@ -61,5 +69,5 @@ If it should sync: say so explicitly in a comment (e.g. "this should broadcast c
 
 ## What tends to go right (keep doing it)
 - Reusing existing classes and design tokens instead of new ones
-- Matching the gross-up math pattern for marketplace/SST fees (`target ÷ (1 − combined rate)`, not a naive markup)
+- Matching the gross-up math pattern for marketplace commission fees (`target ÷ (1 − commission share)`) — but NOT blending food SST into that same division. Commission is a real deduction the platform takes, so grossing up recovers the target correctly. Food SST is money collected from the customer and remitted straight to JKDM — it's never the restaurant's own money to begin with, so it belongs as a straight multiplicative add-on (`× (1 + sst%)`) applied on top, not folded into the same protective divisor as commission. menu-calculator.js's `updateMenuBlockSummary` is the reference implementation as of the 2026-09-08 fix — copy that pattern, not an earlier version of this file that combined the two.
 - Explaining non-obvious choices in comments — the "why", not just the "what"

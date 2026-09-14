@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-06-multi-menu-dropdown-unicode-cleanup');
+console.info('[Interactive Costing Analysis] script build: 2026-09-08-gpm-npm-cards-tooltip-css');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -203,10 +203,20 @@ function computeResults(inputs) {
   const ingredientsPerPortion = variableCost;
   const marginPerPortion = inputs.sellingPrice - ingredientsPerPortion - overheadPerPortion - manpowerPerPortion;
 
+  // Gross Profit Margin % and Net Profit Margin % are just contribution
+  // margin and marginPerPortion expressed as a share of selling price —
+  // both numbers already existed above, these are the first place either
+  // gets surfaced as the named, labeled percentage from the INSKEN
+  // material rather than only ever shown as a raw RM figure or folded
+  // into the structure pie's segment sizing.
+  const gpmPct = inputs.sellingPrice > 0 ? (contributionMargin / inputs.sellingPrice) * 100 : 0;
+  const npmPct = inputs.sellingPrice > 0 ? (marginPerPortion / inputs.sellingPrice) * 100 : 0;
+
   return {
     variableCost, totalFixed, monthlyVolume, contributionMargin, beMonth, beDay,
     monthlyRevenue, monthlyCost, netProfit,
     ingredientsPerPortion, overheadPerPortion, manpowerPerPortion, marginPerPortion,
+    gpmPct, npmPct,
   };
 }
 
@@ -230,6 +240,10 @@ function recalculate() {
   document.getElementById('res-profit').textContent =
     formatRM(Math.abs(r.netProfit)) + (r.netProfit < 0 ? ' loss' : ' profit');
   document.getElementById('res-profit-card').classList.toggle('is-loss', r.netProfit < 0);
+
+  document.getElementById('res-gpm').textContent = r.gpmPct.toFixed(1) + '%';
+  document.getElementById('res-npm').textContent = r.npmPct.toFixed(1) + '%';
+  document.getElementById('res-npm-card').classList.toggle('is-loss', r.npmPct < 0);
 
   renderChart(inputs, r);
   renderStructure(inputs, r);

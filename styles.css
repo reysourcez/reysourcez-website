@@ -1422,7 +1422,11 @@ th.sortable:hover { color: var(--accent-dark); }
   border-radius: 6px;
   font-size: 0.8rem;
   font-weight: 400;
-  white-space: nowrap;
+  white-space: normal;
+  width: max-content;
+  max-width: 240px;
+  text-align: left;
+  line-height: 1.4;
   z-index: 1000;
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
