@@ -192,6 +192,27 @@
       body.ma-printing-data #ma-print-data-view { display: block !important; padding: 24px; font-family: "IBM Plex Mono", monospace; font-size: 12px; white-space: pre-wrap; }
     }
 
+    /* ---- Cost summary printout ----
+         2026-09-13: a second, separate hidden print view from the
+         one above — that one is a raw data dump for re-import next
+         month, this one is a formatted, readable report (formulas +
+         worked calculations) for sharing/filing/handing to someone
+         else. Same show-only-this-on-print mechanism, different
+         body class so the two never fight over which one shows. */
+    #ma-print-summary-view { display: none; }
+    #ma-print-summary-view h1 { font-size: 1.4rem; margin: 0 0 4px; }
+    #ma-print-summary-view h2 { font-size: 1.05rem; margin: 24px 0 8px; }
+    #ma-print-summary-view .ps-meta { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
+    #ma-print-summary-view .ps-worked { margin-top: 4px; }
+    #ma-print-summary-view .ps-note { font-size: 0.82rem; color: var(--muted); margin: 8px 0 0; }
+    #ma-print-summary-view .ps-table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    #ma-print-summary-view .ps-table th, #ma-print-summary-view .ps-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+    #ma-print-summary-view .ps-table th { font-weight: 600; background: var(--paper); }
+    @media print {
+      body.ma-printing-summary > *:not(#ma-print-summary-view) { display: none !important; }
+      body.ma-printing-summary #ma-print-summary-view { display: block !important; padding: 24px; }
+    }
+
     @media (max-width: 800px) {
       .ma-dish-grid { grid-template-columns: 1fr; }
       .ma-dish-grid input[type="text"] { min-width: 0; width: 100%; }
@@ -303,6 +324,10 @@
             <li><a href="margin-audit-calculator.html" aria-current="page">Margin Analysis</a></li>
             <li><a href="food-worth-calculator.html">Food Worth</a></li>
             <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="rental-calculator.html">Rental Calculator</a></li>
+            <li><a href="market-radar.html">Market Radar</a></li>
+            <li><a href="cost-structure-checker.html">Cost Structure Checker</a></li>
+            <li><a href="qr-listing-creator.html">QR Listing Creator</a></li>
           </ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
@@ -342,6 +367,7 @@
           <button type="button" id="ma-edit-answers" class="link-btn">&larr; Edit answers</button>
           <div class="calc-actions" style="margin:0;">
             <button type="button" id="ma-save-pdf" class="btn btn-secondary">Save as PDF</button>
+            <button type="button" id="ma-print-summary" class="btn btn-secondary">Print Summary</button>
             <button type="button" id="ma-save-data" class="btn btn-secondary">Save data for next month</button>
           </div>
         </div>
@@ -395,11 +421,15 @@
               <span class="result-value" id="ma-total-revenue">RM0.00</span>
             </div>
             <div class="result-card">
+              <span class="result-label">Gross profit margin <span class="toggle-hint">(GPM)</span></span>
+              <span class="result-value" id="ma-gross-margin">0%</span>
+            </div>
+            <div class="result-card">
               <span class="result-label">Monthly net profit</span>
               <span class="result-value" id="ma-net-profit">RM0.00</span>
             </div>
             <div class="result-card">
-              <span class="result-label">Overall margin</span>
+              <span class="result-label">Net profit margin <span class="toggle-hint">(NPM)</span></span>
               <span class="result-value" id="ma-overall-margin">0%</span>
             </div>
             <div class="result-card">
@@ -407,12 +437,45 @@
               <span class="result-value" id="ma-target-gap">Set a target below</span>
             </div>
           </div>
+          <p class="structure-note">Gross profit margin is revenue minus ingredient cost only — what's left before overhead and manpower are even counted. Net profit margin is what's actually left after everything.</p>
 
           <label style="display:inline-flex; gap:10px; align-items:center;">
             <span class="label-text" style="font-weight:600;">Your target margin %</span>
             <input type="number" id="ma-target-margin" min="0" max="100" step="1" placeholder="e.g. 30" style="width:80px; padding:7px 9px; border:1px solid var(--line); border-radius:4px; font-family:'IBM Plex Mono',monospace;">
           </label>
-          <p class="ma-util-note">Compares against your actual numbers above — it doesn't change your prices or costs, only this gap and the note below.</p>
+          <p class="ma-util-note">Compares against your net profit margin above — it doesn't change your prices or costs, only this gap and the note below.</p>
+        </div>
+
+        <!-- ============ BREAK-EVEN ============
+             2026-09-10: new. Interactive Costing Analysis's break-even
+             is exact because it assumes one product — fixed costs ÷
+             one contribution margin. A whole menu doesn't have "one"
+             contribution margin, so this is the standard multi-
+             product version instead: every dish's CM gets weighted by
+             its actual share of volume into one blended CM/portion,
+             then fixed costs ÷ that. Genuinely correct for the
+             CURRENT sales mix, but it assumes that mix holds as volume
+             moves — said explicitly below rather than left implicit,
+             since that's the one place this differs from ICA's exact
+             single-product number. -->
+        <div class="ma-box">
+          <h2>Break-even</h2>
+          <p class="menu-builder-intro">How many portions — and how much revenue — you need this month before every cost is covered. Assumes your sales mix (which dishes sell relative to each other) stays roughly the same as volume changes; if one item's share of sales shifts a lot, the real number shifts with it.</p>
+          <div class="ica-results" style="margin-bottom:12px;">
+            <div class="result-card">
+              <span class="result-label">Break-even revenue / month</span>
+              <span class="result-value" id="ma-be-revenue">RM0.00</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Break-even portions / month</span>
+              <span class="result-value" id="ma-be-month">0 portions</span>
+            </div>
+            <div class="result-card">
+              <span class="result-label">Break-even portions / day</span>
+              <span class="result-value" id="ma-be-day">0 portions</span>
+            </div>
+          </div>
+          <p class="structure-note" id="ma-be-note"></p>
         </div>
 
         <div class="ma-box">
@@ -437,7 +500,7 @@
           <div class="structure-layout">
             <div class="structure-info">
               <p class="structure-key">
-                <span><i class="legend-swatch legend-ingredients"></i>Ingredients</span>
+                <span><i class="legend-swatch legend-ingredients"></i>Ingredients <span class="toggle-hint">(Food Cost %)</span></span>
                 <span><i class="legend-swatch legend-overhead"></i>Overhead</span>
                 <span><i class="legend-swatch legend-manpower"></i>Manpower</span>
                 <span><i class="legend-swatch legend-margin"></i>Margin</span>
@@ -526,15 +589,19 @@
                  read as broken rather than simply empty. Toggled by
                  updateDishEmptyState() in the JS, called from
                  renderDishTabs() so every dish add/remove path picks
-                 it up automatically. -->
+                 it up automatically. 2026-09-10: this used to be two
+                 buttons (one inside this block, one in a separate row
+                 for "pull in another item") whose hidden states could
+                 show simultaneously — replaced with one persistent
+                 button below that's always visible either way, so
+                 there's structurally nothing left to get out of sync. -->
             <div class="ma-dish-empty-state" id="ma-dish-empty-state">
               <p class="ma-dish-empty-title">No menu items yet</p>
-              <p class="ma-dish-empty-body">Open Menu Calculator and price your dishes there first — each one shows up here on its own, ready for you to confirm what you charge and how many you sell a day.</p>
-              <button type="button" class="btn btn-primary" data-open-tool="menu-calculator" id="ma-pull-menu-empty">Open Menu Calculator</button>
+              <p class="ma-dish-empty-body">Click "Open Menu Calculator" below and price your dishes there first — each one shows up here on its own, ready for you to confirm what you charge and how many you sell a day.</p>
             </div>
 
-            <div class="calc-actions no-print" id="ma-pull-menu-row" hidden>
-              <button type="button" class="btn btn-secondary" data-open-tool="menu-calculator" id="ma-pull-menu">Pull in another item from Menu Calculator</button>
+            <div class="calc-actions no-print">
+              <button type="button" class="btn btn-primary" data-open-tool="menu-calculator" id="ma-pull-menu">Open Menu Calculator</button>
             </div>
             <div id="ma-dish-panels"></div>
             <div class="calc-actions no-print">
@@ -659,6 +726,6 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="margin-audit-calculator.js?v=6" defer></script>
+  <script src="margin-audit-calculator.js?v=8" defer></script>
 </body>
 </html>

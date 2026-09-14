@@ -129,7 +129,7 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Analysis] script build: 2026-09-09-v6-menu-analyzer-blank-by-default');
+console.info('[Margin Analysis] script build: 2026-09-13-v8-print-summary-report');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
@@ -278,7 +278,7 @@ function finishWizard() {
     : 'Manpower';
   const guideSelect = document.getElementById('guide-venue-select');
   if (guideSelect && wizardAnswers.venue) guideSelect.value = wizardAnswers.venue;
-  // No default dish anymore \u2014 Menu Analyzer starts blank on purpose
+  // No default dish anymore - Menu Analyzer starts blank on purpose
   // (see 2026-09-09 change notes). renderDishTabs() sets the correct
   // empty-state/pull-button visibility either way, whether this is a
   // brand-new session (zero dishes) or importData() already
@@ -380,6 +380,14 @@ function resetAllCalculationData() {
 const dishSyncedCost = new WeakMap();
 let dishIdCounter = 0;
 
+// Snapshot of recalculateAll()'s own numbers, refreshed every time it
+// runs. Exists so printCostSummary() can build its report from the
+// EXACT figures already on screen, rather than recomputing everything
+// a second time in a separate function that could quietly drift out
+// of sync with the live page over time. null until the first
+// recalculateAll() call (i.e. before the wizard finishes).
+let lastComputedResults = null;
+
 function createDishPanel() {
   dishIdCounter++;
   const id = 'ma-dish-' + dishIdCounter;
@@ -464,19 +472,22 @@ function switchToDish(dishId) {
 }
 
 // Menu Analyzer starts with zero dishes and stays that way until
-// something syncs in from Menu Calculator \u2014 there's no manual
+// something syncs in from Menu Calculator - there's no manual
 // "+ Add" anymore (see 2026-09-09 change notes: a manually-created
 // dish had no blockId, so it could never connect to anything, which
-// read as "broken" rather than "empty"). This toggles between the
-// big call-to-action (#ma-dish-empty-state) and the normal
-// pull-another-item row (#ma-pull-menu-row) based purely on whether
-// any .ma-dish-panel currently exists.
+// read as "broken" rather than "empty"). This just toggles the
+// empty-state message; the "Open Menu Calculator" button itself is
+// always visible regardless. 2026-09-10: it used to live partly
+// inside this same toggle, alongside a second "pull in another item"
+// button that only showed once dishes existed - the two hidden
+// states could both end up false at once, showing both buttons
+// together. Now there's only one button, permanently visible, so
+// that particular failure mode is gone structurally, not just fixed
+// for this one case.
 function updateDishEmptyState() {
   const hasAnyDish = !!document.querySelector('.ma-dish-panel');
   const emptyState = document.getElementById('ma-dish-empty-state');
-  const pullRow = document.getElementById('ma-pull-menu-row');
   if (emptyState) emptyState.hidden = hasAnyDish;
-  if (pullRow) pullRow.hidden = !hasAnyDish;
 }
 
 // Tabs only appear once there's something to switch between — a
@@ -860,6 +871,52 @@ function renderStructureComparison(mix, guideVenue) {
 
 /* ================= RENDER ================= */
 
+// Multi-product break-even, not the single-product version ICA uses.
+// ICA's is exact: fixed costs ÷ ONE contribution margin, because it's
+// one product. A whole menu has no single CM, so every dish's CM gets
+// weighted by its actual share of monthly volume into one blended
+// CM/portion first, then fixed costs ÷ that. Correct for the CURRENT
+// sales mix; if that mix shifts a lot as volume changes, the real
+// break-even shifts with it — said explicitly in the box copy rather
+// than left as a silent assumption.
+function renderBreakEven(dishes, days, totalVolumeMonth, revenueTotal, totalFixedMonthly) {
+  const monthEl = document.getElementById('ma-be-month');
+  const dayEl = document.getElementById('ma-be-day');
+  const revEl = document.getElementById('ma-be-revenue');
+  const noteEl = document.getElementById('ma-be-note');
+
+  const totalCmMonth = dishes.reduce((s, d) => s + d.cmPerPortion * d.volumeDay * days, 0);
+  const avgCmPerPortion = totalVolumeMonth > 0 ? totalCmMonth / totalVolumeMonth : 0;
+  const avgPricePerPortion = totalVolumeMonth > 0 ? revenueTotal / totalVolumeMonth : 0;
+  const avgCostPerPortion = avgPricePerPortion - avgCmPerPortion;
+  const cmrPct = avgPricePerPortion > 0 ? (avgCmPerPortion / avgPricePerPortion) * 100 : 0;
+
+  if (!dishes.length || avgCmPerPortion <= 0) {
+    monthEl.textContent = 'Not reachable';
+    dayEl.textContent = 'Not reachable';
+    revEl.textContent = 'Not reachable';
+    noteEl.textContent = dishes.length
+      ? 'Your blended margin per portion is zero or negative at today\u2019s prices \u2014 more volume alone won\u2019t reach break-even; something in price or cost needs to change first.'
+      : 'Add items in Menu Analyzer to see this.';
+    return { avgPricePerPortion, avgCostPerPortion, avgCmPerPortion, cmrPct, beMonth: null, beDay: null, beRevenue: null, totalFixedMonthly };
+  }
+
+  const beMonth = totalFixedMonthly / avgCmPerPortion;
+  const beDay = beMonth / days;
+  const beRevenue = beMonth * avgPricePerPortion;
+
+  monthEl.textContent = Math.ceil(beMonth).toLocaleString() + ' portions';
+  dayEl.textContent = Math.ceil(beDay).toLocaleString() + ' portions';
+  revEl.textContent = formatRM(beRevenue);
+
+  const vsActual = totalVolumeMonth - beMonth;
+  noteEl.textContent = vsActual >= 0
+    ? `At today's sales mix, you're clearing break-even by about ${Math.round(vsActual).toLocaleString()} portions/month.`
+    : `At today's sales mix, you're about ${Math.round(Math.abs(vsActual)).toLocaleString()} portions/month short of break-even.`;
+
+  return { avgPricePerPortion, avgCostPerPortion, avgCmPerPortion, cmrPct, beMonth, beDay, beRevenue, totalFixedMonthly };
+}
+
 function renderDishResults(dishes, fixedPerPortion) {
   const container = document.getElementById('ma-dish-results');
   if (!dishes.length) { container.innerHTML = '<p class="structure-note">Nothing here yet \u2014 price a dish in Menu Calculator and it\u2019ll show up in Menu Analyzer, then here.</p>'; return; }
@@ -1036,7 +1093,15 @@ function recalculateAll() {
     const netProfit = revenueTotal - ingredientTotal - overheadTotal - manpower;
     const overallMarginPct = revenueTotal > 0 ? (netProfit / revenueTotal) * 100 : 0;
 
+    // GPM = revenue minus ingredient cost only, before overhead/manpower
+    // are even counted — matches the standard textbook definition, and
+    // is deliberately a different number from NPM (overallMarginPct)
+    // above, which is what's left after literally everything.
+    const grossProfit = revenueTotal - ingredientTotal;
+    const gpmPct = revenueTotal > 0 ? (grossProfit / revenueTotal) * 100 : 0;
+
     document.getElementById('ma-total-revenue').textContent = formatRM(revenueTotal);
+    document.getElementById('ma-gross-margin').textContent = gpmPct.toFixed(1) + '%';
     document.getElementById('ma-net-profit').textContent = formatRM(netProfit);
     document.getElementById('ma-overall-margin').textContent = overallMarginPct.toFixed(1) + '%';
 
@@ -1052,6 +1117,7 @@ function recalculateAll() {
       gapEl.closest('.result-card').classList.remove('is-loss');
     }
 
+    const beResult = renderBreakEven(dishes, days, totalVolumeMonth, revenueTotal, overheadTotal + manpower);
     renderDishResults(classified, fixedPerPortion);
     renderTrueCostSection(classified, overheadPerPortion, manpowerPerPortion);
     renderQuadrantChart(classified);
@@ -1060,6 +1126,15 @@ function recalculateAll() {
     const mix = structureMixFromTotals(ingredientTotal, overheadTotal, manpower, revenueTotal);
     renderStructureComparison(mix, guideVenue);
     renderInsights(classified, mix, guideVenue, gasResult.kgPerMonth, targetPct, overallMarginPct);
+
+    lastComputedResults = {
+      days, rent, manpower, elecCost, waterCost, gasCost: gasResult.cost, utilitiesTotal,
+      revenueTotal, ingredientTotal, overheadTotal, totalVolumeMonth,
+      gpmPct, overallMarginPct, netProfit,
+      breakEven: beResult,
+      mix, guideVenue,
+      dishes: classified,
+    };
   } catch (err) {
     console.error('[Margin Audit] recalculateAll failed partway through:', err);
   }
@@ -1225,6 +1300,125 @@ function saveDataSnapshot() {
 }
 window.addEventListener('afterprint', () => document.body.classList.remove('ma-printing-data'));
 
+/* ---- Cost summary printout ----
+   A second, separate print flow from Save as PDF (which prints the
+   whole Margin Analysis section) and Save data for next month (a raw
+   JSON snapshot for re-import). This one is a compact, single-purpose
+   report: seven fixed sections, each showing the formula AND that
+   formula worked through with today's actual numbers, not just the
+   result. Built from lastComputedResults — the exact snapshot
+   recalculateAll() already produced for the numbers on screen right
+   now, not a second independent computation that could drift from
+   what the page is actually showing.
+
+   Section 7 ("What can be improved") reuses this page's existing
+   #ma-insights content verbatim rather than calling Gemini. That's a
+   deliberate choice, not a placeholder: this file makes no AI/Worker
+   calls at all as of the 2026-09-08 sync-only cost model (see the
+   COST MODEL note at the top of this file), and standing up a fresh
+   live call for a print flow specifically would add a network
+   dependency, latency, and a failure mode this page doesn't currently
+   have anywhere else. If a genuinely AI-narrated version of this
+   section is wanted later, margin-audit-proxy-worker.js needs the
+   same generateContent endpoint fix menu-calculator-proxy-worker.js
+   and food-worth-proxy-worker.js already got (it's flagged with the
+   identical bug, per those sessions' own notes), and this function
+   would need a fetch call added — narrating these already-computed
+   numbers into prose, same as every other AI use on this site, never
+   computing new ones itself. */
+
+function buildPrintSummaryHTML() {
+  const r = lastComputedResults;
+  if (!r || !r.dishes.length) {
+    return '<p>Add at least one item in Menu Analyzer, and fill in overhead/manpower, before printing a cost summary \u2014 there\u2019s nothing to summarize yet.</p>';
+  }
+
+  const fixedCost = r.rent + r.manpower;
+  const be = r.breakEven;
+  const beReachable = be && be.beMonth !== null;
+
+  const dishRows = r.dishes.map((d) => `
+    <tr>
+      <td>${escapeHTML(d.name)}</td>
+      <td>${d.popPct !== undefined ? d.popPct.toFixed(1) + '%' : '\u2014'}</td>
+      <td>${formatRM(d.cmPerPortion)}</td>
+      <td>${d.quadrant ? d.quadrant.toUpperCase() : '\u2014'}</td>
+    </tr>`).join('');
+
+  return `
+    <h1>Reysourcez Margin Analysis \u2014 Cost Summary</h1>
+    <p class="ps-meta">Printed ${new Date().toLocaleString()} &middot; Venue: ${escapeHTML(wizardAnswers.venue || '\u2014')} &middot; Operating days/month: ${r.days}</p>
+
+    <h2>1. Fixed Cost</h2>
+    <div class="ma-formula">
+      <div>Fixed cost = Rent, licenses &amp; misc. + Manpower</div>
+      <div class="ps-worked">= ${formatRM(r.rent)} + ${formatRM(r.manpower)} = <strong>${formatRM(fixedCost)}</strong></div>
+    </div>
+
+    <h2>2. Variable Costs</h2>
+    <div class="ma-formula">
+      <div>Variable costs = Electricity + Water + Gas</div>
+      <div class="ps-worked">= ${formatRM(r.elecCost)} + ${formatRM(r.waterCost)} + ${formatRM(r.gasCost)} = <strong>${formatRM(r.utilitiesTotal)}</strong></div>
+    </div>
+
+    <h2>3. Contribution Margin Ratio (CMR)</h2>
+    <div class="ma-formula">
+      <div>CMR = (Avg. price/portion \u2212 Avg. ingredient cost/portion) \u00f7 Avg. price/portion \u00d7 100</div>
+      <div class="ps-worked">Avg. price/portion = ${formatRM(r.revenueTotal)} \u00f7 ${Math.round(r.totalVolumeMonth).toLocaleString()} portions = ${formatRM(be.avgPricePerPortion)}</div>
+      <div class="ps-worked">Avg. ingredient cost/portion = ${formatRM(r.ingredientTotal)} \u00f7 ${Math.round(r.totalVolumeMonth).toLocaleString()} portions = ${formatRM(be.avgCostPerPortion)}</div>
+      <div class="ps-worked">CMR = (${formatRM(be.avgPricePerPortion)} \u2212 ${formatRM(be.avgCostPerPortion)}) \u00f7 ${formatRM(be.avgPricePerPortion)} \u00d7 100 = <strong>${be.cmrPct.toFixed(1)}%</strong></div>
+    </div>
+
+    <h2>4. Break-Even Point (BEP)</h2>
+    <div class="ma-formula">
+      <div>BEP (portions/month) = Total fixed costs \u00f7 Avg. contribution margin per portion</div>
+      <div>Total fixed costs = Fixed cost + Variable costs</div>
+      <div class="ps-worked">Total fixed costs = ${formatRM(fixedCost)} + ${formatRM(r.utilitiesTotal)} = ${formatRM(be.totalFixedMonthly)}</div>
+      ${beReachable ? `
+      <div class="ps-worked">Avg. CM/portion = ${formatRM(be.avgPricePerPortion)} \u2212 ${formatRM(be.avgCostPerPortion)} = ${formatRM(be.avgCmPerPortion)}</div>
+      <div class="ps-worked">BEP = ${formatRM(be.totalFixedMonthly)} \u00f7 ${formatRM(be.avgCmPerPortion)} = <strong>${Math.ceil(be.beMonth).toLocaleString()} portions/month</strong> (\u2248 ${Math.ceil(be.beDay).toLocaleString()}/day)</div>
+      <div class="ps-worked">BEP revenue/month = ${Math.ceil(be.beMonth).toLocaleString()} portions \u00d7 ${formatRM(be.avgPricePerPortion)} = <strong>${formatRM(be.beRevenue)}</strong></div>
+      ` : `
+      <div class="ps-worked"><strong>Not reachable</strong> at today's prices \u2014 blended contribution margin per portion is zero or negative, so added volume alone cannot cover fixed costs.</div>
+      `}
+      <p class="ps-note">Assumes today's sales mix (which dishes sell relative to each other) holds roughly steady as volume changes.</p>
+    </div>
+
+    <h2>5. Cost Structure</h2>
+    <div class="ma-formula">
+      <div>Category % = Category total \u00f7 Total revenue \u00d7 100</div>
+      <div class="ps-worked">Ingredients (Food Cost %) = ${formatRM(r.ingredientTotal)} \u00f7 ${formatRM(r.revenueTotal)} \u00d7 100 = <strong>${r.mix.ingredients.toFixed(1)}%</strong></div>
+      <div class="ps-worked">Overhead = ${formatRM(r.overheadTotal)} \u00f7 ${formatRM(r.revenueTotal)} \u00d7 100 = <strong>${r.mix.overhead.toFixed(1)}%</strong></div>
+      <div class="ps-worked">Manpower = ${formatRM(r.manpower)} \u00f7 ${formatRM(r.revenueTotal)} \u00d7 100 = <strong>${r.mix.manpower.toFixed(1)}%</strong></div>
+      <div class="ps-worked">Margin (Net Profit Margin) = 100% \u2212 above three = <strong>${r.mix.margin.toFixed(1)}%</strong></div>
+    </div>
+
+    <h2>6. Menu Category (Stars / Plowhorses / Puzzles / Dogs)</h2>
+    <p class="ps-note">Star = popular (\u226570% of a fair volume share) and above-average contribution margin. Plowhorse = popular, below-average margin. Puzzle = below the popularity threshold, above-average margin. Dog = neither.</p>
+    <table class="ps-table">
+      <thead><tr><th>Dish</th><th>Popularity</th><th>CM / portion</th><th>Category</th></tr></thead>
+      <tbody>${dishRows}</tbody>
+    </table>
+
+    <h2>7. What Can Be Improved</h2>
+    <div class="ma-insight-list">${document.getElementById('ma-insights').innerHTML}</div>
+  `;
+}
+
+function printCostSummary() {
+  recalculateAll(); // make sure lastComputedResults reflects anything just typed
+  let view = document.getElementById('ma-print-summary-view');
+  if (!view) {
+    view = document.createElement('div');
+    view.id = 'ma-print-summary-view';
+    document.body.appendChild(view);
+  }
+  view.innerHTML = buildPrintSummaryHTML();
+  document.body.classList.add('ma-printing-summary');
+  window.print();
+}
+window.addEventListener('afterprint', () => document.body.classList.remove('ma-printing-summary'));
+
 /* ================= INIT ================= */
 
 let rzInitialized = false;
@@ -1237,6 +1431,7 @@ function init() {
   document.getElementById('wizard-back').addEventListener('click', goBack);
   document.getElementById('ma-edit-answers').addEventListener('click', editAnswers);
   document.getElementById('ma-save-pdf').addEventListener('click', () => window.print());
+  document.getElementById('ma-print-summary').addEventListener('click', printCostSummary);
   document.getElementById('ma-save-data').addEventListener('click', saveDataSnapshot);
   document.getElementById('ma-import-input').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);
