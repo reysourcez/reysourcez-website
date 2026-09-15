@@ -117,7 +117,7 @@ const DEMO_MARKETS_SEED = [
   { pair: 'ADAMYR', name: 'Cardano', price: 3.12, vol24h: 210000 },
   { pair: 'LTCMYR', name: 'Litecoin', price: 420, vol24h: 890 },
   { pair: 'DOGEMYR', name: 'Dogecoin', price: 0.62, vol24h: 980000 },
-  { pair: 'MATICMYR', name: 'Polygon', price: 1.85, vol24h: 42 }, // deliberately thin, to demo the low-liquidity flag
+  { pair: 'POLMYR', name: 'Polygon', price: 1.85, vol24h: 42 }, // deliberately thin, to demo the low-liquidity flag. Renamed from MATICMYR to match Luno's post-rebrand ticker — this exact mismatch (seed list using an old symbol) was the root cause of the POL fake-data bug fixed earlier; this entry existing under the WRONG name was silently defeating its own purpose.
 ];
 
 function seededRandom(seed) {
@@ -158,6 +158,7 @@ const state = {
   candleCache: {}, // key: `${pair}:${duration}:${count}` -> candle array
   overviewScores: {}, // pair -> { confluence, blended, tier }
   overviewScoresComplete: false, // true once computeOverviewScores() has run at least once — lets the grid distinguish "still scoring" from "scored, genuinely unavailable"
+  overviewDuration: 86400, // which candle duration the WHOLE grid is ranked/scored by — see the "Rank coins for" selector. Independent of state.timeframe, which is just the currently-open coin's own detail-view tabs.
   lastCandleError: null, // most recent candle-fetch failure reason, surfaced in the no-data message rather than swallowed
   selectionToken: 0, // bumped on every selectCoin() call; a renderDetail()
                       // in flight checks this before writing to the DOM, so
@@ -654,8 +655,9 @@ function liquidityTier(pair) {
 // back null, which confluenceScore() already handles by just not counting
 // that vote, so nothing here needs special-casing for the shorter history.
 async function computeOverviewScores() {
+  const duration = state.overviewDuration;
   const results = await Promise.allSettled(state.markets.map(async (m) => {
-    const candles = await loadCandles(m.pair, 86400, CONFIG.OVERVIEW_LOOKBACK_COUNT);
+    const candles = await loadCandles(m.pair, duration, CONFIG.OVERVIEW_LOOKBACK_COUNT);
     if (candles.length < 20) return { pair: m.pair, confluence: null, blended: null, tier: liquidityTier(m.pair) };
     const computed = computeAll(candles);
     const tier = liquidityTier(m.pair);
@@ -687,12 +689,21 @@ function scoreLabel(value) {
 }
 
 // ======================= CHARTS (hand-rolled SVG) =======================
-function scaleFns(values, x0, x1, y0, y1) {
-  const clean = values.filter(v => v != null && !Number.isNaN(v));
+// n (candle count) is now a required, explicit argument — never inferred
+// from values.length. That inference was the actual bug: both price and
+// MACD charts pass a CONCATENATION of several series here (high+low+bands
+// for price, line+signal+histogram for MACD) purely to get a combined
+// Y-range, and a concatenated array's length has nothing to do with how
+// many candles there are. x(i) was dividing by that wrong, inflated length,
+// compressing every candle into roughly the first quarter to third of the
+// chart's width — exactly what "candles bunched on the left, empty space
+// on the right" looks like. RSI/Volume never had this bug because they
+// don't route through scaleFns at all.
+function scaleFns(valuesForRange, n, x0, x1, y0, y1) {
+  const clean = valuesForRange.filter(v => v != null && !Number.isNaN(v));
   const min = Math.min(...clean), max = Math.max(...clean);
   const pad = (max - min) * 0.08 || max * 0.02 || 1;
   const yMin = min - pad, yMax = max + pad;
-  const n = values.length;
   return {
     x: (i) => x0 + (n <= 1 ? 0 : (i / (n - 1)) * (x1 - x0)),
     y: (v) => y1 - ((v - yMin) / (yMax - yMin || 1)) * (y1 - y0),
@@ -803,7 +814,7 @@ function renderPriceChart(computed) {
   const orderBlocks = rebasedOrderBlocks(computed.orderBlocks, w.offset, c.length);
   const zones = computeWatchZones(computed);
   const allForScale = [...h, ...l, ...bb.upper, ...bb.lower, zones.entryLow, zones.entryHigh, zones.tpLow, zones.tpHigh].filter(v => v != null);
-  const { x, y, yMin, yMax } = scaleFns(allForScale, x0, x1, y0, y1);
+  const { x, y, yMin, yMax } = scaleFns(allForScale, c.length, x0, x1, y0, y1);
 
   let svgContent = '';
   for (let g = 0; g <= 4; g++) {
@@ -904,7 +915,7 @@ function renderMacdChart(computed) {
   const w = windowSlice(computed, CONFIG.CHART_VISIBLE_CANDLES);
   const { line, signal, histogram } = w.macdRes;
   const allVals = [...line, ...signal, ...histogram];
-  const { x, y } = scaleFns(allVals, x0, x1, y0, y1);
+  const { x, y } = scaleFns(allVals, histogram.length, x0, x1, y0, y1);
   const zeroY = y(0);
   let content = `<line x1="${x0}" y1="${zeroY.toFixed(1)}" x2="${x1}" y2="${zeroY.toFixed(1)}" stroke="var(--line)" stroke-width="0.5"/>`;
   const barW = (x1 - x0) / Math.max(1, histogram.length);
@@ -1231,6 +1242,18 @@ function wireEvents() {
   document.getElementById('cr-refresh-interval').addEventListener('change', (e) => {
     state.refreshSeconds = Number(e.target.value);
     startAutoRefresh();
+  });
+  document.getElementById('cr-overview-duration').addEventListener('change', async (e) => {
+    state.overviewDuration = Number(e.target.value);
+    // Different duration = a genuinely different ranking, not a refinement
+    // of the old one — clear rather than leave stale scores/sort order
+    // visible while the new pass runs, and drop back to "Scoring…" honestly
+    // instead of showing numbers computed for a different timeframe.
+    state.overviewScores = {};
+    state.overviewScoresComplete = false;
+    renderMarketGrid();
+    await computeOverviewScores();
+    renderMarketGrid();
   });
   document.getElementById('cr-get-insight').addEventListener('click', async () => {
     if (!state.selectedPair || !state.lastComputed) return;

@@ -273,6 +273,17 @@ Reysourcez Enterprise
 <h2>All Luno MY coins</h2>
 <p class="structure-note">Grouped by liquidity, sorted within each group by blended score — confluence weighted down for thinner coins, since a big reading there is more often volatility noise than genuine conviction (see the Confluence score glossary entry). <span class="tooltip-icon" data-tooltip="Bu55/100 = raw confluence, 55 out of -100..100, leaning bullish. The bigger number above it is that same score after the liquidity discount — what actually decides sort order and gold stars.">?</span> Tap a coin to open its full breakdown.</p>
 
+<div class="cr-topbar-field" style="max-width:280px; margin-bottom:16px;">
+<label for="cr-overview-duration">Rank coins for<span class="tooltip-icon" data-tooltip="Changes what candles the whole grid's scores/sort/stars are computed from — a coin can look very different on a 1h chart than a 1d one. Day-trade options use recent, fast-moving candles; Hold options use slower ones. Doesn't affect a coin's own detail view — that has its own independent timeframe tabs.">?</span></label>
+<select id="cr-overview-duration">
+<option value="900">Day trade &mdash; 15m candles</option>
+<option value="3600">Day trade &mdash; 1h candles</option>
+<option value="14400">Swing &mdash; 4h candles</option>
+<option value="86400" selected>Hold / HODL &mdash; 1d candles</option>
+<option value="259200">Long-term &mdash; 3d candles</option>
+</select>
+</div>
+
 <details class="cr-tier-section" open id="cr-tier-active">
 <summary class="cr-tier-summary"><h3>Active <span class="cr-tier-count" id="cr-tier-active-count"></span></h3></summary>
 <div class="cr-market-grid" id="cr-market-grid-active"></div>
@@ -479,6 +490,6 @@ Reysourcez Enterprise
      "cost" in that system's sense), so per AI_BUILD_BRIEF.md it's left out
      entirely rather than added as a switcher that would do nothing. -->
 <script src="nav-dropdown.js?v=1" defer></script>
-<script src="crypto-radar.js?v=1" defer></script>
+<script src="crypto-radar.js?v=9" defer></script>
 </body>
 </html>
