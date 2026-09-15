@@ -865,13 +865,54 @@ function renderMenuTabs() {
   });
 }
 
+/* ================= DATA EXPORT =================
+   Saves a JSON snapshot of every menu item's key numbers to a file —
+   for handing off to Costing Analysis later (a different day, a
+   different device, a different person), not just the live cross-tab
+   broadcast this already does. See EXPORT_IMPORT_FORMAT.md for the
+   shared shape this, Overhead & Manpower's export, and Costing
+   Analysis's import all agree on. */
+
+function downloadJSONFile(filename, dataObj) {
+  const blob = new Blob([JSON.stringify(dataObj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportMenuData() {
+  const blocks = Array.from(document.querySelectorAll('.menu-block')).map((block) => {
+    const listedPriceText = block.querySelector('.listed-price').textContent;
+    const sellingPrice = parseFloat(listedPriceText.replace(/[^0-9.]/g, '')) || 0;
+    return {
+      blockId: block.dataset.blockId,
+      dishName: block.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item',
+      costMode: block.dataset.costMode || 'detailed',
+      costPerPortion: computeBlockCost(block),
+      sellingPrice,
+      targetFoodCostPct: parsePercent(block.querySelector('.target-food-cost'), 30, 0.1),
+    };
+  });
+  downloadJSONFile('menu-calculator-export.json', {
+    rzExportType: 'menu-calculator',
+    rzExportVersion: 1,
+    exportedAt: new Date().toISOString(),
+    blocks,
+  });
+}
+
 /* ================= INIT ================= */
 
 // Bump this string whenever this file changes — if something looks
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-09-08-sst-formula-fix-cost-plus-label');
+console.info('[Menu Calculator] script build: 2026-09-08-json-export');
 
 let rzInitialized = false;
 
@@ -880,6 +921,7 @@ function init() {
   rzInitialized = true;
   document.getElementById('add-row').addEventListener('click', createIngredientRow);
   document.getElementById('save-pdf').addEventListener('click', () => window.print());
+  document.getElementById('export-data').addEventListener('click', exportMenuData);
   document.getElementById('add-menu-block').addEventListener('click', createMenuBlock);
   document.getElementById('global-inflation').addEventListener('input', refreshAllIngredientRows);
 

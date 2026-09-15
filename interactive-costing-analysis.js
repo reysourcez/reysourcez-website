@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-08-gpm-npm-cards-tooltip-css');
+console.info('[Interactive Costing Analysis] script build: 2026-09-08-json-import-full-summary');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -247,6 +247,7 @@ function recalculate() {
 
   renderChart(inputs, r);
   renderStructure(inputs, r);
+  renderFullSummary(inputs, r);
 }
 
 /* ================= CHART (hand-rolled SVG, no library) ================= */
@@ -358,6 +359,84 @@ function renderStructure(inputs, r) {
     renderStructurePie('Guide, ' + guideLabel, {
       ingredients: guide.ingredients, overhead: guide.overhead, manpower: guide.manpower, margin: guide.margin,
     });
+}
+
+/* ================= FULL BUSINESS SUMMARY (7-item report) =================
+   Every number here is already computed above (computeResults,
+   structureMix) — this just gathers them into one place with their
+   formulas shown, worth saving/printing on its own. Item 6 (menu
+   category) is the one exception: that data lives in Margin Analysis,
+   not here, so it stays a "not available" placeholder until a Margin
+   Analysis export exists and gets imported — see importedQuadrants
+   below and EXPORT_IMPORT_FORMAT.md for the exact shape that side is
+   expected to produce. Item 7 is a deterministic check against the
+   healthy-range figures this site already cites elsewhere (course
+   material + industry norms), not a live AI call — reliable even if
+   every Worker on the site is down, and instant either way. */
+
+// Populated by importDataFile() if a margin-audit-calculator export is
+// ever imported. Keyed by blockId first (falls back to dishName)
+// since manually-added Margin Analysis dishes may have no blockId.
+let importedQuadrants = null;
+
+function lookupQuadrant(blockId, dishName) {
+  if (!importedQuadrants) return null;
+  const byId = blockId && importedQuadrants.byBlockId[blockId];
+  if (byId) return byId;
+  return importedQuadrants.byName[(dishName || '').trim().toLowerCase()] || null;
+}
+
+function renderFullSummary(inputs, r) {
+  document.getElementById('summary-fixed-cost').textContent = formatRM(r.overheadPerPortion + r.manpowerPerPortion) + ' / portion';
+  document.getElementById('summary-variable-cost').textContent = formatRM(r.ingredientsPerPortion) + ' / portion';
+
+  const cmrEl = document.getElementById('summary-cmr');
+  cmrEl.textContent = r.gpmPct.toFixed(1) + '%';
+  cmrEl.classList.toggle('is-warning', r.gpmPct < 65 || r.gpmPct > 75);
+
+  const bepEl = document.getElementById('summary-bep');
+  bepEl.textContent = isFinite(r.beMonth)
+    ? Math.ceil(r.beMonth).toLocaleString() + ' portions / month (' + Math.ceil(r.beDay).toLocaleString() + ' / day)'
+    : 'Not reachable at this price — variable cost meets or exceeds selling price';
+  bepEl.classList.toggle('is-warning', !isFinite(r.beMonth));
+
+  const yours = structureMix(r.ingredientsPerPortion, r.overheadPerPortion, r.manpowerPerPortion, r.marginPerPortion, inputs.sellingPrice);
+  document.getElementById('summary-cost-structure').innerHTML = `
+    <li>Ingredients &amp; packaging: ${yours.ingredients.toFixed(1)}%</li>
+    <li>Overhead: ${yours.overhead.toFixed(1)}%</li>
+    <li>Manpower: ${yours.manpower.toFixed(1)}%</li>
+    <li${yours.margin < 0 ? ' class="is-warning"' : ''}>Margin: ${yours.margin.toFixed(1)}%</li>
+  `;
+
+  const quadrantEl = document.getElementById('summary-quadrant');
+  const selectedBlockId = currentSyncedBlockId;
+  const selectedItem = selectedBlockId ? syncedMenuItems.get(selectedBlockId) : null;
+  const quadrant = lookupQuadrant(selectedBlockId, selectedItem && selectedItem.dishName);
+  quadrantEl.textContent = quadrant
+    ? quadrant
+    : 'Not available — import a Margin Analysis export to include this.';
+
+  const flags = [];
+  if (!isFinite(r.beMonth)) {
+    flags.push({ text: 'Selling price doesn\u2019t cover variable cost — every portion sold loses money at this price, before overhead is even counted.', warn: true });
+  }
+  if (yours.ingredients > 35) {
+    flags.push({ text: 'Food cost (' + yours.ingredients.toFixed(1) + '%) is above the 28\u201335% healthy F&B range \u2014 check ingredient pricing, portion size, or yield/wastage entries.', warn: true });
+  } else if (yours.ingredients < 25) {
+    flags.push({ text: 'Food cost (' + yours.ingredients.toFixed(1) + '%) is well below the typical 28\u201335% range \u2014 worth double-checking portions aren\u2019t too small, unless the sourcing genuinely is this good.', warn: false });
+  }
+  if (r.gpmPct < 65) {
+    flags.push({ text: 'CMR (' + r.gpmPct.toFixed(1) + '%) is below the typical 65\u201375% range for F&B \u2014 cost is high or price is low relative to it.', warn: true });
+  }
+  if (r.npmPct < 10 && isFinite(r.beMonth)) {
+    flags.push({ text: 'Net profit margin (' + r.npmPct.toFixed(1) + '%) is below the 10\u201320% healthy range \u2014 overhead or manpower may be taking a bigger bite than usual.', warn: true });
+  }
+  if (flags.length === 0) {
+    flags.push({ text: 'Every figure above sits inside its healthy F&B range at the current volume.', warn: false });
+  }
+  document.getElementById('summary-ai-analysis').innerHTML = flags
+    .map((f) => `<li${f.warn ? ' class="is-warning"' : ''}>${f.text}</li>`)
+    .join('');
 }
 
 /* ---- Pie geometry ----
@@ -749,6 +828,58 @@ async function rzLoadToolIntoDock(key) {
 
 let rzInitialized = false;
 
+/* ================= DATA IMPORT =================
+   Reads a .json file exported from Menu Calculator or Overhead &
+   Manpower and feeds it through the same handleSyncPayload() that a
+   live cross-tab broadcast already uses — so importing a file and
+   having the other tool open in another tab produce identical
+   results, one code path either way. See EXPORT_IMPORT_FORMAT.md for
+   the shared file shape, including what a Margin Analysis export is
+   expected to look like once that side exists (not yet — this only
+   handles the two export types that exist today). */
+
+function importDataFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (e) {
+      alert('That file isn\u2019t valid JSON — make sure it\u2019s an export from Menu Calculator or Overhead & Manpower.');
+      return;
+    }
+
+    if (data.rzExportType === 'menu-calculator' && Array.isArray(data.blocks)) {
+      data.blocks.forEach((b) => {
+        handleSyncPayload({
+          source: 'menu-calculator',
+          blockId: b.blockId,
+          costPerPortion: b.costPerPortion,
+          sellingPrice: b.sellingPrice,
+          dishName: b.dishName,
+        });
+      });
+    } else if (data.rzExportType === 'overhead-manpower-calculator') {
+      handleSyncPayload({
+        source: 'overhead-manpower-calculator',
+        overheadMonthly: data.overheadMonthly,
+        manpowerMonthly: data.manpowerMonthly,
+      });
+    } else if (data.rzExportType === 'margin-audit-calculator' && Array.isArray(data.dishes)) {
+      importedQuadrants = { byBlockId: {}, byName: {} };
+      data.dishes.forEach((d) => {
+        if (!d.quadrant) return;
+        if (d.blockId) importedQuadrants.byBlockId[d.blockId] = d.quadrant;
+        if (d.name) importedQuadrants.byName[d.name.trim().toLowerCase()] = d.quadrant;
+      });
+      renderFullSummary(getInputs(), computeResults(getInputs()));
+    } else {
+      alert('Unrecognised export file — expected a Menu Calculator, Overhead & Manpower, or Margin Analysis export.');
+    }
+  };
+  reader.readAsText(file);
+}
+
 function init() {
   if (rzInitialized) return;
   rzInitialized = true;
@@ -757,6 +888,11 @@ function init() {
   document.getElementById('ica-edit-answers').addEventListener('click', editAnswers);
   document.getElementById('save-pdf-ica').addEventListener('click', () => window.print());
   document.getElementById('guide-venue-select').addEventListener('change', recalculate);
+  document.getElementById('import-data').addEventListener('click', () => document.getElementById('import-file-input').click());
+  document.getElementById('import-file-input').addEventListener('change', (e) => {
+    if (e.target.files[0]) importDataFile(e.target.files[0]);
+    e.target.value = '';
+  });
 
   ['ing-cost', 'sell-price', 'overhead-cost', 'manpower-cost'].forEach((id) => {
     document.getElementById(id).addEventListener('input', recalculate);

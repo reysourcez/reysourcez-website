@@ -513,6 +513,7 @@ th.sortable:hover { color: var(--accent-dark); }
 .delete-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 
 .calc-actions { display: flex; gap: 14px; padding: 18px 0 8px; flex-wrap: wrap; }
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; align-self: flex-start; }
 .calc-actions .btn { cursor: pointer; font-family: var(--font-body); }
 .calc-actions .btn-secondary { background: transparent; }
 
@@ -947,6 +948,27 @@ th.sortable:hover { color: var(--accent-dark); }
   box-shadow: 0 4px 20px rgba(0,0,0,0.08);
   scroll-margin-top: 90px; /* clears the sticky header when scrolled into view */
 }
+
+.full-summary-section {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px dashed var(--line);
+}
+.full-summary-section h2 { margin-bottom: 18px; }
+.summary-item {
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.summary-item h3 { margin: 0 0 4px; font-size: 1rem; }
+.summary-formula { margin: 0 0 6px; font-size: 0.82rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; }
+.summary-value { margin: 0; font-weight: 600; color: var(--accent-dark); font-size: 1.05rem; }
+.summary-value.is-warning { color: #C0392B; }
+ul.summary-value { list-style: none; padding: 0; font-weight: 400; font-size: 0.9rem; color: var(--text); }
+ul.summary-value li { padding: 3px 0; }
+ul.summary-value li.is-warning { color: #C0392B; font-weight: 600; }
 .tool-dock-header {
   display: flex;
   align-items: center;

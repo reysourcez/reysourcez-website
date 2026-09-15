@@ -20,7 +20,7 @@
    the calc step in that row's update function.
    ============================================================ */
 
-console.info('[Overhead & Manpower Calculator] script build: 2026-09-08-advertising-category');
+console.info('[Overhead & Manpower Calculator] script build: 2026-09-08-json-export');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -326,6 +326,50 @@ function updateGrandTotal() {
   }
 }
 
+/* ================= DATA EXPORT =================
+   Same idea as Menu Calculator's export — a JSON snapshot for handing
+   to Costing Analysis later rather than only over the live cross-tab
+   broadcast. Uses the exact same overheadMonthly/manpowerMonthly field
+   names that broadcast already sends, so the import side (whichever
+   tool reads it) doesn't need two different shapes for the same data.
+   See EXPORT_IMPORT_FORMAT.md for the full shared shape. */
+
+function downloadJSONFile(filename, dataObj) {
+  const blob = new Blob([JSON.stringify(dataObj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportOverheadData() {
+  const overheadMonthly = parseFloat(document.getElementById('overhead-total').textContent.replace(/[^0-9.]/g, '')) || 0;
+  const manpowerMonthly = parseFloat(document.getElementById('manpower-total').textContent.replace(/[^0-9.]/g, '')) || 0;
+
+  const overheadRows = Array.from(document.querySelectorAll('#overhead-rows > tr')).map((tr) => ({
+    category: tr.querySelector('.oh-category').value,
+    monthly: parseFloat(tr.dataset.monthly) || 0,
+  }));
+  const manpowerRows = Array.from(document.querySelectorAll('#manpower-rows > tr')).map((tr) => ({
+    role: tr.querySelector('.mp-role') ? tr.querySelector('.mp-role').value : '',
+    monthly: parseFloat(tr.dataset.monthly) || 0,
+  }));
+
+  downloadJSONFile('overhead-manpower-export.json', {
+    rzExportType: 'overhead-manpower-calculator',
+    rzExportVersion: 1,
+    exportedAt: new Date().toISOString(),
+    overheadMonthly,
+    manpowerMonthly,
+    overheadRows,
+    manpowerRows,
+  });
+}
+
 let rzInitialized = false;
 
 function init() {
@@ -334,6 +378,7 @@ function init() {
   document.getElementById('add-overhead-row').addEventListener('click', createOverheadRow);
   document.getElementById('add-manpower-row').addEventListener('click', createManpowerRow);
   document.getElementById('save-pdf-om').addEventListener('click', () => window.print());
+  document.getElementById('export-data').addEventListener('click', exportOverheadData);
 
   createOverheadRow();
   createManpowerRow();
