@@ -163,6 +163,9 @@
             <li><a href="food-worth-calculator.html">Food Worth</a></li>
             <li><a href="crypto-radar.html">Crypto Radar</a></li>
             <li><a href="rental-calculator.html" aria-current="page">Rental Calculator</a></li>
+            <li><a href="market-radar.html">Market Radar</a></li>
+            <li><a href="cost-structure-checker.html">Cost Structure Checker</a></li>
+            <li><a href="qr-listing-creator.html">QR Listing Creator</a></li>
           </ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
@@ -233,6 +236,27 @@
           </div>
           <p class="structure-note" id="rc-monthly-package-note" style="margin-top:10px;"></p>
 
+          <h3 style="font-size:1rem;">Where the money goes — partner payouts <span class="toggle-hint">(wet)</span></h3>
+          <p class="structure-note">Each partner's cut in Ringgit at each tier's price, so it's clear what they actually receive per rental, not just their percentage. Dry pricing splits the same percentages, just off a smaller base, so it isn't repeated below.</p>
+
+          <p style="font-weight:600; font-size:0.88rem; margin-bottom:6px;">At the standard (member) price</p>
+          <div class="table-scroll">
+            <table class="rc-pricing-table">
+              <caption class="sr-only">Partner and SST payouts in Ringgit, and what you keep, across hourly, daily, and monthly tiers, at the standard price</caption>
+              <thead><tr><th scope="col"></th><th scope="col">Hourly</th><th scope="col">Daily</th><th scope="col">Monthly <span class="toggle-hint">(per day)</span></th></tr></thead>
+              <tbody id="rc-partner-payout-standard"></tbody>
+            </table>
+          </div>
+
+          <p style="font-weight:600; font-size:0.88rem; margin:18px 0 6px;">At the non-member price</p>
+          <div class="table-scroll">
+            <table class="rc-pricing-table">
+              <caption class="sr-only">Partner and SST payouts in Ringgit, and what you keep, across hourly, daily, and monthly tiers, at the non-member price</caption>
+              <thead><tr><th scope="col"></th><th scope="col">Hourly</th><th scope="col">Daily</th><th scope="col">Monthly <span class="toggle-hint">(per day)</span></th></tr></thead>
+              <tbody id="rc-partner-payout-nonmember"></tbody>
+            </table>
+          </div>
+
           <div class="ica-results" style="margin:20px 0;">
             <div class="result-card"><span class="result-label">Margin achieved (standard, wet, daily)</span><span class="result-value" id="rc-res-margin-standard">0%</span></div>
             <div class="result-card"><span class="result-label">Margin achieved (non-member, wet, daily)</span><span class="result-value" id="rc-res-margin-nonmember">0%</span></div>
@@ -297,6 +321,34 @@
         <div class="rc-box">
           <h2>What stands out</h2>
           <div class="rc-insight-list" id="rc-insights"></div>
+        </div>
+
+        <div class="rc-box">
+          <h2>Create a rental ad</h2>
+          <p class="menu-builder-intro">Generates a shareable image straight from this machine's own numbers above — change a price or the theme and it redraws automatically. Bold, high-contrast, typography-led design rather than a stock photo of someone else's machine — that's the direction most flyer/poster design has actually moved toward for 2026, not just a workaround.</p>
+
+          <div class="rc-field-grid" style="margin-bottom:16px;">
+            <label>Business name <input type="text" id="rc-ad-business" value="Reysourcez Enterprise"></label>
+            <label>Tagline <input type="text" id="rc-ad-tagline" value="Heavy Machinery Rental"></label>
+            <label>Contact phone <input type="text" id="rc-ad-phone" placeholder="+60 12-345 6789"></label>
+            <label>Contact email / WhatsApp <input type="text" id="rc-ad-contact" value="reysourcez.ent@gmail.com"></label>
+            <label>Theme
+              <select id="rc-ad-theme">
+                <option value="teal" selected>Site Teal</option>
+                <option value="amber">Construction Amber</option>
+                <option value="graphite">Steel Graphite</option>
+              </select>
+            </label>
+          </div>
+          <label class="rc-toggle-row"><input type="checkbox" id="rc-ad-show-nonmember" checked> Show non-member price alongside member price</label>
+
+          <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; margin-top:16px;">
+            <canvas id="rc-ad-canvas" width="1080" height="1350" style="width:100%; max-width:300px; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,0.15); background:#fff;"></canvas>
+            <div style="flex:1 1 220px;">
+              <p class="structure-note">1080 &times; 1350px (4:5) — sized for Instagram/Facebook feed posts and WhatsApp sharing. Downloads at full resolution regardless of the preview size shown here.</p>
+              <button type="button" id="rc-ad-download" class="btn btn-primary no-print">Download ad (PNG)</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -553,6 +605,6 @@ Other / general : 50% equipment / 17% overhead / 13% operator / 20% margin</div>
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="rental-calculator.js?v=2" defer></script>
+  <script src="rental-calculator.js?v=3" defer></script>
 </body>
 </html>

@@ -2,7 +2,23 @@
 
 New tool, built 2026-09-11, for renting out equipment (JCB backhoe loaders, excavators, and similar machinery) — the 8th tool in the Business Analysis dropdown, alongside the existing seven. Named exactly "Rental Calculator" per instruction, so it's referenced consistently across the team.
 
-This doc assumes no prior context. If you only read one section, read "Cost structure, in plain terms" and "What changed from your old Excel." For the most recent round of fixes, read the 2026-09-12 entry immediately below first.
+This doc assumes no prior context. If you only read one section, read "Cost structure, in plain terms" and "What changed from your old Excel." For the most recent additions, read the entries immediately below first (newest first, same convention as this site's other change-notes files).
+
+## 2026-09-13 — partner payout table, Ad Creator, nav grown to 11 tools
+
+**Nav update.** Confirmed filenames for the three other new tools now live in the Business Analysis dropdown here: `market-radar.html`, `cost-structure-checker.html`, `qr-listing-creator.html` (all kebab-case, matching every other page on the site). Rental Calculator's own copy of the dropdown now lists all 11 tools. The other pages' copies still need the central sync pass per `AI_BUILD_BRIEF.md`'s usual convention.
+
+**Partner payout table.** New tables in Results ("Where the money goes — partner payouts"), directly under the hourly/daily/monthly pricing grid: exactly how much RM each revenue-share partner receives, plus SST, plus what's left for the business — one column per tier, one table for standard price and one for non-member. Built off `collectPartners()`, a sibling to the existing `collectPartnerSharePct()` that keeps each partner's own name and % instead of only the combined total.
+
+**Ad Creator.** A real, working feature now, not a mockup — a new "Create a rental ad" box at the end of Results renders a 1080×1350 shareable image on a `<canvas>`, using the active equipment's own live hourly/daily/monthly/member/non-member pricing. Editable business name, tagline, contact phone, contact email, a 3-theme picker (Site Teal / Construction Amber / Steel Graphite), and a toggle for whether to show the non-member price alongside the member one. Downloads as a PNG via `canvas.toDataURL`.
+
+Deliberately no equipment photography — there's no legitimate photo of the actual machine to draw from, and a stock image would be the wrong call. Leans on bold, high-contrast typography and color-blocking instead, following current flyer/poster design direction (oversized scannable type, purposeful elements only, contrast over raw brightness) rather than working around the missing photo.
+
+The layout uses fixed header/footer zones (460px / 150px) with everything else divided proportionally between them, specifically so it can't overflow regardless of business-name length or whether the non-member toggle is on — a genuinely long business name (the reference poster's own "Koperasi Dewan Usahawan Bumiputera Sarawak Miri Berhad" is a real example of exactly this) auto-shrinks to fit rather than running off the canvas.
+
+**A note on the reference poster you shared.** Its own numbers show Hourly = Daily ÷ 8 and Monthly = Daily × 30, with no separate volume discount — simpler than the hourly-premium/monthly-discount mechanism built into this calculator. Both styles are supported: set Hourly premium % and Extra monthly discount % to 0 on a given machine to reproduce that exact flat-rate style, or leave them at their defaults for genuine volume pricing. Also worth knowing: that poster's monthly rate assumes a 30-calendar-day month (with Feb/31st-day adjustments per its own terms), not the 26-working-day figure this calculator defaults "Typical monthly-job length" to — edit that field to 30 on a given machine if you want to match this exact convention.
+
+---
 
 ## 2026-09-12 — five real fixes from testing feedback
 

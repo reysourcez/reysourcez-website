@@ -328,6 +328,16 @@ function collectPartnerSharePct() {
   return Array.from(document.querySelectorAll('#rc-partner-rows .rc-row-item')).reduce((sum, row) => sum + numOrZero(num(row.querySelector('.rc-partner-pct'))), 0);
 }
 
+// Same rows as collectPartnerSharePct, but keeping each partner's own
+// name and % separate rather than summed -- needed to show what each
+// individual partner actually receives, not just the combined total.
+function collectPartners() {
+  return Array.from(document.querySelectorAll('#rc-partner-rows .rc-row-item')).map((row) => ({
+    name: row.querySelector('.rc-partner-name').value.trim() || 'Partner',
+    pct: numOrZero(num(row.querySelector('.rc-partner-pct'))),
+  }));
+}
+
 function seedDefaultPartners() {
   createPartnerRow('Partner 1', 5);
   createPartnerRow('Partner 2', 10);
@@ -654,6 +664,58 @@ function renderDetail(eq) {
   document.getElementById('rc-res-deposit-nonmember').textContent = isFinite(eq.dailyWet.nonMember) ? formatRM(eq.dailyWet.nonMember * depositNonMemberPct / 100) : '\u2014';
 }
 
+/* ================= PARTNER PAYOUT TABLE =================
+   "How much does each partner actually get, per rental, at each
+   tier" -- a direct RM breakdown rather than just the % each partner
+   is set to. Built off the wet price only (revenue-share is a cut of
+   whatever's charged, and wet is this page's reference price
+   everywhere else) -- dry pricing splits the identical percentages,
+   just off a smaller base, so it isn't repeated as a third pair of
+   tables. */
+
+function renderPartnerPayoutSection(eq, partners, sstOn, sstPct) {
+  const buildTierList = (priceKey) => ([
+    { label: 'Hourly', price: eq.hourlyWet[priceKey] },
+    { label: 'Daily', price: eq.dailyWet[priceKey] },
+    { label: 'Monthly', price: eq.monthlyWet[priceKey] },
+  ]);
+
+  const buildRows = (priceKey) => {
+    const tierList = buildTierList(priceKey);
+    let rows = '';
+    partners.forEach((p) => {
+      rows += `<tr><td>${escapeHTML(p.name)} <span class="toggle-hint">(${p.pct}%)</span></td>`;
+      tierList.forEach((t) => {
+        const amt = isFinite(t.price) ? t.price * (p.pct / 100) : NaN;
+        rows += `<td>${isFinite(amt) ? formatRM(amt) : '\u2014'}</td>`;
+      });
+      rows += `</tr>`;
+    });
+    if (sstOn) {
+      rows += `<tr><td>SST <span class="toggle-hint">(${sstPct}%)</span></td>`;
+      tierList.forEach((t) => {
+        const amt = isFinite(t.price) ? t.price * (sstPct / 100) : NaN;
+        rows += `<td>${isFinite(amt) ? formatRM(amt) : '\u2014'}</td>`;
+      });
+      rows += `</tr>`;
+    }
+    const totalSharePct = partners.reduce((s, p) => s + p.pct, 0) + (sstOn ? sstPct : 0);
+    rows += `<tr style="font-weight:700; border-top:1px solid var(--line);"><td>You keep</td>`;
+    tierList.forEach((t) => {
+      const net = isFinite(t.price) ? t.price * (1 - totalSharePct / 100) : NaN;
+      rows += `<td>${isFinite(net) ? formatRM(net) : '\u2014'}</td>`;
+    });
+    rows += `</tr>`;
+    rows += `<tr style="border-top:2px solid var(--ink); font-weight:700;"><td>Total (quoted price)</td>`;
+    tierList.forEach((t) => { rows += `<td>${isFinite(t.price) ? formatRM(t.price) : 'Not reachable'}</td>`; });
+    rows += `</tr>`;
+    return rows;
+  };
+
+  document.getElementById('rc-partner-payout-standard').innerHTML = buildRows('standard');
+  document.getElementById('rc-partner-payout-nonmember').innerHTML = buildRows('nonMember');
+}
+
 function renderStructureSection(eq) {
   const guideCategory = document.getElementById('rc-guide-category-select').value;
   const guide = GUIDE_RATIOS[guideCategory] || GUIDE_RATIOS.other;
@@ -892,6 +954,250 @@ async function rzLoadToolIntoDock(key) {
   }
 }
 
+/* ================= AD CREATOR =================
+   Draws a shareable 1080x1350 (4:5) image straight from the ACTIVE
+   equipment's own computed pricing -- nothing here is typed
+   separately, so the ad can never drift out of sync with the
+   calculator above it. Canvas 2D, zero dependencies, matching this
+   site's existing "hand-rolled, no charting/design library" rule
+   (see the SVG pie charts and break-even chart elsewhere on this
+   site for the same philosophy).
+
+   Deliberately no equipment photography: there's no legitimate photo
+   of this specific machine to draw from, and a stock image would be
+   the wrong call. Leans into bold, high-contrast typography and
+   color-blocking instead -- which current flyer/poster design has
+   genuinely moved toward anyway (oversized scannable type, purposeful
+   elements only, contrast over raw brightness), not just a
+   workaround for the missing photo.
+
+   LAYOUT: fixed header/footer zones (460px / 150px) with the pricing
+   cards and terms chips laid out inside whatever's left between them,
+   sized by division rather than open-ended addition -- this is what
+   keeps the whole thing inside the fixed 1350px canvas regardless of
+   theme, business-name length, or whether non-member pricing is
+   toggled on (which changes each card's internal layout, never the
+   canvas's overall proportions). */
+
+const AD_THEMES = {
+  teal:     { bg: '#16261F', accent: '#1F6F5C', accentSoft: '#DCEAE4', chipBg: '#F3F3F0', text: '#16261F', muted: '#5C6D64' },
+  amber:    { bg: '#1A1410', accent: '#C77F13', accentSoft: '#FBF0DC', chipBg: '#F6F1E8', text: '#1A1410', muted: '#8A7454' },
+  graphite: { bg: '#12181F', accent: '#2E5FA3', accentSoft: '#E1EAF5', chipBg: '#F0F3F7', text: '#12181F', muted: '#5C6B7A' },
+};
+const CATEGORY_AD_LABEL = {
+  mini_excavator: 'MINI EXCAVATOR', excavator: 'EXCAVATOR', backhoe: 'BACKHOE LOADER',
+  crane: 'CRANE', forklift: 'FORKLIFT', other: 'EQUIPMENT FOR RENT',
+};
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+// Shrinks font size until the text fits maxWidth, rather than a fixed
+// guess -- a short equipment name (e.g. "CRANE") and a long one
+// (e.g. "BACKHOE LOADER") both need to read as one confident,
+// deliberately oversized headline, not an arbitrary point size that
+// happens to overflow on the longer word.
+function fitFontSize(ctx, text, maxWidth, startSize, minSize, fontSpec) {
+  let size = startSize;
+  ctx.font = fontSpec(size);
+  while (ctx.measureText(text).width > maxWidth && size > minSize) {
+    size -= 2;
+    ctx.font = fontSpec(size);
+  }
+  return size;
+}
+
+function adPriceText(v) {
+  return isFinite(v) ? 'RM' + Math.round(v).toLocaleString() : 'N/A';
+}
+
+function drawAdCanvas(eq) {
+  const canvas = document.getElementById('rc-ad-canvas');
+  if (!canvas || !eq) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height; // 1080 x 1350, fixed regardless of CSS display size
+
+  const theme = AD_THEMES[document.getElementById('rc-ad-theme').value] || AD_THEMES.teal;
+  const business = document.getElementById('rc-ad-business').value.trim() || 'Reysourcez Enterprise';
+  const tagline = document.getElementById('rc-ad-tagline').value.trim() || 'Heavy Machinery Rental';
+  const phone = document.getElementById('rc-ad-phone').value.trim();
+  const contact = document.getElementById('rc-ad-contact').value.trim();
+  const showNonMember = document.getElementById('rc-ad-show-nonmember').checked;
+  const categoryLabel = CATEGORY_AD_LABEL[eq.category] || 'EQUIPMENT FOR RENT';
+  const memberDiscountPct = num(document.getElementById('rc-member-discount'), 0);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.textAlign = 'left';
+
+  /* ---- Fixed zones ---- */
+  const HEADER_H = 460;
+  const FOOTER_H = 150;
+  const MID_TOP = HEADER_H;
+  const MID_BOTTOM = H - FOOTER_H;
+
+  /* ---- Header (bold color block, no imagery) ---- */
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, W, HEADER_H);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(0, HEADER_H);
+  ctx.lineTo(W, HEADER_H - 100);
+  ctx.lineTo(W, HEADER_H);
+  ctx.closePath();
+  ctx.fillStyle = theme.accent;
+  ctx.globalAlpha = 0.9;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  const businessMaxWidth = memberDiscountPct > 0 ? W - 360 : W - 120;
+  const businessFont = (size) => `600 ${size}px "IBM Plex Sans", sans-serif`;
+  const businessSize = fitFontSize(ctx, business.toUpperCase(), businessMaxWidth, 28, 16, businessFont);
+  ctx.font = businessFont(businessSize);
+  ctx.fillText(business.toUpperCase(), 60, 84);
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  ctx.font = '400 25px "IBM Plex Sans", sans-serif';
+  ctx.fillText(tagline, 60, 120);
+
+  const headlineFont = (size) => `900 ${size}px Fraunces, Georgia, serif`;
+  const headlineMaxWidth = memberDiscountPct > 0 ? W - 360 : W - 120;
+  const headlineSize = fitFontSize(ctx, categoryLabel, headlineMaxWidth, 108, 46, headlineFont);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = headlineFont(headlineSize);
+  ctx.fillText(categoryLabel, 58, 250);
+
+  const eqNameTrim = (eq.name || '').trim();
+  if (eqNameTrim && eqNameTrim.toLowerCase() !== categoryLabel.toLowerCase()) {
+    ctx.font = '600 32px "IBM Plex Sans", sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillText(eqNameTrim, 60, 300);
+  }
+
+  if (memberDiscountPct > 0) {
+    const badgeW = 230, badgeH = 100, badgeX = W - badgeW - 50, badgeY = 45;
+    ctx.fillStyle = '#FFFFFF';
+    roundRectPath(ctx, badgeX, badgeY, badgeW, badgeH, 18);
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.fillStyle = theme.bg;
+    ctx.font = '800 26px "IBM Plex Sans", sans-serif';
+    ctx.fillText('MEMBERS SAVE', badgeX + badgeW / 2, badgeY + 38);
+    ctx.fillStyle = theme.accent;
+    ctx.font = '900 46px "IBM Plex Sans", sans-serif';
+    ctx.fillText(Math.round(memberDiscountPct) + '%', badgeX + badgeW / 2, badgeY + 84);
+    ctx.textAlign = 'left';
+  }
+
+  /* ---- Pricing zone -- divided, not accumulated, so it always fits ---- */
+  ctx.fillStyle = theme.text;
+  ctx.font = '700 28px "IBM Plex Sans", sans-serif';
+  ctx.fillText('PRICING', 60, MID_TOP + 48);
+
+  const CHIPS_ZONE_H = 90;
+  const cardsTop = MID_TOP + 76;
+  const cardsBottom = MID_BOTTOM - CHIPS_ZONE_H;
+  const slotH = (cardsBottom - cardsTop) / 3;
+  const cardH = slotH - 18;
+  const cardX = 60, cardW = W - 120;
+
+  const tiers = [
+    { label: 'HOURLY', standard: eq.hourlyWet.standard, nonMember: eq.hourlyWet.nonMember },
+    { label: 'DAILY', standard: eq.dailyWet.standard, nonMember: eq.dailyWet.nonMember },
+    { label: 'MONTHLY', standard: eq.monthlyWet.standard, nonMember: eq.monthlyWet.nonMember },
+  ];
+
+  tiers.forEach((t, i) => {
+    const y = cardsTop + i * slotH;
+    ctx.fillStyle = theme.accentSoft;
+    roundRectPath(ctx, cardX, y, cardW, cardH, 18);
+    ctx.fill();
+
+    ctx.fillStyle = theme.muted;
+    ctx.font = '700 22px "IBM Plex Sans", sans-serif';
+    ctx.fillText(t.label, cardX + 30, y + 38);
+
+    if (showNonMember) {
+      ctx.font = '600 19px "IBM Plex Sans", sans-serif';
+      ctx.fillStyle = theme.muted;
+      ctx.fillText('NORMAL', cardX + 30, y + cardH - 46);
+      ctx.font = '700 34px "IBM Plex Mono", monospace';
+      ctx.fillStyle = theme.text;
+      ctx.fillText(adPriceText(t.nonMember), cardX + 30, y + cardH - 14);
+
+      ctx.textAlign = 'right';
+      ctx.font = '600 19px "IBM Plex Sans", sans-serif';
+      ctx.fillStyle = theme.accent;
+      ctx.fillText('MEMBER', cardX + cardW - 30, y + cardH - 46);
+      ctx.font = '900 42px "IBM Plex Mono", monospace';
+      ctx.fillText(adPriceText(t.standard), cardX + cardW - 30, y + cardH - 12);
+      ctx.textAlign = 'left';
+    } else {
+      ctx.textAlign = 'right';
+      ctx.fillStyle = theme.accent;
+      ctx.font = '900 46px "IBM Plex Mono", monospace';
+      ctx.fillText(adPriceText(t.standard), cardX + cardW - 30, y + cardH / 2 + 18);
+      ctx.textAlign = 'left';
+    }
+  });
+
+  /* ---- Terms chips -- single line for any normal-length business
+     name/contact; wraps only if it genuinely runs out of room. ---- */
+  const shortDaysEl = document.querySelector('.rc-equipment-panel:not([hidden]) .rc-eq-short-job-days');
+  const shortDays = shortDaysEl ? num(shortDaysEl, 3) : 3;
+  const depositPct = num(document.getElementById('rc-deposit-member-pct'), 20);
+  const chips = [
+    eq.wetHire ? 'Operator & fuel included' : 'Dry hire \u2014 machine only',
+    `Min. booking: ${shortDays} day${shortDays === 1 ? '' : 's'}`,
+    `Deposit: ${depositPct}%`,
+  ];
+  let chipX = 60, chipY = cardsBottom + 22;
+  ctx.font = '600 21px "IBM Plex Sans", sans-serif';
+  chips.forEach((chip) => {
+    const chipW = ctx.measureText(chip).width + 38;
+    if (chipX + chipW > W - 60) { chipX = 60; chipY += 54; }
+    ctx.fillStyle = theme.chipBg;
+    roundRectPath(ctx, chipX, chipY, chipW, 44, 22);
+    ctx.fill();
+    ctx.fillStyle = theme.text;
+    ctx.fillText(chip, chipX + 19, chipY + 29);
+    chipX += chipW + 12;
+  });
+
+  /* ---- Footer (fixed height, anchored to the bottom) ---- */
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, H - FOOTER_H, W, FOOTER_H);
+  ctx.fillStyle = '#FFFFFF';
+  const footerBoldFont = (size) => `700 ${size}px "IBM Plex Sans", sans-serif`;
+  const footerNameSize = fitFontSize(ctx, business, W - 120, 30, 18, footerBoldFont);
+  ctx.font = footerBoldFont(footerNameSize);
+  ctx.fillText(business, 60, H - FOOTER_H + 58);
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
+  const contactLine = [phone, contact].filter(Boolean).join('   \u00b7   ') || 'Contact us for a quote';
+  const footerRegularFont = (size) => `400 ${size}px "IBM Plex Sans", sans-serif`;
+  const contactSize = fitFontSize(ctx, contactLine, W - 120, 24, 15, footerRegularFont);
+  ctx.font = footerRegularFont(contactSize);
+  ctx.fillText(contactLine, 60, H - FOOTER_H + 100);
+}
+
+function downloadAdImage() {
+  const canvas = document.getElementById('rc-ad-canvas');
+  if (!canvas) return;
+  const link = document.createElement('a');
+  const active = getActiveEquipmentPanel();
+  const nameSlug = active ? active.querySelector('.rc-eq-name').value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') : 'equipment';
+  link.download = `rental-ad-${nameSlug || 'equipment'}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
 /* ================= CONTROLLER ================= */
 
 function recalculateAll() {
@@ -922,6 +1228,7 @@ function recalculateAll() {
 
     const sharedCtx = { sharedOverheadTotal, sharedManpowerTotal, combinedShare, memberDiscountPct, memberMode };
     const computed = collectEquipment(sharedCtx);
+    const partners = collectPartners();
 
     computed.forEach(({ panel }) => renderPanelLiveNotes(panel, overheadPerMachine, operatorPerMachine));
 
@@ -931,9 +1238,11 @@ function recalculateAll() {
     const active = computed.find((c) => c.panel === activePanel) || computed[0];
     if (active) {
       renderDetail(active.eq);
+      renderPartnerPayoutSection(active.eq, partners, sstOn, sstPct);
       renderStructureSection(active.eq);
       renderMarketSection(active.eq);
       renderInsights(active.eq, computed);
+      drawAdCanvas(active.eq);
     }
   } catch (err) {
     console.error('[Rental Calculator] recalculateAll failed partway through:', err);
@@ -994,8 +1303,28 @@ function init() {
   }, { passive: true });
   document.getElementById('rc-back-to-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
+  // Ad Creator controls -- every one just triggers a full recalculate,
+  // same as every other input on this page, since drawAdCanvas is
+  // cheap enough to re-run alongside everything else rather than
+  // needing its own separate debounced path.
+  ['rc-ad-business', 'rc-ad-tagline', 'rc-ad-phone', 'rc-ad-contact'].forEach((id) => {
+    document.getElementById(id).addEventListener('input', recalculateAll);
+  });
+  document.getElementById('rc-ad-theme').addEventListener('change', recalculateAll);
+  document.getElementById('rc-ad-show-nonmember').addEventListener('change', recalculateAll);
+  document.getElementById('rc-ad-download').addEventListener('click', downloadAdImage);
+
   initSync();
   recalculateAll();
+
+  // Canvas text can render with a fallback font if this runs before
+  // Fraunces/IBM Plex finish downloading -- redrawing once
+  // document.fonts.ready resolves (a no-op if they were already
+  // loaded) makes sure the ad always ends up using the real typefaces,
+  // not just the first paint's best guess.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => recalculateAll());
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
