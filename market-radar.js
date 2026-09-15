@@ -404,6 +404,33 @@ async function fetchAnalysis(payload) {
 
 let lastAnalysis = null; // holds everything recomputeScore() and requestInsight() need without re-fetching
 
+// FIXED, 2026-09-16: with three Overpass mirrors plus a Geoapify
+// fallback now each getting their own timeout (see
+// EXTERNAL_CALL_TIMEOUT_MS in market-radar-proxy-worker.js), a worst-
+// case analysis can genuinely take up to about 40 seconds if every
+// single data source is having a bad day. Before this, the status
+// line just said "Fetching\u2026" the entire time, which is exactly what
+// "taking a long time and doesn't appear to complete" looks like from
+// the outside \u2014 there was no way to tell a slow-but-working request
+// apart from a genuinely stuck one. This cycles through a couple of
+// honest, reassuring messages instead of one static line, and gets
+// stopped in analyzeSpot's own finally block the moment a real
+// answer (success or failure) comes back.
+const PROGRESS_MESSAGES = [
+  'Fetching competitors, catchment shape, and district data\u2026',
+  'Still working \u2014 the first data source is slow to answer, trying another\u2026',
+  'Still working \u2014 some of these are free, shared services and occasionally slow. Worst case this takes under a minute.',
+];
+function startProgressMessages() {
+  let i = 0;
+  setStatus(PROGRESS_MESSAGES[0]);
+  const timer = setInterval(() => {
+    i = Math.min(i + 1, PROGRESS_MESSAGES.length - 1);
+    setStatus(PROGRESS_MESSAGES[i]);
+  }, 7000);
+  return () => clearInterval(timer);
+}
+
 function currentWeights() {
   return {
     lowCompetition: parseFloat(document.getElementById('mr-weight-lowCompetition').value) || 0,
@@ -457,7 +484,7 @@ async function analyzeSpot() {
 
   const btn = document.getElementById('mr-analyze-btn');
   btn.disabled = true;
-  setStatus('Fetching competitors, catchment shape, and district data\u2026');
+  const stopProgress = startProgressMessages();
   clearResultLayers();
 
   try {
@@ -536,6 +563,7 @@ async function analyzeSpot() {
   } catch (err) {
     setStatus(err.message || 'Something went wrong. Try again.', true);
   } finally {
+    stopProgress();
     btn.disabled = false;
   }
 }
