@@ -758,6 +758,11 @@ th.sortable:hover { color: var(--accent-dark); }
 }
 
 .platform-panel { margin-top: 16px; }
+
+/* Cost Buffer % row (2026-09-16) — sits above Target Food Cost % in
+   the pricing panel, its own thin divider to match .pricing-panel's
+   own top border above. See COST_BUFFER_STANDARD.md. */
+.cost-buffer-row { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--line); }
 .toggle-row {
   display: flex;
   align-items: center;
@@ -771,21 +776,25 @@ th.sortable:hover { color: var(--accent-dark); }
 .toggle-row input[type="checkbox"] { width: 17px; height: 17px; cursor: pointer; accent-color: var(--accent); }
 .toggle-hint { font-weight: 400; color: var(--muted); }
 
-.platform-fields, .sst-fields {
+/* .cost-buffer-fields joins this group as of 2026-09-16 — Menu
+   Calculator's dish-level Cost Buffer % toggle reuses this exact
+   layout (flex row, muted label, mono input) rather than inventing
+   new rules. See COST_BUFFER_STANDARD.md. */
+.platform-fields, .sst-fields, .cost-buffer-fields {
   display: flex;
   gap: 20px;
   flex-wrap: wrap;
   padding: 4px 0 12px 25px;
   font-size: 0.88rem;
 }
-.platform-fields[hidden], .sst-fields[hidden] { display: none; }
-.platform-fields label, .sst-fields label {
+.platform-fields[hidden], .sst-fields[hidden], .cost-buffer-fields[hidden] { display: none; }
+.platform-fields label, .sst-fields label, .cost-buffer-fields label {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--muted);
 }
-.platform-fields input, .sst-fields input {
+.platform-fields input, .sst-fields input, .cost-buffer-fields input {
   width: 60px;
   padding: 6px 8px;
   border: 1px solid var(--line);

@@ -224,7 +224,7 @@ let menuRowIdCounter = 0;
 // though all three share the same photo/description -> Gemini ->
 // structured JSON shape — see menu-calculator-proxy-worker.js's own
 // header comment for why they're kept apart rather than shared.
-const MENU_AI_PROXY_ENDPOINT = 'https://menu-calculator-proxy.reysourcez-ent.workers.dev/';
+const MENU_AI_PROXY_ENDPOINT = 'https://margin-audit-proxy.reysourcez-ent.workers.dev/';
 const MENU_AI_MAX_IMAGE_EDGE = 1024;
 
 function menuTypeOptionsHTML() {
@@ -347,6 +347,28 @@ function computeBlockCost(block) {
   return total;
 }
 
+// Cost Buffer % (2026-09-16) — a dish-level, whole-menu-item catch-all
+// margin on top of computeBlockCost()'s raw total, for spoilage,
+// over-portioning, and kitchen mistakes that the per-INGREDIENT
+// Wastage % up in the Ingredient Costing table doesn't capture (that
+// one is a KNOWN trim/shrinkage rate for one specific ingredient; this
+// is a blanket safety margin for the whole dish, the two are meant to
+// stack, not substitute for each other). Standard Malaysian F&B
+// costing templates put this around 10% — see COST_BUFFER_STANDARD.md
+// for the worked example and the verification behind that number.
+// Reads computeBlockCost(block) rather than duplicating its
+// detailed/simple/ai branching, so the buffer applies uniformly no
+// matter which of the three costing modes produced the raw total —
+// including the AI-estimate/photo-upload path, with no special-casing
+// needed here for that.
+function computeBufferedCost(block) {
+  const rawCost = computeBlockCost(block);
+  const useCostBuffer = block.querySelector('.use-cost-buffer-toggle').checked;
+  if (!useCostBuffer) return rawCost;
+  const costBufferPct = parsePercent(block.querySelector('.cost-buffer-pct'), 10, 0);
+  return rawCost * (1 + costBufferPct / 100);
+}
+
 // Total Target Selling Price used to be summed from each row's own
 // dataset.targetPrice, which only ever existed for detailed rows. One
 // division does the same job for all three modes: every row shares
@@ -359,8 +381,17 @@ function computeBlockCost(block) {
 // after fees are taken out, you still net your full target.
 function updateMenuBlockSummary(block) {
   const total = computeBlockCost(block);
+  // The buffer sits BEFORE the Target Food Cost % gross-up, same side
+  // of the calculation as the ingredients themselves — it inflates the
+  // COST basis, not the price. That's different from delivery
+  // commission/SST further below, which mark UP the price side; see
+  // COST_BUFFER_STANDARD.md for why those are kept as separate
+  // operations rather than folded together.
+  const totalWithBuffer = computeBufferedCost(block);
+  const bufferTotalEl = block.querySelector('.cost-buffer-total');
+  if (bufferTotalEl) bufferTotalEl.textContent = formatRM(totalWithBuffer);
   const targetFoodCostPct = parsePercent(block.querySelector('.target-food-cost'), 30, 0.1);
-  const totalTargetPrice = total / (targetFoodCostPct / 100);
+  const totalTargetPrice = totalWithBuffer / (targetFoodCostPct / 100);
   block.querySelector('.menu-total').textContent = formatRM(total);
   block.querySelector('.menu-total-target-price').textContent = formatRM(totalTargetPrice);
   // The AI table's own footer total stays live regardless of whether
@@ -418,7 +449,16 @@ function updateMenuBlockSummary(block) {
   // menu item. See MULTI_MENU_SYNC_PLAN.md for the receiving side.
   if (typeof rzBroadcast === 'function') {
     const name = block.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item';
-    rzBroadcast({ blockId: block.dataset.blockId, costPerPortion: total, sellingPrice: isFinite(listedPrice) ? listedPrice : undefined, dishName: name });
+    const costBufferPct = block.querySelector('.use-cost-buffer-toggle').checked
+      ? parsePercent(block.querySelector('.cost-buffer-pct'), 10, 0)
+      : 0;
+    // costPerPortion carries the BUFFERED cost, not the raw ingredient
+    // total — every listener (Costing Analysis, Margin Audit, the
+    // JSON export below) treats this as "what this dish truly costs,"
+    // so it should already include the same margin this page uses for
+    // its own Target Selling Price. costBufferPct rides along too,
+    // purely informational for now. See COST_BUFFER_STANDARD.md.
+    rzBroadcast({ blockId: block.dataset.blockId, costPerPortion: totalWithBuffer, costBufferPct, sellingPrice: isFinite(listedPrice) ? listedPrice : undefined, dishName: name });
   }
 }
 
@@ -740,10 +780,21 @@ function createMenuBlock() {
     </div>
 
     <div class="pricing-panel">
+      <div class="cost-buffer-row">
+        <label class="toggle-row">
+          <input type="checkbox" class="use-cost-buffer-toggle" name="use-cost-buffer" checked>
+          Cost buffer <span class="tooltip-icon" data-tooltip="A whole-dish catch-all margin on top of the ingredient total above — for spoilage, over-portioning, and kitchen mistakes that the per-ingredient Wastage % in the Ingredient Costing table doesn't already cover (that one's a known trim/shrinkage rate for ONE ingredient; this is a blanket safety margin for the WHOLE dish, and the two are meant to be used together, not as alternatives). Standard practice in Malaysian F&B costing templates is about 10%, applied once here rather than estimated ingredient by ingredient.">?</span>
+        </label>
+        <div class="cost-buffer-fields">
+          <label>Buffer % <input type="number" class="cost-buffer-pct" name="cost-buffer-pct" inputmode="decimal" min="0" max="100" step="0.5" value="10"></label>
+          <span class="pricing-result">Cost incl. buffer <strong class="cost-buffer-total">RM0.00</strong></span>
+        </div>
+      </div>
+
       <div class="pricing-row">
         <label for="tfc-${n}">Target Food Cost % <span class="toggle-hint">(Cost-Plus Pricing)</span><span class="tooltip-icon" data-tooltip="As % of selling price — lower % means higher margin">?</span></label>
         <input type="number" id="tfc-${n}" class="target-food-cost" name="target-food-cost" inputmode="decimal" min="1" max="100" step="0.1" value="30">
-        <span class="toggle-hint">drives the Target Selling Price column above</span>
+        <span class="toggle-hint">applied to cost + buffer above, drives the Target Selling Price column</span>
       </div>
 
       <div class="platform-panel">
@@ -805,6 +856,11 @@ function createMenuBlock() {
     updateMenuBlockSummary(block);
     renderMenuTabs();
   });
+  block.querySelector('.use-cost-buffer-toggle').addEventListener('change', (e) => {
+    block.querySelector('.cost-buffer-fields').hidden = !e.target.checked;
+    updateMenuBlockSummary(block);
+  });
+  block.querySelector('.cost-buffer-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.commission-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.commission-tax-pct').addEventListener('input', () => updateMenuBlockSummary(block));
   block.querySelector('.sst-pct').addEventListener('input', () => updateMenuBlockSummary(block));
@@ -889,11 +945,16 @@ function exportMenuData() {
   const blocks = Array.from(document.querySelectorAll('.menu-block')).map((block) => {
     const listedPriceText = block.querySelector('.listed-price').textContent;
     const sellingPrice = parseFloat(listedPriceText.replace(/[^0-9.]/g, '')) || 0;
+    const costBufferOn = block.querySelector('.use-cost-buffer-toggle').checked;
     return {
       blockId: block.dataset.blockId,
       dishName: block.querySelector('.menu-name-input').value.trim() || 'Untitled Menu Item',
       costMode: block.dataset.costMode || 'detailed',
-      costPerPortion: computeBlockCost(block),
+      // Buffered cost, same convention as the live broadcast — an
+      // imported file and a live sync should always agree on what
+      // this dish "truly" costs. See COST_BUFFER_STANDARD.md.
+      costPerPortion: computeBufferedCost(block),
+      costBufferPct: costBufferOn ? parsePercent(block.querySelector('.cost-buffer-pct'), 10, 0) : 0,
       sellingPrice,
       targetFoodCostPct: parsePercent(block.querySelector('.target-food-cost'), 30, 0.1),
     };
@@ -912,7 +973,7 @@ function exportMenuData() {
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-09-08-json-export');
+console.info('[Menu Calculator] script build: 2026-09-16-cost-buffer');
 
 let rzInitialized = false;
 

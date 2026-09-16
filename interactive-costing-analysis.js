@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-08-json-import-full-summary');
+console.info('[Interactive Costing Analysis] script build: 2026-09-16-panel-toggle-standard');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -723,59 +723,61 @@ function rzRunIsolated(scriptText, sourceKey) {
   document.getElementById('tool-dock-body').appendChild(scriptEl);
 }
 
-// Shows or hides the whole dock (and everything that only makes
-// sense while it's visible: the back-to-top button, the top "Hide"
-// button, and which connector button reads as active) WITHOUT
-// touching #tool-dock-body's contents. That's the whole point —
-// hiding is not the same as closing. The tool's actual DOM, its
-// running script's closures, and whatever's been typed into it all
-// stay exactly as they were; showing it again just makes that same
-// state visible, same as re-clicking its own connector button does.
-function setDockVisible(visible) {
-  document.getElementById('tool-dock').hidden = !visible;
-  document.getElementById('rz-back-to-top').hidden = !visible;
-  document.getElementById('tool-dock-hide-btn').hidden = !visible;
-  if (!visible) updateConnectorActiveState(null);
-}
+// Registers each "Pull from" connector button as its own key in the
+// 'costing-connectors' panel-toggle group, all sharing the SAME dock
+// element as their panelEl (see panel-toggle.js — a shared panelEl
+// across keys is exactly what it's designed for). This is what makes
+// clicking a tool's own button while it's showing CLOSE the dock
+// (rzTogglePanel's built-in toggle behavior) instead of the old
+// re-show-and-scroll no-op, and it's what keeps #rz-back-to-top and
+// the Hide button from ever going out of sync with the dock's own
+// visibility — they're registered as this same group's floatingEls,
+// so they can only ever flip in the same pass as the dock itself.
+function initToolDockConnectors() {
+  const dock = document.getElementById('tool-dock');
+  const floatingEls = [
+    document.getElementById('rz-back-to-top'),
+    document.getElementById('tool-dock-hide-btn'),
+  ];
 
-// Highlights whichever connector button matches the tool currently
-// SHOWING in the dock — .is-active + the per-tool accent color
-// already existed in styles.css for this, just wasn't wired up to
-// anything yet.
-function updateConnectorActiveState(activeKey) {
   document.querySelectorAll('[data-open-tool]').forEach((btn) => {
-    btn.classList.toggle('is-active', btn.dataset.openTool === activeKey);
+    const key = btn.dataset.openTool;
+    rzRegisterPanel('costing-connectors', key, {
+      triggerEl: btn,
+      panelEl: dock,
+      floatingEls,
+      onOpen: () => rzFillToolDock(key),
+    });
   });
+
+  document.getElementById('tool-dock-close').addEventListener('click', () => rzCloseAllPanels('costing-connectors'));
 }
 
-async function rzLoadToolIntoDock(key) {
+// The actual fetch-inject-execute work, now purely an "onOpen" hook —
+// panel-toggle.js has already made the dock visible and scrolled it
+// into place by the time this runs; all this does is make sure the
+// RIGHT tool's markup and script are sitting inside it.
+async function rzFillToolDock(key) {
   if (typeof RZ_TOOLS === 'undefined' || !RZ_TOOLS[key]) return;
+  const dock = document.getElementById('tool-dock');
   const dockConfig = TOOL_DOCK_CONFIG[key];
   const tool = RZ_TOOLS[key];
-  const dock = document.getElementById('tool-dock');
   const body = document.getElementById('tool-dock-body');
   const titleEl = document.getElementById('tool-dock-title');
 
-  // Already loaded — whether currently showing or hidden via the
-  // Hide/close button — just reveal it and scroll down, don't
-  // refetch and lose whatever's been typed in there. Loading a
-  // DIFFERENT tool below still does a full fresh reload, which is
-  // the natural way to reset one (see chat re: a dedicated reset
-  // button — this covers the same need without one).
-  if (dock.dataset.openTool === key) {
-    setDockVisible(true);
-    updateConnectorActiveState(key);
-    dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
+  dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Already this exact tool's content sitting in the dock — we were
+  // just hidden, not swapped for a different tool — so there's
+  // nothing to refetch, and refetching would lose whatever's been
+  // typed in there. Switching to a DIFFERENT tool below still does a
+  // full fresh reload, which is the natural way to reset one.
+  if (dock.dataset.openTool === key) return;
 
   dock.className = 'tool-dock ' + dockConfig.theme;
   dock.dataset.openTool = key;
   titleEl.textContent = tool.label;
   body.innerHTML = '<p class="tool-dock-status">Loading…</p>';
-  setDockVisible(true);
-  updateConnectorActiveState(key);
-  dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
     const html = await fetch(tool.url).then((r) => {
@@ -904,12 +906,7 @@ function init() {
     btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
   });
 
-  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
-    btn.addEventListener('click', () => rzLoadToolIntoDock(btn.dataset.openTool));
-  });
-
-  document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
-  document.getElementById('tool-dock-hide-btn').addEventListener('click', () => setDockVisible(false));
+  initToolDockConnectors();
 
   document.getElementById('rz-back-to-top').addEventListener('click', () => {
     document.getElementById('ica-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });

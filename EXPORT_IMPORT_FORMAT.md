@@ -62,10 +62,21 @@ function downloadJSONFile(filename, dataObj) {
   "exportedAt": "...",
   "blocks": [
     { "blockId": "menublock-1", "dishName": "Nasi Lemak Ayam", "costMode": "detailed",
-      "costPerPortion": 3.85, "sellingPrice": 12.90, "targetFoodCostPct": 30 }
+      "costPerPortion": 3.98, "costBufferPct": 10, "sellingPrice": 12.90, "targetFoodCostPct": 30 }
   ]
 }
 ```
+
+`costPerPortion` includes the dish-level Cost Buffer % (added
+2026-09-16, see COST_BUFFER_STANDARD.md) whenever that toggle is on
+for the block — same "true cost" convention the live broadcast payload
+already uses, so an imported file and a live sync always agree.
+`costBufferPct` is the % actually applied, 0 if the block's buffer
+toggle was off — purely informational for now, same "cheap now, useful
+later" reasoning as the other optional fields below. This is additive:
+an importer that doesn't look for `costBufferPct` yet just ignores it
+and still reads `costPerPortion` correctly, so `rzExportVersion` stays
+at 1.
 
 ## Overhead & Manpower's export (live)
 
