@@ -67,9 +67,19 @@
        those two files don't recognise a 'market-radar' source yet.
        That's a small, contained edit flagged in the setup doc rather
        than made here, since it touches files this session didn't own.
+
+   ------------------------------------------------------------
+   FIXED, 2026-09-16: "Drink stall / bubble tea" was invisible for
+   real bubble tea shops. Root cause was in CATEGORY_TAGS below plus
+   categorize() in market-radar-proxy-worker.js — see the comment on
+   CATEGORY_TAGS.drinks and NAME_HINTS below for the fix. Short
+   version: OSM tags a bubble tea stall as amenity=cafe (or
+   amenity=fast_food) + cuisine=bubble_tea, not as its own shop type,
+   so it needed a specific-tag-priority fix in the Worker, not just a
+   tag added here.
    ============================================================ */
 
-console.info('[Market Radar] script build: 2026-09-12-v1');
+console.info('[Market Radar] script build: 2026-09-16-v2');
 
 /* ================= CONFIG =================
    Everything below is meant to be changed. See the Settings
@@ -78,9 +88,14 @@ console.info('[Market Radar] script build: 2026-09-12-v1');
 
 // Town presets — lat/lng are approximate town centres, just a
 // starting pin; click anywhere on the map to move it before
-// analyzing. "district" must match how DOSM names it in the
-// population_district / hh_income_district datasets — see the
-// Worker's DISTRICT_ALIASES table if a lookup ever comes back empty.
+// analyzing. "district" must exactly match one of DOSM's 160 official
+// district names (case doesn't matter — the Worker's ifilter= query
+// is case-insensitive) — confirm any new town's spelling against
+// data.gov.my/data-catalogue/population_district before adding it
+// here. (An earlier version of this comment pointed at a Worker-side
+// DISTRICT_ALIASES lookup table for this — that table was never
+// actually built; corrected here rather than left pointing at
+// something that doesn't exist.)
 const TOWNS = {
   miri: { label: 'Miri', lat: 4.4148, lng: 113.9917, district: 'Miri' },
   kuching: { label: 'Kuching', lat: 1.5535, lng: 110.3593, district: 'Kuching' },
@@ -101,7 +116,26 @@ const CATEGORY_TAGS = {
   restaurant: { label: 'Restaurant', tags: [['amenity', 'restaurant']] },
   fastfood: { label: 'Fast food / food stall', tags: [['amenity', 'fast_food']] },
   bakery: { label: 'Bakery / dessert', tags: [['shop', 'bakery'], ['shop', 'pastry'], ['shop', 'confectionery']] },
-  drinks: { label: 'Drink stall / bubble tea', tags: [['shop', 'beverages'], ['shop', 'tea'], ['shop', 'coffee']] },
+  // FIXED, 2026-09-16: added ['cuisine','bubble_tea'] — OSM's own
+  // documented convention tags a bubble tea stall as amenity=cafe (or
+  // amenity=fast_food) PLUS cuisine=bubble_tea; there's no dedicated
+  // shop=bubble_tea tag (one was proposed and the OSM community
+  // rejected it for exactly this reason — see
+  // wiki.openstreetmap.org/wiki/Tag:cuisine=bubble_tea). The three
+  // original tags here (shop=beverages/tea/coffee) are all real OSM
+  // tags, just not the ones an actual walk-up bubble tea stall uses in
+  // practice — shop=tea and shop=coffee in particular mean a retailer
+  // of tea leaves or coffee beans/equipment, not a prepared-drink
+  // stall. Left them in rather than removing them (harmless, and
+  // occasionally still correct), but cuisine=bubble_tea is the tag
+  // that actually matters. On its own this addition isn't enough —
+  // market-radar-proxy-worker.js's categorize() also needed a priority
+  // fix so cuisine=* tags get checked before "cafe" claims the POI
+  // first; see that file's own 2026-09-16 note. NAME_HINTS below is
+  // the second half of this fix, for stalls tagged amenity=cafe with
+  // no cuisine sub-tag at all — common enough in practice that
+  // cuisine=bubble_tea alone doesn't catch everything.
+  drinks: { label: 'Drink stall / bubble tea', tags: [['cuisine', 'bubble_tea'], ['shop', 'beverages'], ['shop', 'tea'], ['shop', 'coffee']] },
   minimart: { label: 'Convenience / minimart', tags: [['shop', 'convenience'], ['shop', 'supermarket']] },
   fashion: { label: 'Fashion / apparel', tags: [['shop', 'clothes'], ['shop', 'shoes']] },
   hardware: { label: 'Hardware', tags: [['shop', 'hardware'], ['shop', 'doityourself']] },
@@ -109,6 +143,28 @@ const CATEGORY_TAGS = {
   salon: { label: 'Salon / barber', tags: [['shop', 'hairdresser'], ['shop', 'beauty']] },
   printing: { label: 'Printing / copy shop', tags: [['shop', 'copyshop'], ['shop', 'printing']] },
   custom: { label: 'Custom \u2014 type your own OSM tag', tags: [] },
+};
+
+// Second half of the 2026-09-16 bubble tea fix (see CATEGORY_TAGS.drinks
+// above): a real-world stall tagged plain amenity=cafe with NO
+// cuisine sub-tag at all is common enough that the tag fix alone
+// doesn't catch everything. A specific brand-name or generic-word
+// match in the POI's own name is a strong enough signal to override
+// whatever tag-based category the Worker assigned — false positives
+// here are essentially impossible for a curated list like this one.
+// Only "drinks" has entries for now; add another category's array
+// here the same way if the same kind of mis-bucketing shows up for
+// it (this is exactly the mechanism to reach for if a search ever
+// "finds all F&B, then breaks down by type" runs into the same
+// generic-primary-tag problem for some other category).
+const NAME_HINTS = {
+  drinks: [
+    'bubble tea', 'boba', 'pearl milk tea',
+    'chatime', 'tealive', 'gong cha', 'koi th\u00e9', 'koi the',
+    'xing fu tang', 'tiger sugar', 'sharetea', 'share tea',
+    'comebuy', 'come buy', 'daboba', 'the alley', 'liho', 'yifang',
+    'each a cup',
+  ],
 };
 
 // Catchment modes drive both the OpenRouteService isochrone request
@@ -402,6 +458,21 @@ async function fetchAnalysis(payload) {
 
 /* ================= ANALYZE FLOW ================= */
 
+// Runs once, right after fetchAnalysis returns, before anything else
+// touches the POI list — see NAME_HINTS above. A specific keyword or
+// brand-name match is treated as MORE reliable than whatever tag-based
+// category the Worker assigned, so it always wins when one is found;
+// a POI with no name match keeps whatever category it already had.
+function applyNameHints(pois) {
+  return pois.map((p) => {
+    const name = (p.name || '').toLowerCase();
+    for (const [key, hints] of Object.entries(NAME_HINTS)) {
+      if (hints.some((h) => name.includes(h))) return { ...p, category: key };
+    }
+    return p;
+  });
+}
+
 let lastAnalysis = null; // holds everything recomputeScore() and requestInsight() need without re-fetching
 
 // FIXED, 2026-09-16: with three Overpass mirrors plus a Geoapify
@@ -500,7 +571,8 @@ async function analyzeSpot() {
 
     const catchment = drawCatchment(data.isochrone, pin.lat, pin.lng, catchmentModeKey);
 
-    const withinCatchment = (data.pois || []).filter((p) => catchment.containsPoint(p.lat, p.lng));
+    const pois = applyNameHints(data.pois || []);
+    const withinCatchment = pois.filter((p) => catchment.containsPoint(p.lat, p.lng));
     const competitors = withinCatchment.filter((p) => p.category === categoryKey || categoryKey === 'custom');
     const categoryCounts = {};
     withinCatchment.forEach((p) => { categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1; });

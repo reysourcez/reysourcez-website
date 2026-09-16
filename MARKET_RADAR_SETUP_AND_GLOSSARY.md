@@ -1,24 +1,26 @@
 # Market Radar — Setup & Reference
 
-## Current status (as of 2026-09-16)
+## Current status (as of 2026-09-16, revised)
 
-Built, deployed, and through three real rounds of bug fixes from actual live testing — not just written and assumed to work. If you're picking this up in a new chat: everything below is current, and the file versions in this same output batch are the ones to use, not any earlier version from elsewhere in this project.
+**A note on how this doc and the shipped code drifted apart, for whichever session reads this next:** the previous version of this table said Geoapify, the 10s timeout, and the DOSM fixes were already done. Re-reading `market-radar-proxy-worker.js`'s own code on 2026-09-16 (not just re-trusting this doc) turned up that none of those three had actually made it into the file — they were designed and written up here, but the code itself still only had the 2026-09-13 Overpass-mirrors fix. That gap is closed as of this revision, confirmed by reading the actual file this time, and the file versions in this same output batch are the ones that now genuinely match this table. Lesson for next time baked into the process, not just this paragraph: treat this table as a claim to verify against the real file before repeating it, the same way this round did.
 
 | Area | Status |
 |---|---|
 | Wizard, map, click-to-place pin | ✅ Working |
-| Overpass competitor search | ✅ Working — 3-mirror fallback, Geoapify backstop, 10s timeout per attempt |
+| Overpass competitor search | ✅ 3-mirror fallback (since 2026-09-13); Geoapify backstop and 10s per-call timeout genuinely implemented as of this revision, not just described |
+| Bubble tea / other cuisine-tagged categories | ✅ Fixed this revision — `categorize()` now checks `cuisine=*` tags before generic `amenity=*`/`shop=*` tags, plus a `NAME_HINTS` brand/keyword fallback in `market-radar.js` — see that file's own 2026-09-16 comments |
 | Isochrone catchment (real travel-time shape) | ✅ Working, confirmed live; falls back to a plain circle if OpenRouteService fails |
-| District population & household income (DOSM) | ✅ Fixed — three separate bugs resolved (wrong row, wrong unit, wrong query syntax), worth one more live confirmation |
+| District population & household income (DOSM) | ✅ Fixed this revision, this time confirmed against data.gov.my's own published API docs and dataset schema, not guessed — see `fetchPopulation()`'s own comment in the Worker. Still worth one live confirmation click after deploying |
 | Opportunity score, editable weights, diversity index | ✅ Working |
 | Gemini plain-English read | ✅ Working, confirmed live |
-| "Still working" progress messaging on slow analyses | ✅ Added this round |
+| "Still working" progress messaging on slow analyses | ✅ Working |
 | Nav entries on the other 10 pages | ⏸ Not done — per this project's own `AI_BUILD_BRIEF.md`, that's a central reconciliation pass, not a single-tool job |
-| `cost-structure-checker` / `qr-code-creator` in the nav standard | ⏸ Blocked — their files/filenames/labels haven't been shared yet |
-| AppSheet field-survey layer | ⏸ Not started — schema specified below, waiting on the actual Sheet existing |
+| `cost-structure-checker` in the nav standard | ⏸ The page itself now exists (`cost-structure-checker.html`) — still correctly held out of live nav per the same central-pass rule above, just no longer accurate to describe as "not built yet" the way `NAV_ORDER_STANDARD.md` currently does |
+| `qr-code-creator` / "QR Listing Creator" in the nav standard | ⏸ Genuinely doesn't exist as a page yet — still accurate as "not built" |
+| AppSheet field-survey layer | ⏸ Not started — schema specified below, waiting on the actual Sheet existing. See "Popularity / foot-traffic signals" below for how this could extend to cover that too |
 | Sync handoff into Interactive Costing Analysis / Margin Analysis | ⏸ Not started — `market-radar.js` already broadcasts, the receiving side doesn't listen yet |
 
-**Immediate next step:** redeploy `market-radar-proxy-worker.js` (this version) over whatever's currently live, and re-test — the DOSM and timeout fixes haven't had a live confirmation yet.
+**Immediate next step:** redeploy `market-radar-proxy-worker.js` and `market-radar.js` (this revision) over whatever's currently live, and re-test the bubble tea category and the population figure specifically — both had a plausible-looking fix land in this project before that turned out not to be doing what it claimed.
 
 ---
 
@@ -107,9 +109,10 @@ Everything a layperson might want to change lives in one `CONFIG` block near the
 | Daily analysis limit per browser | 15 | `MAX_ANALYSES_PER_DAY`, `market-radar.js` |
 | Overpass POI cache duration | 24 hours | `fetchOverpassPOIs`, `market-radar-proxy-worker.js` |
 | Overpass mirrors tried, in order | overpass-api.de, overpass.kumi.systems, overpass.private.coffee | `OVERPASS_MIRRORS`, `market-radar-proxy-worker.js` |
-| Timeout per external call (each Overpass mirror, Geoapify, ORS, Gemini) | 10 seconds | `EXTERNAL_CALL_TIMEOUT_MS`, `market-radar-proxy-worker.js` |
+| Timeout per external call (each Overpass mirror, Geoapify, ORS, data.gov.my, Gemini) | 10 seconds | `EXTERNAL_CALL_TIMEOUT_MS`, `market-radar-proxy-worker.js` |
 | How often the "still working" status message updates during a slow analysis | Every 7 seconds | `PROGRESS_MESSAGES` / `startProgressMessages()`, `market-radar.js` |
-| Geoapify category mapping (Overpass-fallback only) | 11 categories, see `GEOAPIFY_CATEGORY_MAP` | `GEOAPIFY_CATEGORY_MAP`, `market-radar-proxy-worker.js` — not confirmed live, see the Overpass note above |
+| Geoapify category mapping (Overpass-fallback only) | 10 categories mapped, "printing" unmapped (Geoapify has no print-shop equivalent) — see `GEOAPIFY_CATEGORY_MAP` | `GEOAPIFY_CATEGORY_MAP`, `market-radar-proxy-worker.js` |
+| Brand-name / keyword fallback for categories where the primary OSM tag is shared with other business types | "drinks" only for now (bubble tea brand names + generic words) | `NAME_HINTS`, `market-radar.js` — add another category's array the same way if it runs into the same problem |
 | Isochrone cache duration | 30 days | `fetchIsochrone`, `market-radar-proxy-worker.js` |
 | Demographics cache duration | 7 days | `fetchDemographics`, `market-radar-proxy-worker.js` — data.gov.my's Data Catalogue API allows only 4 requests/minute total, confirmed at developer.data.gov.my/rate-limit, so this is deliberately long |
 | Websites allowed to call the Worker (CORS) | `reysourcez.com`, `www.reysourcez.com` | `ALLOWED_ORIGINS`, `market-radar-proxy-worker.js` |
@@ -133,7 +136,28 @@ Everything a layperson might want to change lives in one `CONFIG` block near the
   Publish the resulting Google Sheet as CSV (**File → Share → Publish to web → CSV**, free), and `market-radar-proxy-worker.js` can fetch and cache that URL as a fourth data source once it exists — there's nothing to build on the Worker side until the Sheet does.
 - **Full MSIC-code alignment** — `CATEGORY_TAGS` covers the ~11 categories most likely to matter for a first F&B/retail business, not Malaysia's full official industrial classification.
 - **Momentum / trend tracking** — the momentum sub-score sits at a neutral placeholder until repeated snapshots exist to diff against.
+- **Popularity / foot-traffic signals (researched 2026-09-16, not built)** — the idea: weight each competitor by how known/busy it actually is, not just count heads. Researched Google popular times, Foursquare, Instagram, TikTok, and Google Trends; conclusion for each is in that day's chat, short version here for continuity:
+  - Google popular times: no official API at all — Google's own Places field catalogue doesn't expose it, and the only ways to get it are scrapers that Google's own ToS (clause 10.1(b)) explicitly prohibits. Not recommended.
+  - Foursquare: does have a real "popularity" field, but it's a Premium (paid, no free tier) endpoint under a restrictive, non-redistributable license, and coverage outside dense Western/US markets — which very much includes Miri — is unconfirmed. Possible future paid upgrade, not a fit right now.
+  - Instagram Graph API: officially supports looking up a NAMED competitor's own follower/media count (Business Discovery), but nothing area-wide or hashtag-based for arbitrary businesses, and it requires reysourcez's own Instagram Business account to clear Meta App Review first. Too much overhead for what it'd add.
+  - TikTok: the public Creative Center shows country/industry-level trending hashtags, not per-business or per-location data — wrong granularity for this tool regardless of access method.
+  - Google Trends: the real API Google announced is still an invitation-only alpha with no timeline; the old unofficial workaround (pytrends) is dead/unmaintained. Even with access, small-town, single-shop search volume in Sarawak is likely too sparse to register at all.
+  - **What's actually worth building:** (1) Google Places API's official `rating` + `user_ratings_total` fields as a lawful, officially-supported "how known/liked is this specific competitor" proxy — a new integration (needs its own Google Cloud API key), not free at high volume, but no ToS issue; (2) extend the AppSheet layer above with one more field, e.g. "Visible queue or crowd at peak time (Y/N)" or "Estimated social media presence (1–5)" — free, lawful, and fits the existing Observed-data tier exactly as designed. Either should land as a refinement to competitor STRENGTH inside the existing low-competition sub-score (or a new, clearly-labelled, optional sub-score) — never silently folded into the existing weights, per this tool's own transparency principle.
 - **Handoff into the rest of the tool suite** — `market-radar.js` already calls `rzBroadcast({ source: 'market-radar', ... })` if `costing-sync.js` is loaded, but Interactive Costing Analysis and Margin Analysis's own `handleSyncPayload` functions don't recognise that source yet. That's a small, contained edit to those two existing files — see "Nav & sync reconciliation" below.
+
+## Other data.gov.my / OpenDOSM datasets worth a look (researched 2026-09-16)
+
+Full catalogue: `open.dosm.gov.my/data-catalogue`. Beyond `population_district` and `hh_income_district` (both already wired in), the ones most relevant to site selection, roughly in order of likely value:
+
+| Dataset id | What it adds |
+|---|---|
+| `hies_district` | Household income AND EXPENDITURE at district level (2022 HIES) — expenditure is arguably a better demand proxy than income alone |
+| `hh_poverty_district` | Poverty rate by district — context for how far a headline income figure actually stretches |
+| `lfs_district` | Unemployment / labour-force participation by district — a second, independent read on local economic health |
+| `crime_district` | Crimes by district and type (PDRM) — relevant to evening foot traffic and a genuinely different risk signal than anything else here |
+| `pricecatalog` (`pricecatcher`) + `lookup_premise` | KPDN's PriceCatcher — geolocated retail premises with monthly price-check records; potentially a second, independent POI-ish source for retail (not F&B) worth a closer look, not yet investigated past the catalogue listing |
+| `gdp_district_real_supply` | District GDP by economic sector — last published for 2020 as of this check, so more a slow-moving backdrop than a current signal |
+| `msic` | Full official Malaysian industrial classification lookup — the natural next step if this tool ever grows past its current ~11 hand-picked categories toward the "Full MSIC-code category alignment" KIV item above |
 
 ## Nav & sync reconciliation (for whichever pass handles this centrally)
 
@@ -152,6 +176,8 @@ Per `AI_BUILD_BRIEF.md`'s own rule, a single-tool build session doesn't patch ev
 | Shared IP (Cloudflare Workers) | Every Cloudflare Worker, from every customer worldwide, sends outbound requests from a pool of shared IP addresses — there's no way to get a dedicated one on the free tier. A free API that rate-limits by IP (like Overpass) can't tell this Worker's traffic apart from any other Workers script that's ever hit it, so it can end up throttled by strangers' usage, not its own. Geoapify was added specifically because it rate-limits by API key instead, sidestepping this. |
 | Geoapify | A commercial, OSM-based places API used here only as a fallback, tried after every Overpass mirror fails. Free tier: 3,000 credits/day, no card. |
 | OSM tag | The key=value label OpenStreetMap uses to describe a place, e.g. `amenity=cafe`. Tagging is done by volunteers and is genuinely inconsistent, which is why competitor counts here are a signal, not a census. |
+| Cuisine tag | A more specific OSM sub-tag layered ON TOP of a primary type, e.g. `amenity=cafe` + `cuisine=bubble_tea`. Several genuinely different businesses can share the same primary tag (a plain kopitiam and a bubble tea stall are both often just `amenity=cafe`), so this tool checks cuisine tags first, before the broader primary tag, when deciding which category a place belongs to — see `categorize()` in the Worker. |
+| Name hint | A last-resort check on a place's actual NAME (e.g. "Chatime", "boba") for the handful of real-world cases where even a cuisine tag is missing. Only used for "Drink stall / bubble tea" so far — see `NAME_HINTS` in `market-radar.js`. |
 | Opportunity score | This tool's own summary number, 0–100: a plain weighted blend of low competition, population, income, and category diversity. Fully visible, fully editable — never a black box. |
 | Diversity index | How mixed the businesses near your pin are, not just how many of your own category exist. Built from the same idea as the Herfindahl-Hirschman Index economists use for market concentration, inverted so higher = more mixed. |
 | Provenance tag | The small "Official / Estimated / Calculated" label under every stat, so a government population figure never reads with the same confidence as a crowd-sourced OpenStreetMap count. |
