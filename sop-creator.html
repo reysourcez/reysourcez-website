@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — SOP Creator</title>
+  <meta name="description" content="Describe how a process actually works and get back a structured, editable, standards-aligned Standard Operating Procedure — for any kind of business, not just F&amp;B — with translation into other languages. Free tool, nothing is saved.">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=17">
+
+  <!-- Page-specific styles only — everything reusable (buttons, wizard,
+       result cards, tooltips, info-note, table rows) comes from
+       styles.css as-is, per AI_BUILD_BRIEF.md. New here: the document
+       panel (.sop-doc — this page's one deliberately distinctive visual
+       element, styled to read as an actual controlled document rather
+       than another rounded card), the standards tag chips, and the
+       procedure step rows with move-up/down controls. -->
+  <style>
+    .sop-panel-box { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+    .sop-panel-box > h2:first-child, .sop-panel-box > h3:first-child { margin-top: 0; }
+
+    .sop-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 18px; margin-bottom: 16px; }
+    .sop-field-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 0.86rem; font-weight: 600; color: var(--text); }
+    .sop-field-grid input[type="text"], .sop-field-grid textarea {
+      padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text);
+    }
+    .sop-field-grid input:focus-visible, .sop-field-grid textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    #sop-flow-summary { width: 100%; min-height: 140px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); font-size: 0.95rem; resize: vertical; }
+    #sop-flow-summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    /* ---- Standards tags ---- */
+    .sop-standards-tags { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 14px; min-height: 1.6em; }
+    .sop-standard-tag {
+      display: inline-flex; align-items: center; gap: 4px; background: var(--accent-soft); color: var(--accent-dark);
+      border-radius: 999px; padding: 6px 6px 6px 14px; font-family: var(--font-body); font-size: 0.85rem; font-weight: 600;
+    }
+    .sop-standard-tag .tooltip-icon { margin-left: 2px; }
+    .sop-standard-remove { background: none; border: none; color: var(--accent-dark); cursor: pointer; font-size: 1rem; line-height: 1; padding: 3px 5px; border-radius: 50%; }
+    .sop-standard-remove:hover { background: rgba(0,0,0,0.08); }
+    .sop-standard-remove:focus-visible { outline: 2px solid var(--accent-dark); }
+    .sop-add-standard-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .sop-add-standard-row input { flex: 1 1 260px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.9rem; }
+    .sop-add-standard-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    /* ---- Document panel — the one deliberately distinctive element on
+         this page: styled to read as an actual controlled document
+         (dark document-control header strip, serif title, ruled section
+         headings) rather than one more rounded info card. Editable
+         end-to-end: every field here is a real input, not a read-only
+         render — this IS the editor, not a preview of something else. ---- */
+    .sop-doc { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 10px 32px rgba(22,35,46,0.10); overflow: hidden; margin-bottom: 28px; }
+    .sop-doc-controlblock {
+      background: var(--ink); color: #fff; padding: 16px 28px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 24px;
+    }
+    .sop-doc-controlblock label { display: block; text-transform: uppercase; letter-spacing: 0.05em; font-size: 0.66rem; color: #AEBDB6; margin-bottom: 4px; }
+    .sop-doc-controlblock input {
+      background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.32); color: #fff;
+      font-family: var(--font-body); font-size: 0.86rem; padding: 3px 0; width: 100%;
+    }
+    .sop-doc-controlblock input:focus-visible { outline: none; border-bottom-color: #fff; }
+    .sop-doc-body { padding: 30px clamp(18px, 5vw, 52px) 44px; }
+    .sop-doc-title-input {
+      font-family: var(--font-display); font-weight: 700; font-size: clamp(1.5rem, 3.4vw, 2.15rem);
+      border: none; border-bottom: 2px dashed var(--line); width: 100%; padding: 6px 2px 12px; color: var(--ink); background: transparent;
+    }
+    .sop-doc-title-input:focus-visible { outline: none; border-bottom-color: var(--accent); }
+    .sop-doc-section { margin-top: 30px; }
+    .sop-doc-section h2 {
+      font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; letter-spacing: 0.01em;
+      color: var(--accent-dark); border-bottom: 2px solid var(--accent-soft); padding-bottom: 7px; margin: 0 0 14px;
+    }
+    .sop-doc-section textarea {
+      width: 100%; min-height: 70px; padding: 10px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: var(--font-body); font-size: 0.94rem; resize: vertical; color: var(--text);
+    }
+    .sop-doc-section textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .sop-row-table { width: 100%; border-collapse: collapse; }
+    .sop-row-table td { padding: 6px 0; vertical-align: top; }
+    .sop-row-table td input[type="text"] {
+      width: 100%; padding: 8px 9px; border: 1px solid var(--line); border-radius: 4px;
+      font-family: var(--font-body); font-size: 0.9rem; background: var(--surface); color: var(--text);
+    }
+    .sop-row-table td input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .sop-row-table td:first-child { padding-right: 10px; }
+    .sop-row-table td.no-print { width: 34px; padding-right: 0; }
+
+    .sop-step-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+    .sop-step-number { font-family: var(--font-display); font-weight: 700; color: var(--accent-dark); min-width: 1.8em; padding-top: 9px; text-align: right; }
+    .sop-step-text { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.92rem; resize: vertical; }
+    .sop-step-text:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .sop-step-controls { display: flex; flex-direction: column; gap: 2px; }
+    .sop-step-controls button {
+      width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface);
+      color: var(--muted); cursor: pointer; font-size: 0.8rem; line-height: 1; padding: 0;
+    }
+    .sop-step-controls button:hover { background: var(--paper); color: var(--accent-dark); }
+
+    /* ---- Translate panel ---- */
+    #sop-language-select {
+      padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper);
+      font-family: var(--font-body); font-size: 0.92rem; cursor: pointer; min-width: 220px;
+    }
+    #sop-language-select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    #sop-translated-output {
+      width: 100%; min-height: 320px; padding: 16px; border: 1px solid var(--line); border-radius: 6px;
+      font-family: var(--font-body); font-size: 0.92rem; line-height: 1.6; margin-top: 14px; resize: vertical;
+    }
+    #sop-translated-output:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .sop-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 10px; }
+    .sop-status.is-error { color: #C0392B; font-weight: 600; }
+
+    /* Floating quick-nav — same bottom-right cluster pattern used by
+       Food Worth / Margin Analysis / Rental Calculator / Crypto Radar. */
+    #sop-quick-nav { position: fixed; bottom: 24px; right: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .sop-quick-nav-btn {
+      background: #fff; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-dark);
+      padding: 9px 16px; font-family: var(--font-body); font-weight: 600; font-size: 0.8rem;
+      cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.14); white-space: nowrap;
+    }
+    .sop-quick-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .sop-quick-nav-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    @media print { #sop-quick-nav { display: none !important; } }
+
+    @media (max-width: 700px) {
+      .sop-doc-controlblock { grid-template-columns: 1fr 1fr; }
+      .sop-add-standard-row { flex-direction: column; align-items: stretch; }
+    }
+
+    /* Printed output should look like a document, not a form — inputs
+       inside the SOP panel render as plain text, and the control
+       block goes back to plain black-on-white so it doesn't drain a
+       printer's colour ink for no reason. Same instinct as every other
+       tool's own @media print override for its own tables. */
+    @media print {
+      .sop-doc { box-shadow: none; border: 1px solid #999; }
+      .sop-doc-controlblock { background: #fff !important; color: #000 !important; border-bottom: 2px solid #000; }
+      .sop-doc-controlblock label { color: #555 !important; }
+      .sop-doc-controlblock input { color: #000 !important; border-bottom: 1px solid #999 !important; }
+      .sop-doc-title-input { border-bottom: 1px solid #999; }
+      .sop-doc-section textarea, .sop-row-table td input[type="text"], .sop-step-text {
+        border: none; padding: 2px 0; background: transparent; resize: none;
+      }
+      .sop-standard-remove, .tooltip-icon { display: none; }
+      .sop-standard-tag { background: transparent; padding: 0 12px 0 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
+            <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="rental-calculator.html">Rental Calculator</a></li>
+            <li><a href="market-radar.html">Market Radar</a></li>
+            <li><a href="sop-creator.html" aria-current="page">SOP Creator</a></li>
+          </ul>
+        </li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; nothing is saved</span>
+        <h1>SOP Creator</h1>
+        <p class="lead">Describe how a process actually happens, in your own words, and get back a structured Standard Operating Procedure — Purpose, Scope, Responsibilities, numbered steps, referenced standards, records, and a revision log — aligned to whichever standard fits your industry. Not just F&amp;B: manufacturing, healthcare, IT, construction, retail, and more. Every field is editable, and the finished document translates into other languages.</p>
+      </div>
+    </section>
+
+    <!-- ============ WIZARD ============ -->
+    <section class="ica-panel" id="wizard">
+      <div class="wrap">
+        <div class="wizard-card" id="wizard-question"><!-- populated by JS --></div>
+      </div>
+    </section>
+
+    <!-- ============ WORKSPACE ============ -->
+    <section class="ica-panel" id="sop-workspace" hidden>
+      <div class="wrap">
+        <div class="analysis-top-bar no-print">
+          <button type="button" id="sop-edit-answers" class="link-btn">&larr; Change industry</button>
+          <div class="calc-actions" style="margin:0;">
+            <button type="button" id="sop-download-source" class="btn btn-secondary">Download (.txt)</button>
+            <button type="button" id="sop-save-pdf" class="btn btn-secondary">Save as PDF</button>
+          </div>
+        </div>
+        <div class="ica-tip" id="sop-tip"></div>
+
+        <!-- ============ INPUT ============ -->
+        <div class="sop-panel-box" id="sop-input-panel">
+          <h2>Describe the process</h2>
+          <div class="sop-field-grid">
+            <label>Process name <input type="text" id="sop-process-name" placeholder="e.g. Opening the store"></label>
+          </div>
+
+          <h3 style="font-size:0.95rem; margin-bottom:6px;">Standards to align with</h3>
+          <p class="structure-note" style="margin-bottom:6px;">Started from what's typical for your industry — add, remove, or type your own. Generate can suggest more once it reads your process below.</p>
+          <div class="sop-standards-tags" id="sop-standards-tags"></div>
+          <div class="sop-add-standard-row">
+            <input type="text" id="sop-add-standard-input" list="sop-standards-datalist" placeholder="Type a standard, e.g. ISO 9001:2015">
+            <datalist id="sop-standards-datalist"></datalist>
+            <button type="button" id="sop-add-standard-btn" class="btn btn-secondary">+ Add standard</button>
+          </div>
+
+          <h3 style="font-size:0.95rem; margin: 20px 0 6px;">What actually happens</h3>
+          <textarea id="sop-flow-summary" placeholder="Write it the way you'd explain it to a new hire — doesn't need to be in order or complete. e.g. &quot;Every morning the first staff in unlocks the back door, turns on the fridges and checks their temps, then...&quot;"></textarea>
+
+          <div class="calc-actions no-print">
+            <button type="button" id="sop-generate-btn" class="btn btn-primary">Generate SOP</button>
+          </div>
+          <p class="sop-status no-print" id="sop-generate-status" role="status" aria-live="polite"></p>
+        </div>
+
+        <div class="info-note no-print">
+          <strong>This drafts a starting point, not a certified document.</strong> Standard names and any clause references are Gemini's best judgement, not a lookup against the live official text — verify them, and have whoever owns compliance in your business review the finished SOP, before treating it as audit-ready. Any step Gemini filled in rather than was told is marked <strong>[assumed]</strong> so it's easy to spot.
+        </div>
+
+        <!-- ============ DOCUMENT (the editor itself, styled as a document) ============ -->
+        <div class="sop-doc" id="sop-doc">
+          <div class="sop-doc-controlblock no-print-colors">
+            <label for="sop-doc-number">Document No.<input type="text" id="sop-doc-number" placeholder="SOP-DEPT-001"></label>
+            <label for="sop-doc-department">Department / Owner<input type="text" id="sop-doc-department" placeholder="e.g. Operations"></label>
+            <label for="sop-doc-effective">Effective Date<input type="text" id="sop-doc-effective" placeholder="e.g. 1 Oct 2026"></label>
+            <label>Version<input type="text" value="1.0" readonly></label>
+          </div>
+          <div class="sop-doc-body">
+            <input type="text" id="sop-doc-title" class="sop-doc-title-input" placeholder="Standard Operating Procedure title" value="">
+
+            <div class="sop-doc-section" id="sop-doc-section">
+              <h2>1. Purpose</h2>
+              <textarea id="sop-purpose" placeholder="Why this SOP exists — filled in by Generate, or write it yourself."></textarea>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>2. Scope</h2>
+              <textarea id="sop-scope" placeholder="Who and what this covers."></textarea>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>3. Definitions &amp; Abbreviations</h2>
+              <table class="sop-row-table"><tbody id="sop-definitions-rows"></tbody></table>
+              <div class="calc-actions no-print"><button type="button" id="sop-add-definition" class="btn btn-secondary">+ Add definition</button></div>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>4. Roles &amp; Responsibilities</h2>
+              <table class="sop-row-table"><tbody id="sop-responsibilities-rows"></tbody></table>
+              <div class="calc-actions no-print"><button type="button" id="sop-add-responsibility" class="btn btn-secondary">+ Add role</button></div>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>5. Procedure</h2>
+              <div id="sop-procedure-rows"></div>
+              <div class="calc-actions no-print"><button type="button" id="sop-add-procedure" class="btn btn-secondary">+ Add step</button></div>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>6. Related / Referenced Standards</h2>
+              <p class="structure-note" style="margin-bottom:8px;">Matches the tags above — edit them there; they carry through here and into print/download automatically.</p>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>7. Records &amp; Forms</h2>
+              <table class="sop-row-table"><tbody id="sop-records-rows"></tbody></table>
+              <div class="calc-actions no-print"><button type="button" id="sop-add-record" class="btn btn-secondary">+ Add record</button></div>
+            </div>
+
+            <div class="sop-doc-section">
+              <h2>8. Revision History</h2>
+              <table class="sop-row-table"><tbody id="sop-revisions-rows"></tbody></table>
+              <div class="calc-actions no-print"><button type="button" id="sop-add-revision" class="btn btn-secondary">+ Add revision</button></div>
+            </div>
+          </div>
+        </div>
+        <pre id="sop-doc-text-preview" class="sr-only" aria-hidden="true"></pre>
+
+        <!-- ============ TRANSLATE ============ -->
+        <div class="sop-panel-box no-print" id="sop-translate-section" hidden>
+          <h2>Translate</h2>
+          <p class="structure-note">Translates everything in the document above, exactly as it stands right now — regenerate this if you edit the document further.</p>
+          <div class="calc-actions" style="align-items:center;">
+            <label for="sop-language-select" style="font-weight:600; font-size:0.9rem;">Language</label>
+            <select id="sop-language-select"></select>
+            <button type="button" id="sop-translate-btn" class="btn btn-primary">Translate</button>
+          </div>
+          <p class="sop-status" id="sop-translate-status" role="status" aria-live="polite"></p>
+
+          <textarea id="sop-translated-output" hidden aria-label="Translated SOP"></textarea>
+          <div class="calc-actions" id="sop-translated-actions" hidden>
+            <button type="button" id="sop-download-translated" class="btn btn-secondary">Download translated (<span id="sop-translated-lang-label"></span>) as .txt</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <div id="sop-quick-nav" class="no-print" hidden>
+    <button type="button" class="sop-quick-nav-btn" data-target="sop-input-panel">Describe process</button>
+    <button type="button" class="sop-quick-nav-btn" data-target="sop-doc">Document</button>
+    <button type="button" class="sop-quick-nav-btn" data-target="sop-translate-section">Translate</button>
+  </div>
+
+  <!-- No costing-sync.js / tool-dock here on purpose — this tool doesn't
+       exchange cost-per-portion data with the F&B calculators (an SOP is
+       a document, not a price), so per AI_BUILD_BRIEF.md it's left out
+       entirely rather than added as a switcher that would do nothing,
+       same call already made on crypto-radar.html for the same reason. -->
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="sop-creator.js?v=1" defer></script>
+</body>
+</html>

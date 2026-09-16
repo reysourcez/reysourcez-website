@@ -1,0 +1,27 @@
+flowchart TD
+    A["Visitor opens sop-creator.html"] --> B{"Wizard: what kind\nof business?"}
+    B -->|"picks industry"| C["Standards tags pre-filled\nfrom INDUSTRIES config"]
+    C --> D["Fills in Process name +\nDescribes the process in\ntheir own words"]
+    D --> E["Click Generate SOP"]
+
+    E --> F["Browser -> sop-creator-proxy-worker.js\n(Cloudflare Worker)"]
+    F --> G["Worker adds GEMINI_API_KEY\n(never sent to the browser)"]
+    G --> H["Gemini generateContent\nresponseSchema = SOP_SCHEMA"]
+    H --> I["Worker returns structured JSON:\npurpose, scope, definitions,\nresponsibilities, procedure,\nrecords, suggestedStandards"]
+    I --> J["sop-creator.js fills the\neditable document panel"]
+
+    J --> K{"Business reviews\nand edits every field"}
+    K -->|"anything marked [assumed]\ngets checked or removed"| L["Document panel is now\nthe source of truth"]
+
+    L --> M{"What next?"}
+    M -->|"Save as PDF"| N["window.print()\nprint CSS hides chrome,\nshows only the document"]
+    M -->|"Download (.txt)"| O["assembleSOPText()\n-> Blob -> browser download"]
+    M -->|"Translate"| P["Pick language ->\nWorker mode: translate"]
+
+    P --> Q["Gemini translates the\nassembled document text,\nstructure preserved"]
+    Q --> R["Translated text shown in\nits own editable pane"]
+    R --> S["Download translated (.txt)"]
+
+    N --> T(("Nothing saved server-side\nat any point in this flow"))
+    O --> T
+    S --> T
