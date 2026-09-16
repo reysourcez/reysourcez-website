@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reysourcez Enterprise — Project Plan Architect</title>
+<meta name="description" content="Answer a few questions per project management category and get a structured charter, plans, and registers you can print or save as PDF. Nothing is saved automatically.">
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<!-- Real stylesheet — already defines .btn, .calc-intro, .result-card, .tooltip-icon, --accent, etc.
+     404s in this standalone preview (sandbox has no access to the live repo file), which is why
+     the fallback block below exists. Delete the fallback block once this file lives in the repo. -->
+<link rel="stylesheet" href="styles.css?v=15">
+<style>
+/* ============================================================
+   Real values below, copied from your actual styles.css (tokens,
+   reset, header/nav, buttons, eyebrow, tooltip, footer, mobile nav)
+   — not a guess anymore. Still only here because the linked
+   stylesheet 404s in this standalone preview; delete this whole
+   block once styles.css?v=15 is actually loading, EXCEPT the
+   .ppa-* rules at the bottom, which are genuinely new and belong
+   in this page's own page-specific block (or promoted to
+   styles.css centrally, your call — flagging per AI_BUILD_BRIEF.md
+   rather than assuming). */
+:root {
+  --ink: #16261F; --text: #1C2B24; --muted: #5C6D64; --paper: #EEF0EA; --surface: #FFFFFF;
+  --accent: #1F6F5C; --accent-dark: #195A4A; --accent-soft: #DCEAE4; --line: #D8DCD3;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --max-width: 1080px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--paper); color: var(--text); font-family: var(--font-body); font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+h1,h2,h3 { font-family: var(--font-display); color: var(--ink); line-height: 1.15; margin: 0 0 .5em; }
+p { margin: 0 0 1em; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.skip-link { position:absolute; left:-9999px; top:0; background:var(--ink); color:#fff; padding:12px 20px; z-index:100; text-decoration:none; }
+.skip-link:focus { left:12px; top:12px; }
+.wrap { max-width: var(--max-width); margin: 0 auto; padding: 0 24px; }
+.site-header { border-bottom: 1px solid var(--line); background: var(--paper); position: sticky; top: 0; z-index: 10; }
+.nav { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:18px 24px; max-width:var(--max-width); margin:0 auto; }
+.brand { display:flex; align-items:center; gap:10px; font-family:var(--font-display); font-weight:700; font-size:1.25rem; color:var(--ink); text-decoration:none; }
+.nav-links { display:flex; gap:28px; list-style:none; margin:0; padding:0; flex-wrap:wrap; }
+.nav-links a { color:var(--ink); text-decoration:none; font-weight:500; font-size:.95rem; padding-bottom:4px; border-bottom:2px solid transparent; }
+.nav-links a:hover, .nav-links a[aria-current="page"] { border-bottom-color: var(--accent); }
+.nav-dropdown { position: relative; }
+.nav-dropdown-toggle { background:none; border:none; font-family:var(--font-body); color:var(--ink); font-weight:500; font-size:.95rem; padding:0 0 4px; border-bottom:2px solid transparent; cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+.nav-dropdown-toggle:hover, .nav-dropdown-toggle.active, .nav-dropdown.is-open .nav-dropdown-toggle { border-bottom-color: var(--accent); }
+.nav-dropdown-caret { width:6px; height:6px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg); margin-top:-3px; transition:transform .15s ease; flex-shrink:0; }
+.nav-dropdown:hover .nav-dropdown-caret, .nav-dropdown.is-open .nav-dropdown-caret { transform:rotate(-135deg); margin-top:3px; }
+.nav-dropdown-menu { position:absolute; top:100%; left:0; margin:10px 0 0; padding:8px; min-width:210px; list-style:none; background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.14); display:none; z-index:20; }
+.nav-dropdown:hover .nav-dropdown-menu, .nav-dropdown.is-open .nav-dropdown-menu { display:block; }
+.nav-dropdown-menu li { margin:0; }
+.nav-dropdown-menu a { display:block; padding:9px 12px; border-radius:6px; color:var(--text); text-decoration:none; font-size:.9rem; font-weight:500; border-bottom:none; }
+.nav-dropdown-menu a:hover, .nav-dropdown-menu a[aria-current="page"] { background:var(--paper); color:var(--accent-dark); }
+@media (max-width: 800px) {
+  .nav { justify-content:center; text-align:center; }
+  .nav-links { justify-content:center; width:100%; }
+  .nav-dropdown { width:100%; }
+  .nav-dropdown-toggle { justify-content:center; width:100%; }
+  .nav-dropdown-menu { position:static; width:100%; margin-top:4px; box-shadow:none; border:none; }
+}
+.btn { display:inline-block; padding:13px 26px; border-radius:4px; text-decoration:none; font-weight:600; font-size:.95rem; border:2px solid transparent; transition:transform .15s ease, background .15s ease, color .15s ease; cursor: pointer; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+.btn-secondary { border-color: var(--ink); color: var(--ink); background:transparent; }
+.btn-secondary:hover { background: var(--ink); color: #fff; }
+.btn[disabled], .btn[disabled]:hover { opacity:.45; cursor:not-allowed; transform:none; background:transparent; color:var(--muted); border-color:var(--line); }
+.link-btn { background:none; border:none; color:var(--accent-dark); font-family:var(--font-body); font-size:.88rem; font-weight:600; cursor:pointer; padding:4px 0; }
+.calc-intro { padding: 2.25rem 0 1.5rem; }
+.eyebrow { display:inline-block; font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:600; margin-bottom:14px; }
+.calc-intro h1 { font-size: clamp(1.8rem, 3.6vw, 2.6rem); max-width: 20ch; }
+.calc-intro .lead { font-size: 1.1rem; color: var(--muted); max-width: 65ch; margin: 0; }
+.tooltip-icon { display:inline-block; width:16px; height:16px; border-radius:50%; background:var(--muted); color:#fff; font-size:.65rem; font-weight:700; line-height:1; text-align:center; padding-top:2px; cursor:help; margin-left:4px; position:relative; }
+.tooltip-icon:hover::after { content:attr(data-tooltip); position:absolute; bottom:125%; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:8px 10px; border-radius:6px; font-size:.8rem; font-weight:400; white-space:normal; width:max-content; max-width:240px; text-align:left; line-height:1.4; z-index:1000; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+.tooltip-icon:hover::before { content:""; position:absolute; bottom:118%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:var(--ink); z-index:1000; }
+@media (max-width: 600px) { .tooltip-icon { display:none; } }
+.site-footer { background: var(--ink); color: #C9D2CC; padding: 56px 0 32px; }
+.footer-bottom { padding: 24px 0; font-size: .85rem; color: #8B978F; text-align: center; }
+
+/* ============================================================
+   PAGE-SPECIFIC — genuinely new, doesn't exist in styles.css yet.
+   Prefixed ppa- (Project Plan Architect) so it can never collide
+   with another tool's classes, same reasoning cost-structure-
+   checker.js gives for its own csc- prefix. Worth checking
+   centrally whether a similar tabbed-panel pattern already exists
+   under another name before this becomes a second one.
+   ============================================================ */
+.ppa-panel{padding:2rem 0;}
+.ppa-progress{font-size:.85rem;color:var(--muted);margin-top:.35rem;}
+.ppa-savebar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;padding:.75rem 0;}
+.ppa-save-status{font-size:.8rem;color:var(--muted);}
+#ppa-resume-banner{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:.75rem 1rem;margin-top:1rem;}
+.ppa-ai-btn{font-size:.82rem;}
+.ppa-tabs{display:flex;flex-wrap:wrap;gap:.4rem;padding:1rem 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper);z-index:5;}
+.ppa-tab{font:inherit;font-size:.85rem;font-weight:600;padding:.5rem .85rem;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer;}
+.ppa-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.ppa-tab.soon{opacity:.5;cursor:not-allowed;}
+.ppa-tab .soon-badge{display:block;font-size:.65rem;font-weight:500;opacity:.8;}
+.ppa-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1.5rem;margin-top:1.25rem;}
+.ppa-field{display:block;margin-bottom:1rem;}
+.ppa-field .label-text{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;}
+.ppa-field input[type=text],.ppa-field input[type=number],.ppa-field input[type=date],.ppa-field select,.ppa-field textarea{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
+.ppa-field textarea{min-height:5rem;resize:vertical;}
+.ppa-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;}
+@media (max-width:640px){.ppa-grid-2{grid-template-columns:1fr;}}
+.ppa-repeat-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;border-top:1px dashed var(--line);padding-top:.85rem;margin-top:.85rem;}
+.ppa-repeat-row:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+.ppa-repeat-row>div{flex:1 1 140px;}
+.ppa-remove-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:.4rem .5rem;line-height:1;}
+.ppa-add-btn{margin-top:.75rem;}
+.ppa-doc h2{font-size:1.15rem;border-bottom:2px solid var(--accent);padding-bottom:.3rem;margin-top:1.75rem;}
+.ppa-doc table{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.9rem;}
+.ppa-doc th,.ppa-doc td{border:1px solid var(--line);padding:.5rem;text-align:left;vertical-align:top;}
+.ppa-doc ul{margin:.4rem 0;padding-left:1.2rem;}
+.ppa-empty{color:var(--muted);font-style:italic;}
+@media print{
+  .no-print{display:none!important;}
+  body{background:#fff;}
+  .ppa-panel{padding:0;}
+}
+</style>
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+
+<!--
+  ============================================================
+  NAV — copied from the live pattern (interactive-costing-analysis.html),
+  per AI_BUILD_BRIEF.md ("copy verbatim, don't rebuild it"). Project
+  Planning lives inside the "Business Analysis" dropdown (7th item) —
+  simplest for now, moves to its own top-level link or new dropdown
+  later with no real cost if this tool outgrows that category.
+  Reconciling this across every other page's nav is a centralized
+  compile-pass job, not a per-page one.
+  ============================================================
+-->
+<header class="site-header">
+<nav class="nav" aria-label="Primary">
+<a href="index.html" class="brand">
+<svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+<text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+</svg>
+Reysourcez Enterprise
+</a>
+<ul class="nav-links">
+<li><a href="index.html">Home</a></li>
+<li><a href="about.html">About</a></li>
+<li><a href="services.html">Services</a></li>
+<li class="nav-dropdown">
+<button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+<ul class="nav-dropdown-menu">
+<li><a href="menu-calculator.html">Menu Calculator</a></li>
+<li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+<li><a href="printing-calculator.html">Printing Calculator</a></li>
+<li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+<li><a href="margin-audit-calculator.html">Margin Audit</a></li>
+<li><a href="food-worth-calculator.html">Food Worth</a></li>
+<li><a href="crypto-radar.html">Crypto Radar</a></li>
+<li><a href="rental-calculator.html">Rental Calculator</a></li>
+<li><a href="market-radar.html">Market Radar</a></li>
+<li><a href="cost-structure-checker.html">Cost Structure Checker</a></li>
+<li><a href="project-plan-architect.html" aria-current="page">Project Planning</a></li>
+</ul>
+</li>
+<li><a href="contact.html">Contact</a></li>
+</ul>
+</nav>
+</header>
+
+<main id="main">
+<section class="calc-intro">
+<div class="wrap">
+<span class="eyebrow">Free tool · nothing saved automatically</span>
+<h1>Project Plan Architect</h1>
+<p class="lead">Work through one category at a time — charter, scope, schedule, risk, stakeholders — and get a structured project plan you can print or save as PDF at the end. Built around what CAPM and PMP actually test, not a generic form.</p>
+<p class="ppa-progress" id="ppa-progress"></p>
+</div>
+</section>
+
+<section class="ppa-panel">
+<div class="wrap">
+
+<!-- Opt-in only: nothing here writes to storage unless you click
+     Save. This is the one deliberate exception to the site's
+     "nothing persists" rule — see chat for why. Export/Import work
+     as a device-independent alternative (or backup) to the browser
+     save, since they're just a downloaded file. -->
+<div id="ppa-resume-banner" class="no-print" hidden>
+<span id="ppa-resume-text"></span>
+<button type="button" class="btn btn-secondary" id="ppa-resume-btn">Resume</button>
+<button type="button" class="link-btn" id="ppa-discard-btn">Discard</button>
+</div>
+<div class="ppa-savebar no-print">
+<button type="button" class="btn btn-secondary" id="ppa-save-btn">💾 Save progress</button>
+<button type="button" class="btn btn-secondary" id="ppa-export-btn">⬇ Export backup (.json)</button>
+<button type="button" class="btn btn-secondary" id="ppa-import-btn">⬆ Load backup</button>
+<input type="file" id="ppa-import-file" accept="application/json" hidden>
+<span class="ppa-save-status" id="ppa-save-status"></span>
+</div>
+
+<!-- Step tabs. Disabled ones are a deliberate roadmap preview —
+     new pattern, not used elsewhere on the site yet, flagging
+     centrally rather than assuming it should reuse something. -->
+<div class="ppa-tabs no-print" id="ppa-tabs">
+<button type="button" class="ppa-tab active" data-step="charter">Charter</button>
+<button type="button" class="ppa-tab" data-step="scope">Scope</button>
+<button type="button" class="ppa-tab" data-step="schedule">Schedule</button>
+<button type="button" class="ppa-tab" data-step="risk">Risk</button>
+<button type="button" class="ppa-tab" data-step="stakeholders">Stakeholders</button>
+<button type="button" class="ppa-tab soon" disabled>Cost<span class="soon-badge">soon</span></button>
+<button type="button" class="ppa-tab soon" disabled>Quality<span class="soon-badge">soon</span></button>
+<button type="button" class="ppa-tab soon" disabled>Resources<span class="soon-badge">soon</span></button>
+<button type="button" class="ppa-tab soon" disabled>Comms<span class="soon-badge">soon</span></button>
+<button type="button" class="ppa-tab soon" disabled>Procurement<span class="soon-badge">soon</span></button>
+<button type="button" class="ppa-tab" data-step="document">📄 Document</button>
+</div>
+
+<!-- ============ CHARTER ============ -->
+<div class="ppa-card" id="step-charter" data-panel>
+<h2>Project Charter</h2>
+<div class="ppa-grid-2">
+<label class="ppa-field"><span class="label-text">Project name</span><input type="text" id="c-name"></label>
+<label class="ppa-field"><span class="label-text">Project sponsor</span><input type="text" id="c-sponsor"></label>
+<label class="ppa-field"><span class="label-text">Project manager</span><input type="text" id="c-pm"></label>
+<label class="ppa-field"><span class="label-text">Budget (<span id="currency-label-1">RM</span>)</span><input type="number" id="c-budget" min="0" step="100"></label>
+<label class="ppa-field"><span class="label-text">Start date</span><input type="date" id="c-start"></label>
+<label class="ppa-field"><span class="label-text">Target end date</span><input type="date" id="c-end"></label>
+</div>
+<label class="ppa-field"><span class="label-text">Business case<span class="tooltip-icon" data-tooltip="Why this project exists — the problem or opportunity, in a sentence or two.">?</span></span><textarea id="c-case"></textarea></label>
+<button type="button" class="btn btn-secondary ppa-ai-btn no-print" data-ai-kind="business-case" data-ai-target="c-case" style="margin:-.6rem 0 1rem;">✨ Ask AI to draft this</button>
+<label class="ppa-field"><span class="label-text">Success criteria</span><textarea id="c-success" placeholder="e.g. Launched by 30 Nov, under budget, client sign-off received"></textarea></label>
+<button type="button" class="btn btn-secondary ppa-ai-btn no-print" data-ai-kind="success-criteria" data-ai-target="c-success" style="margin:-.6rem 0 1rem;">✨ Ask AI to draft this</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Assumptions</h3>
+<div id="c-assumptions"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="c-assumptions" data-tpl="text" data-ph="Assumption">+ Add assumption</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Constraints</h3>
+<div id="c-constraints"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="c-constraints" data-tpl="text" data-ph="Constraint">+ Add constraint</button>
+</div>
+
+<!-- ============ SCOPE ============ -->
+<div class="ppa-card" id="step-scope" data-panel hidden>
+<h2>Scope Management</h2>
+<h3 style="font-size:1rem;">In scope</h3>
+<div id="s-in"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="s-in" data-tpl="text" data-ph="In-scope item">+ Add item</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Out of scope</h3>
+<div id="s-out"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="s-out" data-tpl="text" data-ph="Out-of-scope item">+ Add item</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Key deliverables</h3>
+<div id="s-deliverables"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="s-deliverables" data-tpl="text" data-ph="Deliverable">+ Add deliverable</button>
+<label class="ppa-field" style="margin-top:1.5rem;"><span class="label-text">Acceptance criteria</span><textarea id="s-acceptance"></textarea></label>
+</div>
+
+<!-- ============ SCHEDULE ============ -->
+<div class="ppa-card" id="step-schedule" data-panel hidden>
+<h2>Schedule &amp; Approach</h2>
+<div class="ppa-grid-2">
+<label class="ppa-field"><span class="label-text">Delivery approach<span class="tooltip-icon" data-tooltip="Predictive = plan up front, then execute. Agile = short iterations, adapt as you go. Hybrid = mix, common for real projects.">?</span></span>
+<select id="sc-approach">
+<option value="Predictive">Predictive (plan-based)</option>
+<option value="Agile">Agile (iterative)</option>
+<option value="Hybrid">Hybrid</option>
+</select>
+</label>
+<label class="ppa-field"><span class="label-text">Estimated duration</span><input type="text" id="sc-duration" placeholder="e.g. 10 weeks"></label>
+</div>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Key milestones</h3>
+<div id="sc-milestones"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="sc-milestones" data-tpl="milestone">+ Add milestone</button>
+</div>
+
+<!-- ============ RISK ============ -->
+<div class="ppa-card" id="step-risk" data-panel hidden>
+<h2>Risk Management<span class="tooltip-icon" data-tooltip="A risk register: what could happen, how likely, how bad, and what you'll do about it.">?</span></h2>
+<div id="r-rows"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="r-rows" data-tpl="risk">+ Add risk</button>
+<button type="button" class="btn btn-secondary ppa-ai-btn no-print" data-ai-kind="suggest-risks" style="margin-left:.4rem;">✨ Suggest starter risks</button>
+</div>
+
+<!-- ============ STAKEHOLDERS ============ -->
+<div class="ppa-card" id="step-stakeholders" data-panel hidden>
+<h2>Stakeholder Engagement</h2>
+<div id="st-rows"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="st-rows" data-tpl="stakeholder">+ Add stakeholder</button>
+</div>
+
+<!-- ============ DOCUMENT ============ -->
+<div class="ppa-card" id="step-document" data-panel hidden>
+<div class="no-print" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
+<span class="lead" style="margin:0;font-size:.9rem;">Compiled from every tab above — nothing here is stored, only assembled from what's currently on screen.</span>
+<button type="button" class="btn btn-secondary" id="save-pdf-btn">Save as PDF</button>
+</div>
+<div class="ppa-doc" id="ppa-doc"><!-- populated by renderDocument() --></div>
+</div>
+
+</div>
+</section>
+</main>
+
+<footer class="site-footer no-print">
+<div class="wrap">
+<div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+</div>
+</footer>
+
+<script src="nav-dropdown.js?v=1" defer></script>
+<!--
+  ============================================================
+  v0.2 — PREVIEW / CONCEPT BUILD. Inline for easy previewing;
+  the real drop-in version splits this into project-plan-architect.js
+  (loaded as <script src="project-plan-architect.js?v=1" defer>),
+  matching every other page's pattern. No costing-sync.js and no
+  connector-panel/tool-dock — this tool doesn't exchange cost data
+  with the other five, so per AI_BUILD_BRIEF.md that whole system
+  is left out entirely rather than wired up to do nothing.
+
+  v0.2 changes: nav moved into the Business Analysis dropdown;
+  opt-in Save/Resume + Export/Import backup (see safeStorage below —
+  this degrades to a message rather than breaking in this preview,
+  since storage is blocked in Claude's sandbox); optional ✨ AI-assist
+  buttons wired to a companion pm-assist-worker.js (off until you
+  deploy it and set RZ_PM_CONFIG.aiAssistEndpoint).
+  ============================================================
+-->
+<script>
+// ============================================
+// EDITABLE CONFIG — change values here, not in the logic below
+// ============================================
+const RZ_PM_CONFIG = {
+  currencySymbol: "RM",          // shown next to Budget; swap if a project isn't RM-denominated
+  totalCategoriesPlanned: 11,     // Charter + 9 knowledge areas + Document, for the progress line
+  storageKey: "rz_ppa_draft_v1", // localStorage key for Save/Resume — bump the v if the saved shape ever changes
+  aiAssistEndpoint: "https://pm-assist-worker.reysourcez-ent.workers.dev/",          // paste your deployed pm-assist-worker.js URL here to turn on the ✨ buttons — blank = they explain themselves instead of failing silently
+};
+
+let rzInitialized = false;
+function init() {
+  if (rzInitialized) return;
+  rzInitialized = true;
+
+  document.getElementById('currency-label-1').textContent = RZ_PM_CONFIG.currencySymbol;
+
+  // ---- repeatable rows -------------------------------------------------
+  const templates = {
+    text: (ph) => `<div class="ppa-repeat-row"><div><input type="text" placeholder="${ph}"></div><button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    milestone: () => `<div class="ppa-repeat-row"><div><input type="text" placeholder="Milestone name"></div><div><input type="date"></div><button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    risk: () => `<div class="ppa-repeat-row">
+      <div><input type="text" placeholder="Risk description"></div>
+      <div><select><option>Low</option><option>Medium</option><option>High</option></select><div class="label-text" style="font-weight:400;">Likelihood</div></div>
+      <div><select><option>Low</option><option>Medium</option><option>High</option></select><div class="label-text" style="font-weight:400;">Impact</div></div>
+      <div><select><option>Avoid</option><option>Mitigate</option><option>Transfer</option><option>Accept</option></select><div class="label-text" style="font-weight:400;">Response</div></div>
+      <div><input type="text" placeholder="Owner"></div>
+      <button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button>
+    </div>`,
+    stakeholder: () => `<div class="ppa-repeat-row">
+      <div><input type="text" placeholder="Name / group"></div>
+      <div><select><option>Low</option><option>Medium</option><option>High</option></select><div class="label-text" style="font-weight:400;">Interest</div></div>
+      <div><select><option>Low</option><option>Medium</option><option>High</option></select><div class="label-text" style="font-weight:400;">Influence</div></div>
+      <div><input type="text" placeholder="Engagement strategy"></div>
+      <button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button>
+    </div>`,
+  };
+
+  function addRow(containerId, tpl, ph, prefill) {
+    const container = document.getElementById(containerId);
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = templates[tpl](ph);
+    const row = wrapper.firstElementChild;
+    row.querySelector('.ppa-remove-btn').addEventListener('click', () => row.remove());
+    // prefill is an array of values in the same DOM order as the row's
+    // input/select fields — used when restoring a saved or imported draft.
+    if (prefill && prefill.length) {
+      const fields = row.querySelectorAll('input, select');
+      fields.forEach((f, i) => { if (prefill[i] !== undefined) f.value = prefill[i]; });
+    }
+    container.appendChild(row);
+    return row;
+  }
+
+  document.querySelectorAll('[data-add]').forEach(btn => {
+    btn.addEventListener('click', () => addRow(btn.dataset.add, btn.dataset.tpl, btn.dataset.ph || ''));
+  });
+
+  document.querySelectorAll('.ppa-ai-btn').forEach(btn => {
+    btn.addEventListener('click', () => callPMAssist(btn.dataset.aiKind, btn.dataset.aiTarget));
+  });
+
+  // seed one empty row per repeatable section so it's obvious how to use it
+  ['c-assumptions','c-constraints'].forEach(id => addRow(id, 'text', ''));
+  ['s-in','s-out','s-deliverables'].forEach(id => addRow(id, 'text', ''));
+  addRow('sc-milestones', 'milestone');
+  addRow('r-rows', 'risk');
+  addRow('st-rows', 'stakeholder');
+
+  // ---- save / resume / backup ---------------------------------------------
+  // The one deliberate exception to "nothing persists" on this site — and
+  // still opt-in: nothing writes anywhere unless the visitor clicks Save.
+  // Every storage call is wrapped, because storage can be blocked (it is,
+  // inside Claude's own preview sandbox) — that should show a message,
+  // never break the rest of the page.
+  function safeStorage(action) {
+    try { return action(); } catch (err) { return { error: err }; }
+  }
+
+  function clearRepeats(containerId) {
+    document.getElementById(containerId).innerHTML = '';
+  }
+
+  function collectState() {
+    const fieldIds = ['c-name','c-sponsor','c-pm','c-budget','c-start','c-end','c-case','c-success',
+      's-acceptance','sc-approach','sc-duration'];
+    const fields = {};
+    fieldIds.forEach(id => { fields[id] = val(id); });
+
+    function rowsOf(containerId, selector) {
+      return Array.from(document.querySelectorAll('#' + containerId + ' .ppa-repeat-row')).map(row =>
+        Array.from(row.querySelectorAll(selector)).map(el => el.value));
+    }
+
+    return {
+      savedAt: new Date().toISOString(),
+      fields,
+      repeats: {
+        'c-assumptions': listVals('c-assumptions'),
+        'c-constraints': listVals('c-constraints'),
+        's-in': listVals('s-in'),
+        's-out': listVals('s-out'),
+        's-deliverables': listVals('s-deliverables'),
+        'sc-milestones': rowsOf('sc-milestones', 'input'),
+        'r-rows': rowsOf('r-rows', 'input, select'),
+        'st-rows': rowsOf('st-rows', 'input, select'),
+      },
+    };
+  }
+
+  function applyState(state) {
+    if (!state || !state.fields) return;
+    Object.keys(state.fields).forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = state.fields[id];
+    });
+    const r = state.repeats || {};
+    clearRepeats('c-assumptions'); (r['c-assumptions']?.length ? r['c-assumptions'] : ['']).forEach(v => addRow('c-assumptions','text','',[v]));
+    clearRepeats('c-constraints'); (r['c-constraints']?.length ? r['c-constraints'] : ['']).forEach(v => addRow('c-constraints','text','',[v]));
+    clearRepeats('s-in'); (r['s-in']?.length ? r['s-in'] : ['']).forEach(v => addRow('s-in','text','',[v]));
+    clearRepeats('s-out'); (r['s-out']?.length ? r['s-out'] : ['']).forEach(v => addRow('s-out','text','',[v]));
+    clearRepeats('s-deliverables'); (r['s-deliverables']?.length ? r['s-deliverables'] : ['']).forEach(v => addRow('s-deliverables','text','',[v]));
+    clearRepeats('sc-milestones'); (r['sc-milestones']?.length ? r['sc-milestones'] : [[]]).forEach(v => addRow('sc-milestones','milestone','',v));
+    clearRepeats('r-rows'); (r['r-rows']?.length ? r['r-rows'] : [[]]).forEach(v => addRow('r-rows','risk','',v));
+    clearRepeats('st-rows'); (r['st-rows']?.length ? r['st-rows'] : [[]]).forEach(v => addRow('st-rows','stakeholder','',v));
+    updateProgress();
+  }
+
+  document.getElementById('ppa-save-btn').addEventListener('click', () => {
+    const result = safeStorage(() => {
+      localStorage.setItem(RZ_PM_CONFIG.storageKey, JSON.stringify(collectState()));
+      return true;
+    });
+    document.getElementById('ppa-save-status').textContent = result === true
+      ? 'Saved just now.'
+      : "Couldn't save in this preview — storage is blocked here. Works once this file is on your live site; use Export as a stand-in for now.";
+  });
+
+  document.getElementById('ppa-export-btn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(collectState(), null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'project-plan-draft.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('ppa-import-btn').addEventListener('click', () => {
+    document.getElementById('ppa-import-file').click();
+  });
+  document.getElementById('ppa-import-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        applyState(JSON.parse(reader.result));
+        document.getElementById('ppa-save-status').textContent = 'Loaded from file.';
+      } catch (err) {
+        document.getElementById('ppa-save-status').textContent = "That file couldn't be read — is it a backup exported from this tool?";
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('ppa-discard-btn').addEventListener('click', () => {
+    safeStorage(() => localStorage.removeItem(RZ_PM_CONFIG.storageKey));
+    document.getElementById('ppa-resume-banner').hidden = true;
+  });
+
+  const existingDraft = safeStorage(() => localStorage.getItem(RZ_PM_CONFIG.storageKey));
+  if (typeof existingDraft === 'string' && existingDraft) {
+    try {
+      const parsed = JSON.parse(existingDraft);
+      document.getElementById('ppa-resume-text').textContent = 'Saved draft found from ' + new Date(parsed.savedAt).toLocaleString() + '.';
+      document.getElementById('ppa-resume-banner').hidden = false;
+      document.getElementById('ppa-resume-btn').addEventListener('click', () => {
+        applyState(parsed);
+        document.getElementById('ppa-resume-banner').hidden = true;
+      });
+    } catch (e) { /* corrupt saved data — ignore rather than break the page */ }
+  }
+
+  // ---- AI assist (optional — every template works fully without this) ----
+  // Off by default (RZ_PM_CONFIG.aiAssistEndpoint === ""). Deploy
+  // pm-assist-worker.js, paste its URL into that one config value, and
+  // these buttons start working with no other changes needed.
+  async function callPMAssist(kind, targetId) {
+    if (!RZ_PM_CONFIG.aiAssistEndpoint) {
+      alert("AI assist isn't wired up yet — deploy pm-assist-worker.js, then paste its URL into RZ_PM_CONFIG.aiAssistEndpoint near the top of this file.");
+      return;
+    }
+    try {
+      const res = await fetch(RZ_PM_CONFIG.aiAssistEndpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          kind,
+          projectName: val('c-name'),
+          approach: val('sc-approach'),
+          current: targetId ? (document.getElementById(targetId).value || '') : '',
+        }),
+      });
+      if (!res.ok) throw new Error('Worker returned ' + res.status);
+      const data = await res.json();
+      if (kind === 'suggest-risks' && Array.isArray(data.risks)) {
+        data.risks.forEach(text => addRow('r-rows', 'risk', '', [text]));
+      } else if (targetId && data.suggestion) {
+        const el = document.getElementById(targetId);
+        el.value = el.value ? el.value + '\n' + data.suggestion : data.suggestion;
+      }
+    } catch (err) {
+      alert("Couldn't reach the AI assist Worker — check it's deployed and the endpoint URL is correct.");
+    }
+  }
+
+  // ---- tab switching -----------------------------------------------------
+  const tabs = document.querySelectorAll('.ppa-tab[data-step]');
+  const panels = document.querySelectorAll('[data-panel]');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      panels.forEach(p => p.hidden = true);
+      document.getElementById('step-' + tab.dataset.step).hidden = false;
+      if (tab.dataset.step === 'document') renderDocument();
+      updateProgress();
+    });
+  });
+
+  function updateProgress() {
+    const filled = document.querySelectorAll('.ppa-card input, .ppa-card textarea, .ppa-card select');
+    let touched = 0;
+    filled.forEach(f => { if (f.value && f.value.trim() !== '') touched++; });
+    document.getElementById('ppa-progress').textContent =
+      touched > 0 ? `In progress — 5 of ${RZ_PM_CONFIG.totalCategoriesPlanned} categories built so far (Cost, Quality, Resources, Comms, Procurement coming next)` : '';
+  }
+  document.addEventListener('input', updateProgress);
+  updateProgress();
+
+  // ---- document assembly --------------------------------------------------
+  function listVals(containerId) {
+    return Array.from(document.querySelectorAll('#' + containerId + ' input[type=text]'))
+      .map(i => i.value.trim()).filter(Boolean);
+  }
+  function ul(items) {
+    return items.length ? '<ul>' + items.map(i => `<li>${escapeHtml(i)}</li>`).join('') + '</ul>' : '<p class="ppa-empty">Nothing entered yet.</p>';
+  }
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+  function renderDocument() {
+    const cur = RZ_PM_CONFIG.currencySymbol;
+    const milestoneRows = Array.from(document.querySelectorAll('#sc-milestones .ppa-repeat-row')).map(r => {
+      const inputs = r.querySelectorAll('input');
+      return [inputs[0]?.value.trim(), inputs[1]?.value].filter(Boolean);
+    }).filter(r => r.length);
+    const riskRows = Array.from(document.querySelectorAll('#r-rows .ppa-repeat-row')).map(r => {
+      const t = r.querySelector('input[type=text]')?.value.trim();
+      const sels = r.querySelectorAll('select');
+      const owner = r.querySelectorAll('input[type=text]')[1]?.value.trim();
+      return t ? [t, sels[0]?.value, sels[1]?.value, sels[2]?.value, owner || '—'] : null;
+    }).filter(Boolean);
+    const stRows = Array.from(document.querySelectorAll('#st-rows .ppa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sels = r.querySelectorAll('select');
+      const name = texts[0]?.value.trim();
+      return name ? [name, sels[0]?.value, sels[1]?.value, texts[1]?.value.trim() || '—'] : null;
+    }).filter(Boolean);
+
+    document.getElementById('ppa-doc').innerHTML = `
+      <h1 style="margin-bottom:0;">${escapeHtml(val('c-name') || 'Untitled Project')}</h1>
+      <p class="ppa-empty" style="margin-top:.2rem;">Project Charter &amp; Management Plan — drafted ${new Date().toLocaleDateString()}</p>
+
+      <h2>1. Charter</h2>
+      <table>
+        <tr><th>Sponsor</th><td>${escapeHtml(val('c-sponsor')) || '—'}</td><th>Project Manager</th><td>${escapeHtml(val('c-pm')) || '—'}</td></tr>
+        <tr><th>Budget</th><td>${val('c-budget') ? cur + Number(val('c-budget')).toLocaleString() : '—'}</td><th>Timeline</th><td>${val('c-start') || '—'} to ${val('c-end') || '—'}</td></tr>
+      </table>
+      <p><strong>Business case:</strong> ${escapeHtml(val('c-case')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Success criteria:</strong> ${escapeHtml(val('c-success')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Assumptions</strong></p>${ul(listVals('c-assumptions'))}
+      <p><strong>Constraints</strong></p>${ul(listVals('c-constraints'))}
+
+      <h2>2. Scope</h2>
+      <p><strong>In scope</strong></p>${ul(listVals('s-in'))}
+      <p><strong>Out of scope</strong></p>${ul(listVals('s-out'))}
+      <p><strong>Key deliverables</strong></p>${ul(listVals('s-deliverables'))}
+      <p><strong>Acceptance criteria:</strong> ${escapeHtml(val('s-acceptance')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+
+      <h2>3. Schedule &amp; Approach</h2>
+      <p><strong>Approach:</strong> ${val('sc-approach')} &nbsp; <strong>Duration:</strong> ${escapeHtml(val('sc-duration')) || '—'}</p>
+      ${milestoneRows.length ? `<table><tr><th>Milestone</th><th>Date</th></tr>${milestoneRows.map(m => `<tr><td>${escapeHtml(m[0]||'')}</td><td>${m[1]||'—'}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No milestones entered yet.</p>'}
+
+      <h2>4. Risk Register</h2>
+      ${riskRows.length ? `<table><tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Response</th><th>Owner</th></tr>${riskRows.map(r => `<tr><td>${escapeHtml(r[0])}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${escapeHtml(r[4])}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No risks entered yet.</p>'}
+
+      <h2>5. Stakeholder Register</h2>
+      ${stRows.length ? `<table><tr><th>Stakeholder</th><th>Interest</th><th>Influence</th><th>Engagement strategy</th></tr>${stRows.map(s => `<tr><td>${escapeHtml(s[0])}</td><td>${s[1]}</td><td>${s[2]}</td><td>${escapeHtml(s[3])}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No stakeholders entered yet.</p>'}
+
+      <h2 style="opacity:.5;">6–10. Cost · Quality · Resources · Communications · Procurement</h2>
+      <p class="ppa-empty">Coming in the next build — see chat for the plan.</p>
+    `;
+  }
+
+  document.getElementById('save-pdf-btn').addEventListener('click', () => {
+    renderDocument();
+    window.print();
+  });
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
