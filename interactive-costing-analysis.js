@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-16-panel-toggle-standard');
+console.info('[Interactive Costing Analysis] script build: 2026-09-19-cross-tool-import-parity');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -601,7 +601,8 @@ function applySyncedMenuItem(blockId) {
   const select = document.getElementById('synced-menu-select');
   if (select) select.value = blockId;
   document.getElementById('ing-cost').value = item.costPerPortion.toFixed(2);
-  markSynced('#ing-cost-label', 'Menu Portion Creator (' + item.dishName + ')');
+  const bufferNote = item.costBufferPct > 0 ? ', incl. ' + item.costBufferPct + '% cost buffer' : '';
+  markSynced('#ing-cost-label', 'Menu Portion Creator (' + item.dishName + ')' + bufferNote);
   if (typeof item.sellingPrice === 'number' && item.sellingPrice > 0) {
     document.getElementById('sell-price').value = item.sellingPrice.toFixed(2);
     markSynced('#sell-price-label', 'Menu Portion Creator (' + item.dishName + ')');
@@ -619,7 +620,14 @@ function handleSyncPayload(data) {
   if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
     const blockId = data.blockId || 'menu-calculator-unkeyed';
     const dishName = data.dishName || 'Untitled Menu Item';
-    syncedMenuItems.set(blockId, { dishName, costPerPortion: data.costPerPortion, sellingPrice: data.sellingPrice });
+    // costBufferPct (COST_BUFFER_STANDARD.md, 2026-09-16) rides along
+    // purely informational, same "cheap now, useful later" spirit as
+    // every other consumer of this field — costPerPortion above is
+    // already the buffered figure either way; this is only so the
+    // synced-badge note in applySyncedMenuItem() can show where it
+    // came from, same touch Margin Analysis added on its own side.
+    const costBufferPct = typeof data.costBufferPct === 'number' ? data.costBufferPct : 0;
+    syncedMenuItems.set(blockId, { dishName, costPerPortion: data.costPerPortion, sellingPrice: data.sellingPrice, costBufferPct });
     renderSyncedMenuDropdown();
     // Only actually change what's on screen if nothing's been picked
     // yet, or if the item that just updated is the one already being
@@ -831,14 +839,18 @@ async function rzFillToolDock(key) {
 let rzInitialized = false;
 
 /* ================= DATA IMPORT =================
-   Reads a .json file exported from Menu Calculator or Overhead &
-   Manpower and feeds it through the same handleSyncPayload() that a
-   live cross-tab broadcast already uses — so importing a file and
-   having the other tool open in another tab produce identical
-   results, one code path either way. See EXPORT_IMPORT_FORMAT.md for
-   the shared file shape, including what a Margin Analysis export is
-   expected to look like once that side exists (not yet — this only
-   handles the two export types that exist today). */
+   Reads a .json file — an Export data file from Menu Calculator,
+   Overhead & Manpower, or Margin Analysis — and feeds it through the
+   same handleSyncPayload() that a live cross-tab broadcast already
+   uses, so importing a file and having the other tool open live in
+   another tab produce identical results, one code path either way.
+   (Margin Analysis's shape is the one exception: it has no live-sync
+   equivalent, so that branch below populates importedQuadrants
+   directly instead of calling handleSyncPayload.) This page is the
+   reference implementation for the site-wide import pattern — see
+   CROSS_TOOL_IMPORT_STANDARD.md for the shared rule every importer-
+   role tool on this site now follows, and EXPORT_IMPORT_FORMAT.md for
+   the file shape itself. */
 
 function importDataFile(file) {
   const reader = new FileReader();
@@ -847,27 +859,28 @@ function importDataFile(file) {
     try {
       data = JSON.parse(reader.result);
     } catch (e) {
-      alert('That file isn\u2019t valid JSON — make sure it\u2019s an export from Menu Calculator or Overhead & Manpower.');
+      alert('That file isn\u2019t valid JSON — make sure it\u2019s an export from Menu Calculator, Overhead & Manpower, or Margin Analysis.');
       return;
     }
 
-    if (data.rzExportType === 'menu-calculator' && Array.isArray(data.blocks)) {
+    if (data && data.rzExportType === 'menu-calculator' && Array.isArray(data.blocks)) {
       data.blocks.forEach((b) => {
         handleSyncPayload({
           source: 'menu-calculator',
           blockId: b.blockId,
           costPerPortion: b.costPerPortion,
+          costBufferPct: b.costBufferPct,
           sellingPrice: b.sellingPrice,
           dishName: b.dishName,
         });
       });
-    } else if (data.rzExportType === 'overhead-manpower-calculator') {
+    } else if (data && data.rzExportType === 'overhead-manpower-calculator') {
       handleSyncPayload({
         source: 'overhead-manpower-calculator',
         overheadMonthly: data.overheadMonthly,
         manpowerMonthly: data.manpowerMonthly,
       });
-    } else if (data.rzExportType === 'margin-audit-calculator' && Array.isArray(data.dishes)) {
+    } else if (data && data.rzExportType === 'margin-audit-calculator' && Array.isArray(data.dishes)) {
       importedQuadrants = { byBlockId: {}, byName: {} };
       data.dishes.forEach((d) => {
         if (!d.quadrant) return;

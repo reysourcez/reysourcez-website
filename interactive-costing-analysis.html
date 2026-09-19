@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=18">
+  <link rel="stylesheet" href="styles.css?v=19">
 </head>
 <body>
 
@@ -76,7 +76,7 @@
         <div class="analysis-top-bar no-print">
           <button type="button" id="ica-edit-answers" class="link-btn">&larr; Edit answers</button>
           <div class="header-actions">
-            <button type="button" id="import-data" class="btn btn-secondary">Import data</button>
+            <button type="button" id="import-data" class="btn btn-secondary">Import data<span class="tooltip-icon" data-tooltip="Reads an Export data file from Menu Calculator, Overhead &amp; Manpower, or Margin Analysis — anything else won't be read correctly.">?</span></button>
             <input type="file" id="import-file-input" accept=".json" hidden>
             <button type="button" id="save-pdf-ica" class="btn btn-secondary">Save as PDF</button>
           </div>
@@ -313,6 +313,6 @@
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="panel-toggle.js?v=1" defer></script>
-  <script src="interactive-costing-analysis.js?v=15" defer></script>
+  <script src="interactive-costing-analysis.js?v=16" defer></script>
 </body>
 </html>
