@@ -138,7 +138,7 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Analysis] script build: 2026-09-17-v9-panel-toggle-cross-tool-export');
+console.info('[Margin Analysis] script build: 2026-09-18-v10-cross-tool-file-import');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
@@ -290,7 +290,7 @@ function finishWizard() {
   // No default dish anymore - Menu Analyzer starts blank on purpose
   // (see 2026-09-09 change notes). renderDishTabs() sets the correct
   // empty-state/pull-button visibility either way, whether this is a
-  // brand-new session (zero dishes) or importData() already
+  // brand-new session (zero dishes) or importDataFile() already
   // populated some before calling finishWizard().
   renderDishTabs();
   recalculateAll();
@@ -1351,77 +1351,116 @@ function exportCrossToolData() {
   downloadJSONFile('margin-analysis-export.json', gatherCrossToolExportData());
 }
 
-function importData(file) {
+// 2026-09-18: renamed from importData -> importDataFile to match
+// interactive-costing-analysis.js's own function name exactly, and
+// widened from "only this tool's own save" into a proper dispatcher —
+// see CROSS_TOOL_IMPORT_STANDARD.md for the site-wide pattern this
+// now follows. Recognizes three shapes:
+//   1. This page's own full-state save (data.tool, unchanged below)
+//   2. A Menu Calculator export (data.rzExportType, NEW)
+//   3. An Overhead & Manpower export (data.rzExportType, NEW)
+// The two NEW branches don't do their own field-mapping — they build
+// the exact payload shape handleSyncPayload() already expects from a
+// live BroadcastChannel message and hand it off there, so a synced
+// live tab and an imported file from the same tool always produce
+// identical results through one code path, never two.
+function importDataFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
     let data;
     try { data = JSON.parse(reader.result); } catch (e) {
-      alert("Couldn't read that file \u2014 make sure it's a data file saved from this tool, not something else.");
+      alert("Couldn't read that file \u2014 make sure it's a data file saved from this tool, Menu Calculator, or Overhead & Manpower, not something else.");
       return;
     }
-    if (!data || data.tool !== 'margin-audit-calculator') {
-      alert('That file doesn\u2019t look like it was saved from this tool.');
-      return;
-    }
-    const previousMarginText = data.resultSummary ? data.resultSummary.overallMarginPct : null;
 
-    Object.assign(wizardAnswers, data.wizardAnswers || {});
-    document.getElementById('ma-operating-days').value = data.operatingDays || OPERATING_DAYS_DEFAULT;
-    document.getElementById('ma-rent').value = data.rent || 0;
-    document.getElementById('ma-manpower').value = data.manpower || 0;
-    document.getElementById('ma-elec-rows').innerHTML = '';
-    (data.electricity || []).forEach((row) => createElecRow(row));
-    document.getElementById('ma-elec-rate').value = data.electricityRate || ELECTRICITY_RATE_DEFAULT;
-    document.getElementById('ma-water-liters').value = data.waterLitersPerDay || 0;
-    document.getElementById('ma-water-liters-num').value = data.waterLitersPerDay || 0;
-    if (data.gas) {
-      document.getElementById('ma-gas-burners').value = data.gas.burners || 0;
-      document.getElementById('ma-gas-hours').value = data.gas.hours || 0;
-      document.getElementById('ma-gas-rate').value = data.gas.rate || GAS_RATE_DEFAULT;
-      const radio = document.querySelector(`[name="ma-gas-tier"][value="${data.gas.tier}"]`);
-      if (radio) radio.checked = true;
-    }
-    document.getElementById('ma-target-margin').value = data.targetMargin || '';
-    if (data.guideVenue) document.getElementById('guide-venue-select').value = data.guideVenue;
-
-    document.getElementById('ma-dish-panels').innerHTML = '';
-    (data.dishes || []).forEach((d) => {
-      const panel = createDishPanel();
-      panel.querySelector('.ma-dish-name').value = d.name || '';
-      panel.querySelector('.ma-dish-price').value = d.price || 0;
-      panel.querySelector('.ma-dish-volume').value = d.volumeDay || 0;
-      // Files saved before 2026-09-08 carry costSource/manualCost
-      // instead — those fields are simply absent here and the dish
-      // just comes back in as "not yet synced" rather than failing to
-      // import; re-pulling from Menu Calculator picks it back up.
-      if (d.syncedBlockId) panel.dataset.syncedBlockId = d.syncedBlockId;
-      if (d.syncedCost > 0) dishSyncedCost.set(panel, d.syncedCost);
-      renderDishSyncStatus(panel);
-    });
-    renderDishTabs();
-
-    finishWizard();
-    recalculateAll();
-
-    // 2026-09-17: used to force all four calc-tabs open here so
-    // everything reloaded was visible at a glance — impossible now
-    // that calc-tabs are single-open (panel-toggle.js,
-    // PANEL_TOGGLE_STANDARD.md). Not a lost confirmation though:
-    // Results (finishWizard/recalculateAll above) already reflects
-    // every reloaded number the moment this runs, and Results —
-    // not the input tabs — is this page's own designed primary
-    // confirmation surface (see the page intro copy). initCalcTabs()
-    // already leaves Menu Analyzer as the one open tab by default,
-    // which is left as-is here rather than second-guessed.
-
-    if (previousMarginText) {
-      const note = document.getElementById('ma-compare-note');
-      note.hidden = false;
-      note.classList.add('is-synced');
-      note.textContent = `Loaded data saved ${new Date(data.savedAt).toLocaleDateString()} \u2014 that month's overall margin was ${previousMarginText}, currently ${document.getElementById('ma-overall-margin').textContent}.`;
+    if (data && data.tool === 'margin-audit-calculator') {
+      importOwnSnapshot(data);
+    } else if (data && data.rzExportType === 'menu-calculator' && Array.isArray(data.blocks)) {
+      data.blocks.forEach((b) => {
+        handleSyncPayload({
+          source: 'menu-calculator',
+          blockId: b.blockId,
+          costPerPortion: b.costPerPortion,
+          costBufferPct: b.costBufferPct,
+          sellingPrice: b.sellingPrice,
+          dishName: b.dishName,
+        });
+      });
+    } else if (data && data.rzExportType === 'overhead-manpower-calculator') {
+      handleSyncPayload({
+        source: 'overhead-manpower-calculator',
+        overheadMonthly: data.overheadMonthly,
+        manpowerMonthly: data.manpowerMonthly,
+      });
+    } else {
+      alert('Unrecognised file \u2014 expected a save from this tool, or an Export data file from Menu Calculator or Overhead & Manpower.');
     }
   };
   reader.readAsText(file);
+}
+
+// This page's own full-state round trip — split out of importDataFile
+// above so the dispatcher itself stays short and skimmable, matching
+// how handleSyncPayload's own branches read. Behaviour here is
+// unchanged from before this file could read anything else.
+function importOwnSnapshot(data) {
+  const previousMarginText = data.resultSummary ? data.resultSummary.overallMarginPct : null;
+
+  Object.assign(wizardAnswers, data.wizardAnswers || {});
+  document.getElementById('ma-operating-days').value = data.operatingDays || OPERATING_DAYS_DEFAULT;
+  document.getElementById('ma-rent').value = data.rent || 0;
+  document.getElementById('ma-manpower').value = data.manpower || 0;
+  document.getElementById('ma-elec-rows').innerHTML = '';
+  (data.electricity || []).forEach((row) => createElecRow(row));
+  document.getElementById('ma-elec-rate').value = data.electricityRate || ELECTRICITY_RATE_DEFAULT;
+  document.getElementById('ma-water-liters').value = data.waterLitersPerDay || 0;
+  document.getElementById('ma-water-liters-num').value = data.waterLitersPerDay || 0;
+  if (data.gas) {
+    document.getElementById('ma-gas-burners').value = data.gas.burners || 0;
+    document.getElementById('ma-gas-hours').value = data.gas.hours || 0;
+    document.getElementById('ma-gas-rate').value = data.gas.rate || GAS_RATE_DEFAULT;
+    const radio = document.querySelector(`[name="ma-gas-tier"][value="${data.gas.tier}"]`);
+    if (radio) radio.checked = true;
+  }
+  document.getElementById('ma-target-margin').value = data.targetMargin || '';
+  if (data.guideVenue) document.getElementById('guide-venue-select').value = data.guideVenue;
+
+  document.getElementById('ma-dish-panels').innerHTML = '';
+  (data.dishes || []).forEach((d) => {
+    const panel = createDishPanel();
+    panel.querySelector('.ma-dish-name').value = d.name || '';
+    panel.querySelector('.ma-dish-price').value = d.price || 0;
+    panel.querySelector('.ma-dish-volume').value = d.volumeDay || 0;
+    // Files saved before 2026-09-08 carry costSource/manualCost
+    // instead — those fields are simply absent here and the dish
+    // just comes back in as "not yet synced" rather than failing to
+    // import; re-pulling from Menu Calculator picks it back up.
+    if (d.syncedBlockId) panel.dataset.syncedBlockId = d.syncedBlockId;
+    if (d.syncedCost > 0) dishSyncedCost.set(panel, d.syncedCost);
+    renderDishSyncStatus(panel);
+  });
+  renderDishTabs();
+
+  finishWizard();
+  recalculateAll();
+
+  // 2026-09-17: used to force all four calc-tabs open here so
+  // everything reloaded was visible at a glance — impossible now
+  // that calc-tabs are single-open (panel-toggle.js,
+  // PANEL_TOGGLE_STANDARD.md). Not a lost confirmation though:
+  // Results (finishWizard/recalculateAll above) already reflects
+  // every reloaded number the moment this runs, and Results —
+  // not the input tabs — is this page's own designed primary
+  // confirmation surface (see the page intro copy). initCalcTabs()
+  // already leaves Menu Analyzer as the one open tab by default,
+  // which is left as-is here rather than second-guessed.
+
+  if (previousMarginText) {
+    const note = document.getElementById('ma-compare-note');
+    note.hidden = false;
+    note.classList.add('is-synced');
+    note.textContent = `Loaded data saved ${new Date(data.savedAt).toLocaleDateString()} \u2014 that month's overall margin was ${previousMarginText}, currently ${document.getElementById('ma-overall-margin').textContent}.`;
+  }
 }
 
 /* ================= PRINT ================= */
@@ -1432,11 +1471,11 @@ function saveDataSnapshot() {
   // 2026-09-17 bug fix: this button (and the printed copy's own text,
   // two lines down) always CLAIMED to produce something re-importable
   // next month, but only ever called window.print() — no file was
-  // ever written, so "Load previous month's data" (importData(), which
-  // reads data.tool === 'margin-audit-calculator' JSON) had nothing
-  // valid to load. gatherExportData() already builds exactly the
-  // shape importData() expects; the only thing missing was actually
-  // downloading it. Doing that FIRST, before the print dialog opens,
+  // ever written, so "Load previous month's data" (importDataFile(),
+  // which reads data.tool === 'margin-audit-calculator' JSON) had
+  // nothing valid to load. gatherExportData() already builds exactly
+  // the shape importOwnSnapshot() expects; the only thing missing was
+  // actually downloading it. Doing that FIRST, before the print dialog opens,
   // so a slow/cancelled print never gets in the way of the file
   // itself landing in Downloads.
   const stamp = new Date().toISOString().slice(0, 10);
@@ -1615,7 +1654,7 @@ function init() {
   document.getElementById('ma-export-data').addEventListener('click', exportCrossToolData);
   document.getElementById('ma-save-data').addEventListener('click', saveDataSnapshot);
   document.getElementById('ma-import-input').addEventListener('change', (e) => {
-    if (e.target.files[0]) importData(e.target.files[0]);
+    if (e.target.files[0]) importDataFile(e.target.files[0]);
   });
 
   document.getElementById('guide-venue-select').addEventListener('change', recalculateAll);
