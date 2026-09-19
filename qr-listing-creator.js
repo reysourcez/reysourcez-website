@@ -18,7 +18,7 @@
    header for the tradeoffs and the upgrade path.
    ============================================================ */
 
-const WORKER_ENDPOINT = 'https://qr-listing-creator-proxy.reysourcez-ent.workers.dev/';
+const WORKER_ENDPOINT = 'https://qr-listing-creator-proxy.reysourcez-ent.workers.dev';
 const SESSION_KEY = 'qlc-session'; // { bizId, adminKey } for THIS browser only
 
 function formatRM(v) {
