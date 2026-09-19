@@ -23,7 +23,7 @@
    a POS, or cash at the counter — works from the summary screen.
    ============================================================ */
 
-const WORKER_ENDPOINT = 'https://qr-listing-creator-proxy.reysourcez-ent.workers.dev/';
+const WORKER_ENDPOINT = 'https://qr-listing-creator-proxy.reysourcez-ent.workers.dev';
 
 // Vertical-specific wording and which order types make sense. F&B is the
 // only one dine-in applies to — a retail shop or a service business
