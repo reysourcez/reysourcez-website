@@ -75,6 +75,18 @@
     .mr-weights-table input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
     #mr-weight-total { font-weight: 700; }
     #mr-weight-total.is-off { color: #C0392B; }
+    .mr-field-note { background: var(--paper); border-radius: 8px; padding: 16px; margin: 0 0 16px; }
+    .mr-field-note label { display: block; margin-bottom: 8px; }
+    .mr-field-note select { width: 100%; max-width: 320px; }
+    .mr-field-note .structure-note { margin: 10px 0 0; }
+    .mr-vacancy-inputs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .mr-vacancy-inputs select { flex: 0 0 auto; }
+    .mr-vacancy-inputs input[type="text"] { flex: 1 1 260px; }
+    .mr-vacancy-list { list-style: none; margin: 10px 0 0; padding: 0; }
+    .mr-vacancy-list li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; background: var(--surface); border-radius: 6px; margin-bottom: 6px; font-size: 0.9rem; }
+    .mr-vacancy-list button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 0; }
+    .mr-vacancy-list button:hover { color: var(--accent); }
+    .mr-anchor-icon { color: #2A5DB0; font-size: 14px; line-height: 14px; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
 
     .mr-score-banner {
       display: flex; align-items: center; gap: 18px; flex-wrap: wrap; border: 3px solid var(--accent);
@@ -196,6 +208,7 @@
             <span><i class="mr-legend-dot" style="background:#C0392B;"></i>Competitor</span>
             <span><i class="mr-legend-line" style="border-top-style:solid; border-color:var(--accent);"></i>Real catchment (isochrone)</span>
             <span><i class="mr-legend-line"></i>Estimated catchment (radius fallback)</span>
+            <label><input type="checkbox" id="mr-heat-toggle" checked> Density heat map <span class="toggle-hint">(teal = a competitor nearby, red = 3+ overlapping in one spot)</span></label>
           </div>
         </div>
 
@@ -229,6 +242,51 @@
             <span class="result-value" id="mr-income-value">—</span>
             <span class="mr-provenance">Official — DOSM</span>
           </div>
+          <div class="result-card">
+            <span class="result-label">Competitor strength<span class="tooltip-icon" data-tooltip="Rating and review count, for whichever competitors above could be matched to a Google Maps listing within about 75m. A quiet 3-competitor spot and a 3-competitor spot with a beloved, packed incumbent aren't the same opportunity — this doesn't affect the score above unless you raise its weight below, off (0) by default.">?</span></span>
+            <span class="result-value" id="mr-popularity-value">—</span>
+            <span class="mr-provenance" id="mr-popularity-provenance">Estimated — Google Places (optional)</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">Nearby institutions<span class="tooltip-icon" data-tooltip="Schools, universities, hospitals/clinics, malls, government offices, places of worship, and transport terminals within the catchment — shown on the map as blue squares. These are foot-traffic anchors, not competitors: they never count toward the competitor total and never affect the opportunity score above. Doesn't include large private employers/offices — OSM doesn't reliably tag those.">?</span></span>
+            <span class="result-value" id="mr-anchor-value">—</span>
+            <span class="mr-provenance" id="mr-anchor-provenance">Official — OSM</span>
+          </div>
+          <div class="result-card">
+            <span class="result-label">National retail trend<span class="tooltip-icon" data-tooltip="DOSM's Wholesale & Retail Trade Index, year-on-year growth for the category's MSIC group. Two important limits: this is Malaysia-WIDE (not town or state-specific), and it only covers 4 of the 11 categories here — minimart, bakery, hardware, and fashion — since the index tracks MSIC Section G (wholesale/retail) only, not the food & beverage or services sections the other categories fall under.">?</span></span>
+            <span class="result-value" id="mr-trend-value">—</span>
+            <span class="mr-provenance" id="mr-trend-provenance">Official — DOSM</span>
+          </div>
+        </div>
+
+        <div class="mr-field-note" id="mr-field-note-panel" hidden>
+          <label for="mr-observed-busyness" style="font-weight:600;">On-site read: how busy does the competition actually look right now? <span class="toggle-hint">(optional)</span></label>
+          <select id="mr-observed-busyness">
+            <option value="">Not noted — leave out of the score</option>
+            <option value="1">Very quiet</option>
+            <option value="2">Quiet</option>
+            <option value="3">Moderate</option>
+            <option value="4">Busy</option>
+            <option value="5">Packed — queue out the door</option>
+          </select>
+          <p class="structure-note">Only changes the score if you also raise "Competitor strength" above 0 in the weights below, and beats the Google-ratings card above when both are present — a fresh look in person outranks an aggregate rating. Nothing here is saved; it resets when you close this tab.</p>
+        </div>
+
+        <div class="mr-field-note" id="mr-vacancy-panel" hidden>
+          <label style="font-weight:600;">Vacant units you've spotted nearby <span class="toggle-hint">(optional — for your own notes and the PDF export)</span></label>
+          <div class="mr-vacancy-inputs">
+            <select id="mr-vacancy-floor">
+              <option>Ground floor</option>
+              <option>1st floor</option>
+              <option>2nd floor</option>
+              <option>3rd floor</option>
+              <option>Other / whole shoplot</option>
+            </select>
+            <input type="text" id="mr-vacancy-detail" placeholder="e.g. ~600 sqft, asking RM1,800/mo, agent 012-xxx" maxlength="140">
+            <button type="button" class="btn" id="mr-vacancy-add">Add</button>
+          </div>
+          <ul class="mr-vacancy-list" id="mr-vacancy-list"></ul>
+          <p class="structure-note">No official live source exists for this in Malaysia — JPPH/NAPIC only publish past sale transactions (paid, ad-hoc requests), and property portals don't offer an API, only scrapers, which this site avoids on the same grounds as everything else here. This is a plain notepad: what you jot down stays on the page and in your printed PDF, and resets when you close the tab — nothing is looked up or verified automatically.</p>
         </div>
 
         <details class="fw-collapsible" id="mr-weights-panel" hidden>
@@ -241,6 +299,7 @@
               <tr><td>Household income band</td><td><input type="number" id="mr-weight-income" min="0" max="1" step="0.05" value="0.15"></td></tr>
               <tr><td>Category diversity nearby</td><td><input type="number" id="mr-weight-diversity" min="0" max="1" step="0.05" value="0.15"></td></tr>
               <tr><td>Momentum <span class="toggle-hint">(neutral until snapshot history exists)</span></td><td><input type="number" id="mr-weight-momentum" min="0" max="1" step="0.05" value="0.10"></td></tr>
+              <tr><td>Competitor strength <span class="toggle-hint">(Google ratings, or your on-site read above — off by default)</span></td><td><input type="number" id="mr-weight-competitorStrength" min="0" max="1" step="0.05" value="0"></td></tr>
             </tbody>
           </table>
           <p class="structure-note">Weights should add up to 1.00 — current total: <span id="mr-weight-total">1.00</span></p>
