@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=19">
 
   <!-- Page-specific styles only — everything else (buttons, tables,
        cards, result pills, structure pies, wizard, tool dock) is
@@ -24,9 +24,13 @@
        boxed per-utility styling (.ma-util-elec/water/gas extending
        the existing .ma-util-block), and the two-button floating nav
        (#rz-float-nav, replacing the old single #rz-back-to-top which
-       doesn't exist on this page anymore). Everything else below this
-       comment that isn't called out as new is carried over unchanged
-       from the previous round. -->
+       doesn't exist on this page anymore). 2026-09-17: no new CSS —
+       the calc-tabs and tool dock both moved onto panel-toggle.js
+       (see PANEL_TOGGLE_STANDARD.md) and a new "Export data" button
+       was added, but both reuse classes already defined below/in
+       styles.css (.header-actions, .tooltip-icon) rather than adding
+       any. Everything else below this comment that isn't called out
+       as new is carried over unchanged from the previous round. -->
   <style>
     /* ---- Boxed sections — every category gets the same card
          treatment, matching .menu-block's existing recipe (border +
@@ -239,15 +243,15 @@
     .ma-calc-section { border-top: 3px solid var(--line); padding-top: 44px; margin-top: 8px; }
 
     /* Tab row for Menu / Fixed Overhead / Variable Overhead /
-       Manpower. These are NOT mutually exclusive — each one is an
-       independent show/hide toggle (see toggleCalcTab in the JS), so
-       more than one can be open at a time, same idea as a native
-       <details> element, just styled as pill buttons instead of a
-       disclosure triangle so it matches the rest of the site's
-       button language. Reset All sits at the far right (margin-left:
-       auto), visually split from the four toggles since it does
-       something fundamentally different — it doesn't show or hide
-       anything, it clears it. */
+       Manpower. 2026-09-17: single-open now (panel-toggle.js, see
+       initCalcTabs() in the JS and PANEL_TOGGLE_STANDARD.md) — this
+       page was named directly in that doc as still stacking, since
+       these four used to be independent toggles that could all sit
+       open together, same idea as a native <details> element. Reset
+       All still sits at the far right (margin-left: auto), visually
+       split from the four toggles since it does something
+       fundamentally different — it doesn't show or hide anything,
+       it clears it. */
     .ma-calc-tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 28px; }
     .ma-calc-tab {
       background: var(--surface); border: 2px solid var(--line); border-radius: 999px;
@@ -325,9 +329,6 @@
             <li><a href="food-worth-calculator.html">Food Worth</a></li>
             <li><a href="crypto-radar.html">Crypto Radar</a></li>
             <li><a href="rental-calculator.html">Rental Calculator</a></li>
-            <li><a href="market-radar.html">Market Radar</a></li>
-            <li><a href="cost-structure-checker.html">Cost Structure Checker</a></li>
-            <li><a href="qr-listing-creator.html">QR Listing Creator</a></li>
           </ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
@@ -365,7 +366,8 @@
       <div class="wrap">
         <div class="analysis-top-bar no-print">
           <button type="button" id="ma-edit-answers" class="link-btn">&larr; Edit answers</button>
-          <div class="calc-actions" style="margin:0;">
+          <div class="header-actions">
+            <button type="button" id="ma-export-data" class="btn btn-secondary">Export data<span class="tooltip-icon" data-tooltip="A small file other tools can read — right now, Costing Analysis's Full Business Summary picks up each dish's Star/Plowhorse/Puzzle/Dog category from this. Different from “Save data for next month” below, which is this page's own full state for reloading here.">?</span></button>
             <button type="button" id="ma-save-pdf" class="btn btn-secondary">Save as PDF</button>
             <button type="button" id="ma-print-summary" class="btn btn-secondary">Print Summary</button>
             <button type="button" id="ma-save-data" class="btn btn-secondary">Save data for next month</button>
@@ -568,7 +570,7 @@
         </div>
 
         <div class="ma-calc-tabs no-print" id="ma-calc-tabs">
-          <button type="button" class="ma-calc-tab is-active" data-calc-tab="menu" aria-expanded="true" aria-controls="ma-panel-menu">Menu Analyzer</button>
+          <button type="button" class="ma-calc-tab" data-calc-tab="menu" aria-expanded="false" aria-controls="ma-panel-menu">Menu Analyzer</button>
           <button type="button" class="ma-calc-tab" data-calc-tab="fixed" aria-expanded="false" aria-controls="ma-panel-fixed">Fixed Overhead</button>
           <button type="button" class="ma-calc-tab" data-calc-tab="variable" aria-expanded="false" aria-controls="ma-panel-variable">Variable Overhead</button>
           <button type="button" class="ma-calc-tab" data-calc-tab="manpower" aria-expanded="false" aria-controls="ma-panel-manpower">Manpower</button>
@@ -576,7 +578,7 @@
         </div>
 
         <!-- ============ MENU ============ -->
-        <div class="ma-calc-panel" id="ma-panel-menu" data-calc-panel="menu">
+        <div class="ma-calc-panel" id="ma-panel-menu" data-calc-panel="menu" hidden>
           <div class="ma-box">
             <h3>Menu Analyzer</h3>
             <p class="menu-builder-intro">Confirms pricing for a menu you've already built in Menu Calculator — it isn't where you build one. Every dish you price there appears here automatically; your job here is just two things per dish, what you currently charge and roughly how many you sell a day.</p>
@@ -726,6 +728,7 @@
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="margin-audit-calculator.js?v=8" defer></script>
+  <script src="panel-toggle.js?v=1" defer></script>
+  <script src="margin-audit-calculator.js?v=9" defer></script>
 </body>
 </html>

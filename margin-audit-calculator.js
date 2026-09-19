@@ -77,12 +77,17 @@
      actual cost input, including the dish list that used to be a
      separate box up top called "Your menu, at today's prices".
      Split into four tabs — Menu / Fixed Overhead / Variable
-     Overhead / Manpower — each an INDEPENDENT show/hide toggle
-     (see toggleCalcTab), not a mutually-exclusive switcher: opening
-     one does not close another, and closing one never clears what
-     was typed into it, same idea as a native <details> element,
-     just styled as pill buttons. Reset All is the one control here
-     that actually clears data, and needs a confirm() first.
+     Overhead / Manpower. 2026-09-17: now a single-open panel-
+     toggle.js group (see initCalcTabs, PANEL_TOGGLE_STANDARD.md) —
+     opening one closes whatever else was open, clicking the same
+     one again closes it back to nothing. Was an independent
+     show/hide toggle per tab before that (several open at once,
+     same idea as a native <details> element); this page was named
+     directly in the standard as still stacking, so that's gone.
+     Closing a tab never clears what was typed into it — every input
+     keeps its value and listeners regardless of visibility, that
+     part's unchanged. Reset All is the one control here that
+     actually clears data, and needs a confirm() first.
 
    DATA MODEL: one or more "dishes", same repeatable-block pattern
    as menu-calculator.js's .menu-block, INCLUDING its tab-queue
@@ -96,9 +101,13 @@
    hidden only affects display, never what gets calculated. This is
    a DIFFERENT toggle mechanism from the outer Menu/Fixed/Variable/
    Manpower tabs above it — dish tabs are mutually exclusive
-   (switch between dishes), the outer calc-tabs are independent
-   (accordion-style, several can be open at once). Don't confuse
-   toggleCalcTab (outer) with switchToDish (inner, dish-level).
+   (switch between dishes, always exactly one shown, out of
+   panel-toggle.js's scope by its own "mandatory selection" carve-
+   out), and now so are the outer calc-tabs (single-open, but
+   CAN close to nothing — that's what puts them in scope for
+   panel-toggle.js where the dish tabs aren't). Don't confuse
+   initCalcTabs (outer, registers with panel-toggle.js) with
+   switchToDish (inner, dish-level, its own fixed switcher).
 
    Pulling a dish in from Menu Calculator goes through the "Pull
    from Menu Portion Creator" button inside the Menu tab (see TOOL
@@ -129,7 +138,7 @@
    specific, so it's reused as-is rather than reinvented as bars.
    ============================================================ */
 
-console.info('[Margin Analysis] script build: 2026-09-13-v8-print-summary-report');
+console.info('[Margin Analysis] script build: 2026-09-17-v9-panel-toggle-cross-tool-export');
 
 /* ================= CONFIG =================
    Everything a layperson might reasonably need to change lives
@@ -297,32 +306,55 @@ function editAnswers() {
 }
 
 /* ================= MARGIN CALCULATION TABS =================
-   Four independent show/hide toggles (Menu / Fixed Overhead /
-   Variable Overhead / Manpower) — NOT a mutually-exclusive
-   switcher. Clicking a tab a second time closes just that tab;
-   clicking a different one does not close whatever's already open.
-   Nothing in a closed panel is ever cleared or rebuilt — it's a
-   plain `hidden` toggle on a DOM node that already exists, so every
-   input inside keeps its value and its event listeners the whole
-   time, identical in spirit to a native <details> element (see
-   Food Worth's collapsible sections for the same idea elsewhere on
-   this site). This is deliberately a DIFFERENT mechanism from the
-   dish tabs inside the Menu panel (switchToDish, further down),
-   which ARE mutually exclusive — don't conflate the two. */
+   2026-09-17: retrofitted onto panel-toggle.js per
+   PANEL_TOGGLE_STANDARD.md — this page was named directly in that
+   doc as one of the pages "still stacking." Previously these four
+   (Menu / Fixed Overhead / Variable Overhead / Manpower) were
+   independent toggles that could all be open together, same idea as
+   a native <details> element. Under the new site-wide standard,
+   "closed to nothing" being a real state for this group (nothing
+   forces one to always stay open) means it's a genuinely-optional
+   panel set, not a mandatory tab strip — so it now follows the same
+   rule as every other retrofitted panel on the site: click a tab
+   open, click that SAME tab again to close it, opening a DIFFERENT
+   tab always closes whatever was open first. Never two open
+   together. See initCalcTabs() in INIT for the registration; nothing
+   about what's INSIDE each panel changed — every input keeps its
+   value and listeners regardless of visibility, same as before.
+   Deliberately a separate panel-toggle GROUP from the tool dock
+   below ('ma-tool-dock') — a "Pull from" button lives inside a calc
+   panel and opens the dock underneath it, and closing the calc panel
+   just because its own dock opened would hide the very field the
+   dock is about to fill.
+   This remains a DIFFERENT mechanism from the dish tabs inside the
+   Menu panel (switchToDish, further down), which are a fixed,
+   always-exactly-one-shown switcher, not a closable panel set — out
+   of scope for panel-toggle.js by the standard's own "mandatory
+   selection" carve-out, same as Menu Calculator's own cost-mode
+   tabs. */
 
-function setCalcTabOpen(key, open) {
-  const btn = document.querySelector(`.ma-calc-tab[data-calc-tab="${key}"]`);
-  const panel = document.querySelector(`.ma-calc-panel[data-calc-panel="${key}"]`);
-  if (!btn || !panel) return;
-  panel.hidden = !open;
-  btn.classList.toggle('is-active', open);
-  btn.setAttribute('aria-expanded', String(open));
-}
-
-function toggleCalcTab(key) {
-  const panel = document.querySelector(`.ma-calc-panel[data-calc-panel="${key}"]`);
-  if (!panel) return;
-  setCalcTabOpen(key, panel.hidden);
+function initCalcTabs() {
+  document.querySelectorAll('.ma-calc-tab[data-calc-tab]').forEach((btn) => {
+    const key = btn.dataset.calcTab;
+    const panel = document.querySelector(`.ma-calc-panel[data-calc-panel="${key}"]`);
+    if (!panel) return;
+    rzRegisterPanel('ma-calc-tabs', key, {
+      triggerEl: btn,
+      panelEl: panel,
+      // aria-expanded isn't part of what panel-toggle.js manages
+      // itself (only visibility + the active class), so it's kept in
+      // sync here via the same onOpen/onClose hooks the tool dock
+      // uses for its own fetch-on-open work.
+      onOpen: () => btn.setAttribute('aria-expanded', 'true'),
+      onClose: () => btn.setAttribute('aria-expanded', 'false'),
+    });
+  });
+  // Menu Analyzer starts open (matches every prior version of this
+  // page) — done through the real toggle function, not by hand-
+  // setting .hidden/is-active in the HTML, so panel-toggle.js's own
+  // openKey bookkeeping is correct from the first click onward rather
+  // than starting out-of-sync with what's visually already showing.
+  rzTogglePanel('ma-calc-tabs', 'menu');
 }
 
 // The only control in Margin Calculation that actually clears data
@@ -359,10 +391,12 @@ function resetAllCalculationData() {
   document.getElementById('ma-gas-price-household').value = GAS_PRICE_HOUSEHOLD_DEFAULT;
   document.getElementById('ma-gas-price-commercial').value = GAS_PRICE_COMMERCIAL_DEFAULT;
 
-  setCalcTabOpen('menu', true);
-  setCalcTabOpen('fixed', false);
-  setCalcTabOpen('variable', false);
-  setCalcTabOpen('manpower', false);
+  // Back to "only Menu Analyzer open" regardless of which tab (if
+  // any) was open when Reset was clicked — rzCloseAllPanels first so
+  // the rzTogglePanel call below is guaranteed to OPEN 'menu' rather
+  // than close it if it happened to already be the open one.
+  rzCloseAllPanels('ma-calc-tabs');
+  rzTogglePanel('ma-calc-tabs', 'menu');
 
   const feedback = document.getElementById('ma-dock-feedback');
   if (feedback) feedback.textContent = '\u2713 Cleared \u2014 Margin Calculation is back to its starting defaults.';
@@ -378,6 +412,12 @@ function resetAllCalculationData() {
 // as 0, same as any other empty numeric field on this site, rather
 // than needing a separate "is this synced" flag threaded everywhere.
 const dishSyncedCost = new WeakMap();
+// Informational only (2026-09-17, see COST_BUFFER_STANDARD.md) — the
+// % of Menu Calculator's Cost Buffer already folded into the number
+// above, purely for renderDishSyncStatus() to show where a dish's
+// cost comes from. Never read by any calculation: dishSyncedCost is
+// already the final, true-cost-ready figure either way.
+const dishSyncedBufferPct = new WeakMap();
 let dishIdCounter = 0;
 
 // Snapshot of recalculateAll()'s own numbers, refreshed every time it
@@ -448,8 +488,10 @@ function renderDishSyncStatus(panel) {
   if (!line) return;
   const cost = dishSyncedCost.get(panel);
   if (typeof cost === 'number') {
+    const bufferPct = dishSyncedBufferPct.get(panel);
+    const bufferNote = bufferPct > 0 ? ` (incl. ${bufferPct}% cost buffer)` : '';
     line.dataset.state = 'synced';
-    line.innerHTML = `Ingredient cost: <strong>${formatRM(cost)}</strong><span class="ma-sync-source">\u2190 synced from Menu Calculator</span>`;
+    line.innerHTML = `Ingredient cost: <strong>${formatRM(cost)}</strong>${bufferNote}<span class="ma-sync-source">\u2190 synced from Menu Calculator</span>`;
   } else {
     line.dataset.state = 'unsynced';
     line.textContent = 'Ingredient cost not yet synced \u2014 pull it in below, or edit the matching item in Menu Calculator (this tab or another) and it\u2019ll sync here on its own.';
@@ -462,7 +504,7 @@ function renderDishSyncStatus(panel) {
 // menu blocks, Food Worth's dish tabs, and Printing Calculator's job
 // tabs — ported here rather than reinvented as vertical stacking.
 // This is dish-level switching, separate from the outer Menu/Fixed/
-// Variable/Manpower calc-tabs (see toggleCalcTab above), which are
+// Variable/Manpower calc-tabs (see initCalcTabs above), which are
 // independent toggles, not a switcher.
 function switchToDish(dishId) {
   document.querySelectorAll('.ma-dish-panel').forEach((p) => {
@@ -536,13 +578,30 @@ function handleSyncPayload(data) {
     }
 
     if (data.dishName) panel.querySelector('.ma-dish-name').value = data.dishName;
+    // costPerPortion already includes Menu Calculator's own Cost
+    // Buffer % (2026-09-16, see COST_BUFFER_STANDARD.md) whenever
+    // that toggle was on for the source dish — nothing here needs to
+    // know that or re-derive anything, the true-cost math downstream
+    // just keeps using whatever number arrives, same as always.
+    // costBufferPct itself rides along purely for the sync-status
+    // line below to show its provenance, same "cheap now, useful
+    // later" spirit as the standard's own field.
     dishSyncedCost.set(panel, data.costPerPortion);
+    dishSyncedBufferPct.set(panel, typeof data.costBufferPct === 'number' ? data.costBufferPct : 0);
     if (typeof data.sellingPrice === 'number' && data.sellingPrice > 0) {
       panel.querySelector('.ma-dish-price').value = data.sellingPrice.toFixed(2);
     }
     renderDishSyncStatus(panel);
     renderDishTabs();
-    setCalcTabOpen('menu', true);
+    // 2026-09-17: no longer force-opens the Menu Analyzer tab here —
+    // under panel-toggle.js's single-open rule that would mean a
+    // background sync (e.g. Menu Calculator open live in another
+    // browser tab) could yank away whatever tab the person is
+    // currently looking at. The feedback line below already confirms
+    // success without touching what's on screen; in the common case
+    // (using the tool dock's own "Open Menu Calculator" button) Menu
+    // Analyzer is already the open tab anyway, since that's where the
+    // button lives.
 
     const feedback = document.getElementById('ma-dock-feedback');
     if (feedback) {
@@ -568,10 +627,13 @@ function handleSyncPayload(data) {
     if (parts.length) {
       // Fills both fields at once regardless of which tab's "Pull
       // from" button triggered it (Fixed Overhead and Manpower share
-      // the one external tool) — open both so nothing that just got
-      // filled in is sitting behind a closed tab.
-      setCalcTabOpen('fixed', true);
-      setCalcTabOpen('manpower', true);
+      // the one external tool). 2026-09-17: used to force BOTH tabs
+      // open here, which is exactly the stacking panel-toggle.js now
+      // forbids — under the single-open rule there's no single tab
+      // that's "correct" to force to when two different fields
+      // updated at once, so this no longer touches tab visibility at
+      // all and leans on the feedback line below (which already
+      // names both) instead.
       const feedback = document.getElementById('ma-dock-feedback');
       if (feedback) feedback.textContent = `\u2713 Synced ${parts.join(' & ')} from Overhead & Manpower Calculator.`;
     }
@@ -595,7 +657,34 @@ function initSync() {
    buttons live: printing-calculator has no entry below (see the
    note at the top of this file for why), and each "Pull from"
    button now sits inside the specific calc-tab whose data it fills,
-   rather than a single shared connector row. ============================================================ */
+   rather than a single shared connector row.
+
+   2026-09-17: retrofitted onto panel-toggle.js per
+   PANEL_TOGGLE_STANDARD.md, same standard and same reference
+   implementation (interactive-costing-analysis.js's
+   initToolDockConnectors/rzFillToolDock) as the calc-tabs above —
+   this page was the other surface that doc named directly as
+   stacking. The old rzLoadToolIntoDock() both toggled visibility AND
+   did the fetch/inject; that's now split in two, matching the
+   reference: panel-toggle.js's rzTogglePanel() owns opening/closing/
+   scrolling the shared dock element, and rzFillToolDock() below is
+   purely its onOpen hook — the fetch-inject-execute work, nothing
+   about visibility.
+
+   One wrinkle the reference didn't have: Fixed Overhead's and
+   Manpower's own "Pull from Overhead & Manpower Calculator" buttons
+   both load the SAME underlying tool. They're registered as two
+   DISTINCT panel-toggle keys anyway (own trigger button each, so
+   each button's own active-state highlight stays correct — a shared
+   key would only remember the last-registered trigger), but both
+   keys' onOpen calls rzFillToolDock with the same real tool key
+   ('overhead-manpower-calculator'). rzFillToolDock's own
+   already-loaded check (dock.dataset.openTool === toolKey) still
+   works correctly switching between those two triggers: closing one
+   and opening the other hides then immediately re-shows the same
+   dock element within one synchronous call, so there's no visible
+   flicker, and the content is recognised as already-loaded and left
+   alone rather than refetched. ============================================================ */
 
 const TOOL_DOCK_CONFIG = {
   'menu-calculator': { scriptUrl: 'menu-calculator.js', theme: 'theme-menu' },
@@ -624,33 +713,65 @@ function rzRunIsolated(scriptText, sourceKey) {
   document.getElementById('tool-dock-body').appendChild(scriptEl);
 }
 
-function setDockVisible(visible) {
-  document.getElementById('tool-dock').hidden = !visible;
+// Registers all three "Pull from" buttons into one panel-toggle
+// group sharing the single #tool-dock element as their panelEl —
+// exactly what panel-toggle.js's shared-panelEl-across-keys support
+// is for (see its own header comment). Click a tool's own button
+// while it's showing and the dock now closes, matching every other
+// retrofitted panel on the site, instead of the old re-show-and-
+// scroll no-op.
+function initToolDockConnectors() {
+  const dock = document.getElementById('tool-dock');
+
+  rzRegisterPanel('ma-tool-dock', 'menu-calculator', {
+    triggerEl: document.getElementById('ma-pull-menu'),
+    panelEl: dock,
+    onOpen: () => rzFillToolDock('menu-calculator'),
+  });
+  rzRegisterPanel('ma-tool-dock', 'overhead-fixed', {
+    triggerEl: document.getElementById('ma-pull-overhead-fixed'),
+    panelEl: dock,
+    onOpen: () => rzFillToolDock('overhead-manpower-calculator'),
+  });
+  rzRegisterPanel('ma-tool-dock', 'overhead-manpower', {
+    triggerEl: document.getElementById('ma-pull-overhead-manpower'),
+    panelEl: dock,
+    onOpen: () => rzFillToolDock('overhead-manpower-calculator'),
+  });
+
+  document.getElementById('tool-dock-close').addEventListener('click', () => rzCloseAllPanels('ma-tool-dock'));
 }
 
-async function rzLoadToolIntoDock(key) {
-  if (typeof RZ_TOOLS === 'undefined' || !RZ_TOOLS[key]) return;
-  const dockConfig = TOOL_DOCK_CONFIG[key];
+// Purely the fetch-inject-execute work now — panel-toggle.js has
+// already made the dock visible and is about to (or has just)
+// scrolled it into place by the time this runs. Takes the REAL tool
+// key ('menu-calculator' / 'overhead-manpower-calculator'), not the
+// panel-toggle key, since two different panel-toggle keys above both
+// resolve to the same tool here.
+async function rzFillToolDock(toolKey) {
+  if (typeof RZ_TOOLS === 'undefined' || !RZ_TOOLS[toolKey]) return;
+  const dockConfig = TOOL_DOCK_CONFIG[toolKey];
   if (!dockConfig) return; // e.g. printing-calculator — not offered from this page
-  const tool = RZ_TOOLS[key];
+  const tool = RZ_TOOLS[toolKey];
   const dock = document.getElementById('tool-dock');
   const body = document.getElementById('tool-dock-body');
   const titleEl = document.getElementById('tool-dock-title');
   const feedback = document.getElementById('ma-dock-feedback');
   if (feedback) feedback.textContent = '';
 
-  if (dock.dataset.openTool === key) {
-    setDockVisible(true);
-    dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
+  dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Already this exact tool sitting in the dock (we were just
+  // hidden, or the OTHER trigger for this same tool was clicked) —
+  // nothing to refetch, and refetching would lose whatever's been
+  // typed in there. Switching to the genuinely different tool below
+  // still does a full fresh reload, the natural way to reset one.
+  if (dock.dataset.openTool === toolKey) return;
 
   dock.className = 'tool-dock ' + dockConfig.theme;
-  dock.dataset.openTool = key;
+  dock.dataset.openTool = toolKey;
   titleEl.textContent = tool.label;
   body.innerHTML = '<p class="tool-dock-status">Loading\u2026</p>';
-  setDockVisible(true);
-  dock.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   try {
     const html = await fetch(tool.url).then((r) => {
@@ -678,7 +799,7 @@ async function rzLoadToolIntoDock(key) {
       body.appendChild(section);
     });
 
-    rzRunIsolated(scriptText, key);
+    rzRunIsolated(scriptText, toolKey);
   } catch (err) {
     body.innerHTML = '<p class="tool-dock-status is-error">Couldn\u2019t load this here (' + err.message + '). <a href="' + tool.url + '" target="_blank" rel="noopener">Open ' + tool.label + ' in a new tab instead</a>.</p>';
   }
@@ -1176,15 +1297,58 @@ function gatherExportData() {
   };
 }
 
-function exportData() {
-  const data = gatherExportData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+// Shared Blob-and-anchor download, same shape EXPORT_IMPORT_FORMAT.md
+// documents and every other tool's own exportXxxData() already uses —
+// copied here rather than imported, same "each page stays independent,
+// no build step" reasoning as the formatRM/num duplication elsewhere.
+function downloadJSONFile(filename, dataObj) {
+  const blob = new Blob([JSON.stringify(dataObj, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  const stamp = new Date().toISOString().slice(0, 7);
-  a.href = url; a.download = `margin-audit-${stamp}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// 2026-09-17: the ONE new piece EXPORT_IMPORT_FORMAT.md actually asked
+// this page to build — Costing Analysis's importer has read the
+// receiving half of this shape since 2026-09-08 (importedQuadrants,
+// matched by blockId then name) but nothing here ever produced a file
+// in it. Deliberately a SEPARATE, much smaller file than
+// gatherExportData()'s own private save format below: this one exists
+// purely for another TOOL to read (just enough to answer "what
+// quadrant is this dish"), not to reload this page's own state, so it
+// carries none of the rent/manpower/gas/wizard-answer fields that
+// round-trip is built around.
+function gatherCrossToolExportData() {
+  const dishes = (lastComputedResults ? lastComputedResults.dishes : [])
+    .filter((d) => d.quadrant) // no quadrant (e.g. zero total volume) -> nothing useful to hand off
+    .map((d) => ({
+      blockId: d.panel && d.panel.dataset.syncedBlockId ? d.panel.dataset.syncedBlockId : undefined,
+      name: d.name,
+      // Title-cased to match the doc's own worked example ("Star", not
+      // "star") — computeQuadrant()'s internal lowercase is fine
+      // either way per that doc's own wording, this is just tidier
+      // for whatever reads it back and displays it verbatim.
+      quadrant: d.quadrant.charAt(0).toUpperCase() + d.quadrant.slice(1),
+      price: d.price,
+      volumeDay: d.volumeDay,
+      cost: d.ingredientCost,
+      contributionMargin: d.cmPerPortion,
+    }));
+  return {
+    rzExportType: 'margin-audit-calculator',
+    rzExportVersion: 1,
+    exportedAt: new Date().toISOString(),
+    dishes,
+  };
+}
+
+function exportCrossToolData() {
+  downloadJSONFile('margin-analysis-export.json', gatherCrossToolExportData());
 }
 
 function importData(file) {
@@ -1239,14 +1403,16 @@ function importData(file) {
     finishWizard();
     recalculateAll();
 
-    // Loaded data touches every tab in Margin Calculation, so open
-    // all four to confirm at a glance that everything came in —
-    // easier to close ones you don't need than to go hunting for
-    // silently-updated fields behind a closed tab.
-    setCalcTabOpen('menu', true);
-    setCalcTabOpen('fixed', true);
-    setCalcTabOpen('variable', true);
-    setCalcTabOpen('manpower', true);
+    // 2026-09-17: used to force all four calc-tabs open here so
+    // everything reloaded was visible at a glance — impossible now
+    // that calc-tabs are single-open (panel-toggle.js,
+    // PANEL_TOGGLE_STANDARD.md). Not a lost confirmation though:
+    // Results (finishWizard/recalculateAll above) already reflects
+    // every reloaded number the moment this runs, and Results —
+    // not the input tabs — is this page's own designed primary
+    // confirmation surface (see the page intro copy). initCalcTabs()
+    // already leaves Menu Analyzer as the one open tab by default,
+    // which is left as-is here rather than second-guessed.
 
     if (previousMarginText) {
       const note = document.getElementById('ma-compare-note');
@@ -1262,6 +1428,20 @@ function importData(file) {
 
 function saveDataSnapshot() {
   const data = gatherExportData();
+
+  // 2026-09-17 bug fix: this button (and the printed copy's own text,
+  // two lines down) always CLAIMED to produce something re-importable
+  // next month, but only ever called window.print() — no file was
+  // ever written, so "Load previous month's data" (importData(), which
+  // reads data.tool === 'margin-audit-calculator' JSON) had nothing
+  // valid to load. gatherExportData() already builds exactly the
+  // shape importData() expects; the only thing missing was actually
+  // downloading it. Doing that FIRST, before the print dialog opens,
+  // so a slow/cancelled print never gets in the way of the file
+  // itself landing in Downloads.
+  const stamp = new Date().toISOString().slice(0, 10);
+  downloadJSONFile(`margin-audit-${stamp}.json`, data);
+
   let view = document.getElementById('ma-print-data-view');
   if (!view) {
     view = document.createElement('div');
@@ -1432,6 +1612,7 @@ function init() {
   document.getElementById('ma-edit-answers').addEventListener('click', editAnswers);
   document.getElementById('ma-save-pdf').addEventListener('click', () => window.print());
   document.getElementById('ma-print-summary').addEventListener('click', printCostSummary);
+  document.getElementById('ma-export-data').addEventListener('click', exportCrossToolData);
   document.getElementById('ma-save-data').addEventListener('click', saveDataSnapshot);
   document.getElementById('ma-import-input').addEventListener('change', (e) => {
     if (e.target.files[0]) importData(e.target.files[0]);
@@ -1452,25 +1633,14 @@ function init() {
   document.getElementById('ma-add-elec-row').addEventListener('click', () => createElecRow());
   ELECTRICITY_DEFAULTS.forEach((preset) => createElecRow(preset));
 
-  // Margin Calculation's four independent tab toggles + Reset All —
-  // see setCalcTabOpen/toggleCalcTab/resetAllCalculationData above.
-  document.querySelectorAll('.ma-calc-tab[data-calc-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => toggleCalcTab(btn.dataset.calcTab));
-  });
+  // Margin Calculation's four calc-tabs (single-open, panel-toggle.js)
+  // + the tool dock's three "Pull from" triggers (a separate
+  // panel-toggle group) + Reset All. See initCalcTabs() and
+  // initToolDockConnectors() above for why these are two different
+  // groups rather than one.
+  initCalcTabs();
   document.getElementById('ma-reset-all').addEventListener('click', resetAllCalculationData);
-  setCalcTabOpen('menu', true);
-  setCalcTabOpen('fixed', false);
-  setCalcTabOpen('variable', false);
-  setCalcTabOpen('manpower', false);
-
-  // "Pull from" buttons now live inside their relevant tab instead
-  // of a shared connector row, but they all still just carry
-  // data-open-tool and feed the same rzLoadToolIntoDock — no per-
-  // button special-casing needed.
-  document.querySelectorAll('[data-open-tool]').forEach((btn) => {
-    btn.addEventListener('click', () => rzLoadToolIntoDock(btn.dataset.openTool));
-  });
-  document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
+  initToolDockConnectors();
 
   document.getElementById('rz-back-to-results').addEventListener('click', () => {
     document.getElementById('ma-analysis').scrollIntoView({ behavior: 'smooth', block: 'start' });
