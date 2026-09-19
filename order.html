@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order</title>
+  <meta name="description" content="Scan, browse, order — no app, no login.">
+  <meta name="robots" content="noindex">
+  <!-- No site header/nav on this page, on purpose. A customer scanning a
+       QR at a table has landed here to order, not to browse the rest of
+       Reysourcez — the full site chrome would be noise. This is the one
+       page on the whole site that intentionally doesn't look like the
+       other calculators for that reason; see qr-listing-creator.html for
+       the seller-facing side, which DOES carry the usual nav. -->
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=17">
+
+  <style>
+    body { padding-bottom: 92px; background: var(--paper); }
+    #ord-loading { padding: 60px 24px; text-align: center; color: var(--muted); font-family: var(--font-body); }
+
+    .ord-header { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); padding: 14px 20px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .ord-header-info strong { font-family: var(--font-display); font-size: 1.15rem; color: var(--ink); }
+    .ord-context-badge { display: inline-block; margin-left: 10px; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-dark); font-size: 0.8rem; font-weight: 600; }
+
+    .ord-video-banner video { width: 100%; display: block; max-height: 220px; object-fit: cover; }
+
+    .ord-section-title { font-family: var(--font-display); font-size: 1.2rem; margin: 20px 20px 10px; color: var(--ink); }
+    .ord-picks-row { display: flex; gap: 12px; overflow-x: auto; padding: 0 20px 6px; scroll-snap-type: x proximity; }
+    .ord-picks-row .ord-product-card { flex: 0 0 190px; scroll-snap-align: start; }
+
+    .ord-cat-tabs { position: sticky; top: 57px; z-index: 4; display: flex; gap: 6px; overflow-x: auto; padding: 10px 20px; background: var(--paper); border-bottom: 1px solid var(--line); }
+    .ord-cat-tab { flex-shrink: 0; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-family: var(--font-body); font-weight: 600; font-size: 0.85rem; color: var(--muted); cursor: pointer; }
+    .ord-cat-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ord-cat-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
+    .ord-product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 14px; padding: 0 20px 20px; }
+    .ord-product-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+    .ord-card-img { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: var(--paper); }
+    .ord-card-img-placeholder { background: linear-gradient(150deg, var(--accent-soft), var(--paper) 70%); }
+    .ord-card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+    .ord-card-name { font-family: var(--font-display); font-size: 1rem; color: var(--ink); }
+    .ord-card-desc { font-size: 0.85rem; color: var(--muted); margin: 0; }
+    .ord-card-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .ord-tag { font-size: 0.7rem; padding: 2px 8px; border-radius: 999px; background: var(--paper); color: var(--muted); border: 1px solid var(--line); }
+    .ord-type-badge { align-self: flex-start; font-size: 0.68rem; font-weight: 700; color: var(--accent-dark); text-transform: uppercase; letter-spacing: 0.03em; }
+    .ord-promoted-badge { position: absolute; top: 8px; left: 8px; z-index: 1; font-size: 0.65rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,0.92); color: var(--muted); }
+    .ord-card-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
+    .ord-card-price { font-family: "IBM Plex Mono", monospace; font-weight: 600; color: var(--accent-dark); }
+    .ord-add-btn { padding: 8px 16px; font-size: 0.85rem; cursor: pointer; }
+    .ord-combo-groups { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 10px; }
+    .ord-combo-group-label { font-weight: 600; font-size: 0.85rem; display: block; margin-bottom: 4px; }
+    .ord-combo-option { display: block; font-size: 0.88rem; padding: 4px 0; cursor: pointer; }
+    .ord-combo-confirm { width: 100%; }
+
+    .ord-cart-bar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; padding: 12px 20px; background: var(--ink); box-shadow: 0 -4px 16px rgba(0,0,0,0.15); }
+    .ord-cart-bar button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: none; border: none; color: #fff; font-family: var(--font-body); font-weight: 600; padding: 8px 6px; cursor: pointer; font-size: 0.95rem; }
+
+    .ord-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 29; }
+    .ord-drawer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-height: 85vh; overflow-y: auto; background: var(--surface); border-radius: 16px 16px 0 0; padding: 20px; box-shadow: 0 -8px 30px rgba(0,0,0,0.2); }
+    .ord-drawer-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .ord-drawer-header h2 { margin: 0; font-size: 1.2rem; }
+    .ord-drawer-header button { background: none; border: none; font-size: 1.8rem; line-height: 1; cursor: pointer; color: var(--muted); padding: 0 6px; }
+
+    .ord-cart-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .ord-cart-row-info { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .ord-cart-row-opts { font-size: 0.78rem; color: var(--muted); }
+    .ord-qty-stepper { display: flex; align-items: center; gap: 8px; }
+    .ord-qty-stepper button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper); cursor: pointer; font-size: 1rem; line-height: 1; }
+    .ord-cart-row-price { font-family: "IBM Plex Mono", monospace; min-width: 70px; text-align: right; font-size: 0.9rem; }
+    .ord-cart-total-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; font-size: 1.1rem; border-top: 2px solid var(--ink); margin-top: 6px; }
+    .ord-pwp-card { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--accent-soft); border-radius: 10px; padding: 12px 14px; margin: 12px 0; font-size: 0.88rem; }
+    .ord-order-type-tabs { display: flex; gap: 8px; margin: 16px 0 10px; }
+    .ord-ot-tab { flex: 1; padding: 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; font-size: 0.85rem; cursor: pointer; }
+    .ord-ot-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .ord-ot-fields { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+    .ord-ot-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; color: var(--text); }
+    .ord-ot-fields input, .ord-ot-fields textarea { padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); font-size: 0.92rem; }
+    .ord-note { font-size: 0.8rem; color: var(--muted); text-align: center; margin: 10px 0; }
+    .ord-empty { color: var(--muted); text-align: center; padding: 20px 0; }
+    .ord-status { min-height: 1.3em; text-align: center; font-size: 0.88rem; margin-top: 8px; }
+    .ord-status.is-error { color: #C0392B; font-weight: 600; }
+    .ord-place-order { width: 100%; margin-top: 4px; }
+
+    .ord-summary-code { font-family: var(--font-display); font-size: 2.4rem; font-weight: 700; text-align: center; color: var(--accent-dark); }
+    .ord-summary-sub { text-align: center; color: var(--muted); margin: 4px 0 18px; }
+    .ord-summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 0.92rem; }
+    .ord-summary-total { display: flex; justify-content: space-between; padding: 14px 0; font-size: 1.1rem; border-top: 2px solid var(--ink); margin: 4px 0 16px; }
+    #ord-new-order { width: 100%; }
+
+    .ord-toast { position: fixed; bottom: 100px; left: 50%; transform: translate(-50%, 10px); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 0.85rem; opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease; z-index: 40; white-space: nowrap; }
+    .ord-toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (min-width: 700px) {
+      .ord-drawer { left: 50%; right: auto; width: 420px; transform: translateX(-50%); border-radius: 16px; bottom: 20px; max-height: 80vh; }
+    }
+  </style>
+</head>
+<body>
+
+  <main id="ord-loading">Loading the menu&hellip;</main>
+
+  <div id="ord-app" hidden>
+    <header class="ord-header">
+      <div class="ord-header-info">
+        <strong id="ord-biz-name"></strong>
+        <span class="ord-context-badge" id="ord-context-badge"></span>
+      </div>
+    </header>
+
+    <div class="ord-video-banner" id="ord-video-banner" hidden>
+      <video id="ord-video" autoplay muted loop playsinline></video>
+    </div>
+
+    <section id="ord-picks-section" hidden>
+      <h2 class="ord-section-title">Top picks</h2>
+      <div class="ord-picks-row" id="ord-picks-row"></div>
+    </section>
+
+    <nav class="ord-cat-tabs" id="ord-cat-tabs" hidden aria-label="Categories"></nav>
+
+    <div id="ord-catalog"></div>
+
+    <div class="ord-cart-bar" id="ord-cart-bar" hidden>
+      <button type="button" id="ord-cart-bar-btn">
+        <span id="ord-cart-count">0 items</span>
+        <span id="ord-cart-total">RM0.00</span>
+        <span>View cart</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="ord-drawer-backdrop" id="ord-drawer-backdrop" hidden></div>
+
+  <div class="ord-drawer" id="ord-cart-drawer" hidden>
+    <div class="ord-drawer-header">
+      <h2>Your order</h2>
+      <button type="button" id="ord-cart-close" aria-label="Close cart">&times;</button>
+    </div>
+    <div id="ord-cart-body"></div>
+  </div>
+
+  <div class="ord-drawer" id="ord-summary-drawer" hidden>
+    <div class="ord-drawer-header">
+      <h2>Order placed</h2>
+      <button type="button" id="ord-summary-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="ord-summary-body"></div>
+  </div>
+
+  <script src="order.js?v=1" defer></script>
+</body>
+</html>

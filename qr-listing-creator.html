@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — QR Listing Creator</title>
+  <meta name="description" content="Build a product listing customers reach by scanning a QR code — browse, cart, order. No payment collected here; it hands a clean order summary to however you already take money.">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=17">
+
+  <!-- Page-specific styles only, prefixed qlc- — everything reusable
+       (buttons, wizard-card, result-card, tooltip, toggle-row) comes
+       from styles.css as-is, per AI_BUILD_BRIEF.md. -->
+  <style>
+    .qlc-vertical-picker { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+    .qlc-vertical-btn { flex: 1 1 120px; padding: 14px 10px; border: 2px solid var(--line); border-radius: 8px; background: var(--paper); font-family: var(--font-body); font-weight: 600; color: var(--text); cursor: pointer; }
+    .qlc-vertical-btn.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); }
+    .qlc-vertical-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    #qlc-setup label, #qlc-login-fields label { display: block; text-align: left; font-weight: 600; font-size: 0.9rem; margin: 14px 0 6px; }
+    #qlc-setup input, #qlc-login-fields input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); font-size: 0.95rem; box-sizing: border-box; }
+    #qlc-login-fields { max-width: 420px; margin: 10px auto 0; text-align: left; }
+    .qlc-status { min-height: 1.4em; font-size: 0.9rem; margin-top: 12px; }
+    .qlc-status.is-error { color: #C0392B; font-weight: 600; }
+    .qlc-status.is-ok { color: var(--accent-dark); font-weight: 600; }
+
+    .qlc-admin-key-banner { border: 3px solid #D4A017; background: #FFFBF0; border-radius: 12px; padding: 18px 20px; margin-bottom: 20px; }
+    .qlc-admin-key-banner strong { display: block; font-family: var(--font-display); font-size: 1.1rem; margin-bottom: 6px; }
+    .qlc-key-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+    .qlc-key-row code { font-family: "IBM Plex Mono", monospace; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 0.9rem; }
+
+    .qlc-biz-summary { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+    .qlc-biz-summary strong { font-family: var(--font-display); font-size: 1.4rem; color: var(--ink); }
+
+    /* Mutually exclusive tabs — matches menu-calculator.js's cost-mode-tab
+       pattern exactly (one panel visible at a time), per AI_BUILD_BRIEF.md's
+       2026-09-08 UI rule. */
+    .qlc-calc-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 24px; }
+    .qlc-calc-tab { background: var(--surface); border: 2px solid var(--line); border-radius: 999px; padding: 10px 20px; font-family: var(--font-body); font-weight: 600; font-size: 0.92rem; color: var(--text); cursor: pointer; }
+    .qlc-calc-tab:hover { border-color: var(--accent); color: var(--accent-dark); }
+    .qlc-calc-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .qlc-calc-tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+    .qlc-product-row { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 20px; margin-bottom: 18px; }
+    .qlc-product-row-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .qlc-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
+    .qlc-field-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 0.85rem; font-weight: 600; color: var(--text); }
+    .qlc-field-grid input, .qlc-field-grid select, .qlc-field-grid textarea { padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.9rem; }
+    .qlc-field-grid input:focus-visible, .qlc-field-grid select:focus-visible, .qlc-field-grid textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .qlc-featured-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-weight: 600; font-size: 0.9rem; }
+    .qlc-combo-builder { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--line); }
+    .qlc-combo-group-row { background: var(--paper); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+    .qlc-combo-option-row { display: flex; gap: 8px; margin: 6px 0; align-items: center; }
+    .qlc-combo-option-row input[type="text"] { flex: 1; }
+    .qlc-combo-option-row input[type="number"] { width: 90px; }
+    .qlc-row-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+
+    .qlc-qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
+    .qlc-qr-card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; text-align: center; background: var(--surface); }
+    .qlc-qr-card img { width: 100%; max-width: 160px; margin: 0 auto 10px; }
+    .qlc-qr-card strong { display: block; font-family: var(--font-display); margin-bottom: 4px; }
+    .qlc-qr-card a { font-size: 0.78rem; word-break: break-all; }
+
+    .qlc-orders-table { width: 100%; border-collapse: collapse; }
+    .qlc-orders-table th, .qlc-orders-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 0.88rem; }
+    .qlc-orders-table th { font-family: var(--font-body); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); background: var(--paper); }
+
+    #qlc-quick-nav { position: fixed; bottom: 24px; right: 24px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .qlc-quick-nav-btn { background: #fff; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-dark); padding: 8px 14px; font-family: var(--font-body); font-weight: 600; font-size: 0.78rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.14); white-space: nowrap; }
+    .qlc-quick-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    @media print { #qlc-quick-nav { display: none !important; } }
+
+    @media (max-width: 800px) { .qlc-field-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <!-- Includes every tool that actually exists as of this build,
+               Rental Calculator + Market Radar included (neither lists the
+               other yet on their OWN pages — flagged separately, not fixed
+               here per AI_BUILD_BRIEF.md's "reconciled centrally" rule).
+               "Cost Structure Checker" is reserved at slot 10 in
+               NAV_ORDER_STANDARD.md but isn't built, so it's skipped here
+               per that doc's own rule against linking to pages that don't
+               exist — this tool renders as the 10th LIVE link for now, and
+               should move to make room the moment Cost Structure Checker
+               ships, to match its reserved slot 11. -->
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
+            <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="rental-calculator.html">Rental Calculator</a></li>
+            <li><a href="market-radar.html">Market Radar</a></li>
+            <li><a href="qr-listing-creator.html" aria-current="page">QR Listing Creator</a></li>
+          </ul>
+        </li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap calc-intro-header">
+        <div>
+          <span class="eyebrow">Free tool &middot; your listing's data lives in its own database, not ours</span>
+          <h1>QR Listing Creator</h1>
+          <p class="lead">Set up a product listing customers reach by scanning a QR code — they browse, build a cart, place an order. No payment is collected here on purpose: placing an order produces a clean summary, and however you already take money (a POS, or cash at the counter) works from that.</p>
+        </div>
+        <button type="button" id="qlc-save-pdf" class="btn btn-secondary no-print">Save as PDF</button>
+      </div>
+    </section>
+
+    <!-- ============ SETUP / LOGIN ============ -->
+    <section class="ica-panel" id="qlc-setup-section">
+      <div class="wrap">
+        <div class="wizard-card" id="qlc-setup" style="max-width:480px;">
+          <h3>Set up your listing</h3>
+          <label for="qlc-setup-name">Business name
+            <input type="text" id="qlc-setup-name" placeholder="e.g. Warong Mama">
+          </label>
+          <p class="toggle-hint" style="text-align:left; margin:14px 0 0;">What are you selling?</p>
+          <div class="qlc-vertical-picker" role="tablist">
+            <button type="button" class="qlc-vertical-btn is-active" data-vertical="fnb">Food &amp; Drink</button>
+            <button type="button" class="qlc-vertical-btn" data-vertical="retail">Retail</button>
+            <button type="button" class="qlc-vertical-btn" data-vertical="service">Services</button>
+          </div>
+          <label for="qlc-setup-tables" id="qlc-setup-tables-label">Number of tables <span class="toggle-hint">(one QR each — you can change this later)</span>
+            <input type="number" id="qlc-setup-tables" min="0" max="200" value="10">
+          </label>
+          <button type="button" class="btn btn-primary" id="qlc-setup-submit" style="margin-top:18px; width:100%;">Create my listing</button>
+          <p class="qlc-status" id="qlc-setup-status" role="status"></p>
+        </div>
+
+        <p class="structure-note" style="text-align:center; margin-top:20px;">Already set up on another device? <button type="button" class="link-btn" id="qlc-show-login" style="margin:0;">Enter your business ID and admin key</button></p>
+        <div id="qlc-login-fields" hidden>
+          <label for="qlc-login-biz">Business ID<input type="text" id="qlc-login-biz"></label>
+          <label for="qlc-login-key">Admin key<input type="text" id="qlc-login-key"></label>
+          <button type="button" class="btn btn-secondary" id="qlc-login-submit" style="width:100%; margin-top:6px;">Open my listing</button>
+          <p class="qlc-status" id="qlc-login-status" role="status"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MANAGE ============ -->
+    <section class="ica-panel" id="qlc-manage" hidden>
+      <div class="wrap">
+        <div class="qlc-admin-key-banner" id="qlc-admin-key-banner" hidden>
+          <strong>Save this somewhere safe &mdash; it's the only way back in</strong>
+          <p class="structure-note" style="margin:0;">There's no login system yet, so this key <em>is</em> your access. Anyone who has it can edit this listing.</p>
+          <div class="qlc-key-row">
+            <span>Business ID: <code id="qlc-key-biz"></code></span>
+            <span>Admin key: <code id="qlc-key-key"></code></span>
+            <button type="button" class="btn btn-secondary" id="qlc-copy-link">Copy my admin link</button>
+          </div>
+        </div>
+
+        <div class="qlc-biz-summary">
+          <strong id="qlc-biz-name"></strong>
+          <span class="toggle-hint" id="qlc-biz-vertical"></span>
+        </div>
+
+        <div class="qlc-calc-tabs" id="qlc-calc-tabs" role="tablist">
+          <button type="button" class="qlc-calc-tab is-active" data-tab="products" aria-expanded="true">Products</button>
+          <button type="button" class="qlc-calc-tab" data-tab="tables" aria-expanded="false">Tables &amp; QR</button>
+          <button type="button" class="qlc-calc-tab" data-tab="settings" aria-expanded="false">Settings</button>
+          <button type="button" class="qlc-calc-tab" data-tab="orders" aria-expanded="false">Orders</button>
+        </div>
+
+        <!-- ---- PRODUCTS ---- -->
+        <div class="qlc-panel" id="qlc-panel-products" data-panel="products">
+          <p class="menu-builder-intro">Single items, seller-built <strong>sets</strong> (a fixed bundle at one price), or <strong>combos</strong> (customer picks one option per group &mdash; e.g. choose a drink). Mark up to a few as Featured &mdash; they show as Top Picks and also rotate through a native "Promoted" tile on the customer page, in place of a separate ad slot.</p>
+          <div id="qlc-product-list"></div>
+          <div class="calc-actions no-print"><button type="button" class="btn btn-primary" id="qlc-add-product">+ Add product</button></div>
+        </div>
+
+        <!-- ---- TABLES & QR ---- -->
+        <div class="qlc-panel" id="qlc-panel-tables" data-panel="tables" hidden>
+          <p class="menu-builder-intro">Print one of these per table. Each QR opens your listing pre-filled with that table number, so an order arrives already tagged &mdash; no typing needed from the customer. Takeaway and delivery get their own QR too, for a counter, a window, or a flyer.</p>
+          <div class="qlc-qr-grid" id="qlc-qr-grid"></div>
+        </div>
+
+        <!-- ---- SETTINGS ---- -->
+        <div class="qlc-panel" id="qlc-panel-settings" data-panel="settings" hidden>
+          <div class="qlc-field-grid" style="margin-bottom:24px;">
+            <label>Number of tables <input type="number" id="qlc-set-tables" min="0" max="200"></label>
+            <label>Video banner URL <span class="toggle-hint">short, muted, looping clip</span><input type="text" id="qlc-set-video" placeholder="https://…"></label>
+          </div>
+          <h3 style="font-size:1.05rem;">Purchase-with-purchase<span class="tooltip-icon" data-tooltip="When the trigger item is in the cart, the offer item is nudged as a cheap add-on — one rule for now.">?</span></h3>
+          <div class="qlc-field-grid">
+            <label>If cart has&hellip; <select id="qlc-pwp-trigger"></select></label>
+            <label>&hellip;offer <select id="qlc-pwp-offer"></select></label>
+            <label>At this price (RM) <input type="number" id="qlc-pwp-price" min="0" step="0.01" placeholder="leave blank = normal price"></label>
+          </div>
+          <div class="calc-actions no-print"><button type="button" class="btn btn-primary" id="qlc-save-settings">Save settings</button></div>
+          <p class="qlc-status" id="qlc-settings-status" role="status"></p>
+        </div>
+
+        <!-- ---- ORDERS ---- -->
+        <div class="qlc-panel" id="qlc-panel-orders" data-panel="orders" hidden>
+          <p class="structure-note">Raw list for now &mdash; trends, bestsellers, and the Star / Plowhorse / Puzzle / Dog breakdown (the same classification Margin Analysis already uses) are next, once there's real order history to show it against.</p>
+          <div class="calc-actions no-print"><button type="button" class="btn btn-secondary" id="qlc-refresh-orders">Refresh</button></div>
+          <div class="table-scroll">
+            <table class="qlc-orders-table">
+              <thead><tr><th>Order</th><th>Type</th><th>Items</th><th>Total</th><th>When</th></tr></thead>
+              <tbody id="qlc-orders-rows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <div id="qlc-quick-nav" class="no-print" hidden>
+    <button type="button" class="qlc-quick-nav-btn" data-tab="products">Products</button>
+    <button type="button" class="qlc-quick-nav-btn" data-tab="tables">Tables &amp; QR</button>
+    <button type="button" class="qlc-quick-nav-btn" data-tab="settings">Settings</button>
+    <button type="button" class="qlc-quick-nav-btn" data-tab="orders">Orders</button>
+  </div>
+
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="qr-listing-creator.js?v=1" defer></script>
+</body>
+</html>
