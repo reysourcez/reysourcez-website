@@ -1,4 +1,4 @@
-<!-- Version: v4.4-autoscale (Based on v4.3 Default Best) -->
+<!-- Version: v4.5-dynamic-auto -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -54,7 +54,7 @@
   <div class="container">
     <div class="card">
       <h1 class="card-title">Form & Payment Voucher Scanner</h1>
-      <p class="card-subtitle">Upload a scanned form photo or an existing PDF document to generate a structured fillable PDF.</p>
+      <p class="card-subtitle">Upload a scanned form photo or PDF document to generate an exactly dimensioned fillable PDF.</p>
 
       <div class="upload-area" id="fs-upload-zone">
         <p id="fs-upload-prompt">Click or drag & drop voucher photo or PDF here</p>
@@ -62,13 +62,13 @@
         <img id="fs-preview-img" class="preview-img" hidden alt="Form Preview">
         <div id="fs-pdf-preview" style="display:none; padding: 1rem; background: #f8fafc; border-radius: 4px; border: 1px solid var(--border); margin-top: 1rem; text-align: center;">
           <p id="fs-pdf-filename" style="font-weight: 600; font-size: 0.9rem; color: var(--text);"></p>
-          <span style="font-size: 0.75rem; color: var(--text-muted);">PDF Document Ready for Analysis</span>
+          <span id="fs-pdf-meta" style="font-size: 0.75rem; color: var(--text-muted);">PDF Document Ready</span>
         </div>
       </div>
 
       <div class="input-group">
-        <label for="fs-note">Optional scan guidance/instructions:</label>
-        <input type="text" id="fs-note" placeholder="e.g. Ensure 2-column header (Auto-detects A4/A5 unless overridden here)">
+        <label for="fs-note">Optional guidance (Preserves original paper size unless forced below):</label>
+        <input type="text" id="fs-note" placeholder="e.g. Type 'A4' or 'A5' or 'Landscape' to override original size">
       </div>
 
       <button id="fs-scan-btn" class="btn" disabled>Scan & Extract Form Structure</button>
