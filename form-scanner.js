@@ -1,28 +1,16 @@
 /* ============================================================
    Form Scanner Frontend Engine
-   Version: v4.1-pdf-input - 2026-09-20
-   ============================================================ */
-console.info('[Form Scanner] Engine initialized: v4.1-pdf-input');
-
-const MAX_IMAGE_EDGE = 1280;
-const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
-const PAGE_W = 595.28; // Standard A4 Width
-const PAGE_H = 841.89; // Standard A4 Height
-const MARGIN = 36;
-const CONTENT_W = PAGE_W - (MARGIN * 2);
-
-let currentImageBase64 = null;
-let currentMimeType = 'image/jpeg';
-let lastResult = null;
-
-function setStatus(text, isError) {
+   Version: v4.1-pdf-support - 2026-09-20
+   ============================================================ 
+   */console.info('[Form Scanner] Engine initialized: v4.1-pdf-support');const 
+      MAX_IMAGE_EDGE = 1280;
+const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev;
+const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4 Heightconst MARGIN = 36;const CONTENT_W = PAGE_W - (MARGIN * 2);let currentFileBase64 = null;let currentMimeType = 'image/jpeg';let lastResult = null;function setStatus(text, isError) {
   const el = document.getElementById('fs-status');
   if (!el) return;
   el.textContent = text;
   el.className = 'status-box active' + (isError ? ' is-error' : '');
-}
-
-function cleanPdfText(str) {
+}function cleanPdfText(str) {
   if (str == null) return '';
   return String(str)
     .replace(/[\r\n\t]+/g, ' ')
@@ -33,10 +21,9 @@ function cleanPdfText(str) {
     .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function processImageFile(file) {
+}function resizeImageToBase64(file) {
   return new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) return reject(new Error("Selected file is not an image."));
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Failed reading file.'));
     reader.onload = () => {
@@ -54,93 +41,71 @@ function processImageFile(file) {
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl, mimeType: 'image/jpeg' });
+        resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl });
       };
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
   });
-}
-
-function processPdfFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed reading PDF file.'));
-    reader.onload = async () => {
-      try {
-        const typedArray = new Uint8Array(reader.result);
-        const loadingTask = pdfjsLib.getDocument({ data: typedArray });
-        const pdfDoc = await loadingTask.promise;
-        const page = await pdfDoc.getPage(1); // Render first page for analysis
-
-        const viewport = page.getViewport({ scale: 1.5 });
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.height = viewport.height;
-        canvas.width = viewport.width;
-
-        await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-        let width = canvas.width;
-        let height = canvas.height;
-        if (width > MAX_IMAGE_EDGE || height > MAX_IMAGE_EDGE) {
-          const scale = MAX_IMAGE_EDGE / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-
-          const resizeCanvas = document.createElement('canvas');
-          resizeCanvas.width = width;
-          resizeCanvas.height = height;
-          resizeCanvas.getContext('2d').drawImage(canvas, 0, 0, width, height);
-          const dataUrl = resizeCanvas.toDataURL('image/jpeg', 0.9);
-          resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl, mimeType: 'image/jpeg' });
-        } else {
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-          resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl, mimeType: 'image/jpeg' });
-        }
-      } catch (err) {
-        reject(new Error('PDF parsing failed: ' + (err.message || 'Unknown error')));
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-async function handleFileSelect(e) {
+}async function handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
-  setStatus('Processing uploaded document\u2026');
+
+  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+  const isImage = file.type.startsWith('image/');
+
+  if (!isPdf && !isImage) {
+    return setStatus('Selected file must be an image or a PDF document.', true);
+  }
+
+  setStatus('Processing uploaded file\u2026');
   try {
-    let result;
-    if (file.type === 'application/pdf') {
-      result = await processPdfFile(file);
-    } else if (file.type.startsWith('image/')) {
-      result = await processImageFile(file);
+    if (isPdf) {
+      const base64Data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Failed reading PDF file.'));
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(file);
+      });
+
+      currentFileBase64 = base64Data;
+      currentMimeType = 'application/pdf';
+
+      const img = document.getElementById('fs-preview-img');
+      img.hidden = true;
+      const pdfPreview = document.getElementById('fs-pdf-preview');
+      if (pdfPreview) {
+        pdfPreview.style.display = 'block';
+        document.getElementById('fs-pdf-filename').textContent = file.name;
+      }
+      document.getElementById('fs-upload-prompt').hidden = true;
+      document.getElementById('fs-scan-btn').disabled = false;
+      setStatus('PDF document ready for analysis.');
     } else {
-      throw new Error('Selected file format is not supported. Please upload an image or PDF.');
+      const { base64, previewUrl } = await resizeImageToBase64(file);
+      currentFileBase64 = base64;
+      currentMimeType = file.type || 'image/jpeg';
+
+      const pdfPreview = document.getElementById('fs-pdf-preview');
+      if (pdfPreview) pdfPreview.style.display = 'none';
+
+      const img = document.getElementById('fs-preview-img');
+      img.src = previewUrl;
+      img.hidden = false;
+      document.getElementById('fs-upload-prompt').hidden = true;
+      document.getElementById('fs-scan-btn').disabled = false;
+      setStatus('Image ready for analysis.');
     }
-
-    currentImageBase64 = result.base64;
-    currentMimeType = result.mimeType;
-
-    const img = document.getElementById('fs-preview-img');
-    img.src = result.previewUrl;
-    img.hidden = false;
-    document.getElementById('fs-upload-prompt').hidden = true;
-    document.getElementById('fs-scan-btn').disabled = false;
-    setStatus('Document ready for analysis.');
   } catch (err) {
     setStatus(err.message || 'File processing failed.', true);
   }
-}
-
-async function scanForm(imageBase64, mimeType, note) {
+}async function scanForm(fileBase64, mimeType, note) {
   let response;
   try {
     response = await fetch(PROXY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: imageBase64, mime_type: mimeType, note }),
+      body: JSON.stringify({ image: fileBase64, mime_type: mimeType, note }),
     });
   } catch (e) {
     throw new Error('Network error: Unable to reach worker service.');
@@ -157,9 +122,7 @@ async function scanForm(imageBase64, mimeType, note) {
 
   if (!response.ok) throw new Error(data.error || `Scan failed with status ${response.status}.`);
   return data;
-}
-
-function renderPreview(result) {
+}function renderPreview(result) {
   document.getElementById('fs-preview-title').textContent = result.title || 'Scanned Form Structure';
   document.getElementById('fs-preview-ref').textContent = result.reference_code || '';
 
@@ -198,10 +161,8 @@ function renderPreview(result) {
 
   document.getElementById('fs-results-section').hidden = false;
   document.getElementById('fs-results-section').scrollIntoView({ behavior: 'smooth' });
-}
-
-async function runScan() {
-  if (!currentImageBase64) return setStatus('Select a document or image file first.', true);
+}async function runScan() {
+  if (!currentFileBase64) return setStatus('Select an image or PDF file first.', true);
 
   const btn = document.getElementById('fs-scan-btn');
   btn.disabled = true;
@@ -209,8 +170,8 @@ async function runScan() {
 
   try {
     const note = document.getElementById('fs-note').value.trim();
-    const result = await scanForm(currentImageBase64, currentMimeType, note);
-    if (!result.recognized) return setStatus('Form format unrecognized. Try uploading a clearer scan or document.', true);
+    const result = await scanForm(currentFileBase64, currentMimeType, note);
+    if (!result.recognized) return setStatus('Form format unrecognized. Try providing a clearer document or photo.', true);
 
     lastResult = result;
     renderPreview(result);
@@ -220,10 +181,7 @@ async function runScan() {
   } finally {
     btn.disabled = false;
   }
-}
-
-/* ================= EXACT STRUCTURAL PDF BUILDER ================= */
-async function buildFillablePdf(result) {
+}/* ================= EXACT STRUCTURAL PDF BUILDER ================= */async function buildFillablePdf(result) {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setTitle(cleanPdfText(result.title) || 'Voucher Form');
@@ -469,9 +427,7 @@ async function buildFillablePdf(result) {
   }
 
   return pdfDoc.save();
-}
-
-async function downloadPdf() {
+}async function downloadPdf() {
   if (!lastResult) return;
   const btn = document.getElementById('fs-download-btn');
   btn.disabled = true;
@@ -494,9 +450,7 @@ async function downloadPdf() {
     btn.disabled = false;
     btn.textContent = 'Download Fillable PDF';
   }
-}
-
-function init() {
+}function init() {
   const photoInput = document.getElementById('fs-photo-input');
   if (photoInput) photoInput.addEventListener('change', handleFileSelect);
 
@@ -505,6 +459,4 @@ function init() {
 
   const downloadBtn = document.getElementById('fs-download-btn');
   if (downloadBtn) downloadBtn.addEventListener('click', downloadPdf);
-}
-
-document.addEventListener('DOMContentLoaded', init);
+}document.addEventListener('DOMContentLoaded', init);
