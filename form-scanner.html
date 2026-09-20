@@ -17,13 +17,6 @@
 
   <link rel="stylesheet" href="styles.css?v=17">
 
-  <!-- Page-specific styles only \u2014 everything reusable (buttons, .calc-panel,
-       .calc-intro, .result-card, .tooltip-icon, --accent, etc.) comes from
-       styles.css as-is, per AI_BUILD_BRIEF.md. New here: the upload zone
-       (copies the visual language of Food Worth's own .fw-upload-zone
-       rather than inventing a new look), the detected-structure preview
-       cards, and the fs- prefixed classes throughout so nothing here can
-       collide with another tool's page-scoped classes. -->
   <style>
     .fs-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; background: var(--surface); max-width: 480px; }
     .fs-upload-zone.has-image { border-style: solid; padding: 20px; }
@@ -42,12 +35,6 @@
     .fs-scope-note { background: var(--paper); border-left: 3px solid var(--accent); border-radius: 6px; padding: 12px 16px; font-size: 0.88rem; color: var(--muted); margin: 18px 0 0; max-width: 640px; }
     .fs-scope-note strong { color: var(--text); }
 
-    /* Detected-structure preview \u2014 a plain-English readout of exactly
-       what will end up in the PDF, shown BEFORE download so a wrong
-       column header or missed field is obvious immediately rather than
-       only discovered after opening the generated file. Deliberately
-       read-only in this first version; see FORM_SCANNER_SETUP_AND_GLOSSARY.md's
-       KIV list for making this editable in a later round. */
     .fs-preview-title { font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 4px; }
     .fs-preview-ref { font-size: 0.82rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; margin: 0 0 20px; }
     .fs-preview-group { margin-bottom: 20px; }
@@ -55,7 +42,7 @@
     .fs-preview-group h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 10px; font-family: var(--font-body); font-weight: 600; }
     .fs-field-tags { display: flex; flex-wrap: wrap; gap: 8px; }
     .fs-field-tag { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 0.85rem; font-weight: 500; color: var(--text); }
-    .fs-field-tag.is-multiline::after { content: " \u2261"; color: var(--muted); }
+    .fs-field-tag.is-multiline::after { content: " \2261"; color: var(--muted); }
 
     .fs-table-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); margin-bottom: 10px; }
     .fs-table-card:last-child { margin-bottom: 0; }
@@ -178,14 +165,8 @@
     </div>
   </footer>
 
-  <!-- pdf-lib builds the actual fillable PDF entirely in the browser \u2014
-       nothing about the finished file ever touches our server, matching
-       the rest of this site's "nothing saved on our side" rule. Pinned
-       version, loaded from cdnjs per this site's existing convention for
-       its two other CDN dependencies (see market-radar.html's own note
-       on why unpinned "@latest" URLs are avoided). -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="form-scanner.js?v=1" defer></script>
+  <script src="form-scanner.js?v=2" defer></script>
 </body>
 </html>
