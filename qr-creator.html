@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reysourcez Enterprise — QR Creator</title>
+  <meta name="description" content="Free QR code generator with real design control — dot and rounded module styles, styled finder eyes, your own colors, and a logo in the center that still scans. Nothing you enter is saved or sent anywhere.">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <!-- styles.css wasn't available in this build session (flagged in
+       QR_CREATOR_NOTES.md) — version number left at the highest one
+       seen elsewhere in the project pending the usual central
+       reconciliation pass, per AI_BUILD_BRIEF.md. -->
+  <link rel="stylesheet" href="styles.css?v=18">
+
+  <!-- Page-specific styles only, per AI_BUILD_BRIEF.md. Every color/
+       font/spacing token below is written as var(--token, fallback)
+       — with styles.css loaded, this page inherits the real site
+       design exactly; without it (as in this build session), the
+       fallback values keep it fully readable and on-brand using
+       colors/fonts pulled from the site's own SVG logo, tooltip
+       styling notes, and class names referenced across every other
+       tool page. Reuses .btn/.calc-panel/.result-card/.tooltip-icon/
+       etc. as-is; new here: the content-type tabs, the style-choice
+       cards, the logo dropzone, and the live preview stage. -->
+  <style>
+    /* styles.css references .sr-only on every calculator page but
+       this build session doesn't have that file to confirm it's
+       defined there — printing-calculator.html already flagged this
+       exact gap once before. Defined defensively here so this page
+       is correct regardless. */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    .qr-box { background: var(--surface, #fff); border: 1px solid var(--line, #D8DCD3); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
+    .qr-box > h2:first-child, .qr-box > h3:first-child { margin-top: 0; }
+
+    /* ---- Content-type tabs ---- */
+    .qr-input-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .qr-input-tab { background: var(--surface, #fff); border: 2px solid var(--line, #D8DCD3); border-radius: 999px; padding: 9px 18px; font-family: var(--font-body, "IBM Plex Sans", sans-serif); font-weight: 600; font-size: 0.88rem; color: var(--text, #1C2B24); cursor: pointer; }
+    .qr-input-tab:hover { border-color: var(--accent, #1F6F5C); color: var(--accent-dark, #195A4A); }
+    .qr-input-tab.is-active { background: var(--accent, #1F6F5C); border-color: var(--accent, #1F6F5C); color: #fff; }
+    .qr-input-tab:focus-visible { outline: 3px solid var(--accent, #1F6F5C); outline-offset: 2px; }
+    .qr-content-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; font-weight: 600; color: var(--text, #1C2B24); margin-bottom: 14px; }
+    .qr-content-panel input[type="text"], .qr-content-panel input[type="email"], .qr-content-panel input[type="tel"], .qr-content-panel input[type="url"], .qr-content-panel select, .qr-content-panel textarea {
+      padding: 9px 11px; border: 1px solid var(--line, #D8DCD3); border-radius: 6px; font-family: var(--font-body, "IBM Plex Sans", sans-serif); font-size: 0.94rem; background: var(--surface, #fff); color: var(--text, #1C2B24); font-weight: 400;
+    }
+    .qr-content-panel textarea { resize: vertical; min-height: 90px; }
+    .qr-content-panel input:focus-visible, .qr-content-panel select:focus-visible, .qr-content-panel textarea:focus-visible { outline: 3px solid var(--accent, #1F6F5C); outline-offset: 1px; }
+    .qr-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 4px 18px; }
+    .qr-field-grid label { margin-bottom: 10px; }
+    .qr-inline-check { flex-direction: row !important; align-items: center; gap: 8px !important; font-weight: 600; cursor: pointer; }
+    .qr-inline-check input { width: 17px; height: 17px; accent-color: var(--accent, #1F6F5C); cursor: pointer; }
+
+    /* ---- Style-choice cards (body style, eye frame, eye ball, logo shape) ---- */
+    .qr-choice-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 20px; }
+    .qr-choice-card { position: relative; }
+    .qr-choice-card input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+    .qr-choice-card label {
+      display: flex; flex-direction: column; align-items: center; gap: 8px; width: 92px; padding: 12px 8px 10px;
+      border: 2px solid var(--line, #D8DCD3); border-radius: 10px; cursor: pointer; background: var(--surface, #fff);
+      font-family: var(--font-body, "IBM Plex Sans", sans-serif); font-size: 0.76rem; font-weight: 600; color: var(--muted, #5C6D64); text-align: center;
+    }
+    .qr-choice-card input:checked + label { border-color: var(--accent, #1F6F5C); background: var(--accent-soft, #DCEAE4); color: var(--accent-dark, #195A4A); }
+    .qr-choice-card input:focus-visible + label { outline: 3px solid var(--accent, #1F6F5C); outline-offset: 2px; }
+    .qr-choice-card label:hover { border-color: var(--accent, #1F6F5C); }
+    .qr-choice-swatch { width: 40px; height: 40px; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 2px; }
+    .qr-choice-swatch span { background: currentColor; color: var(--ink, #16261F); }
+    .qr-swatch-square span { border-radius: 0; }
+    .qr-swatch-dots span { border-radius: 50%; }
+    .qr-swatch-rounded span { border-radius: 30%; }
+    .qr-choice-eye { width: 40px; height: 40px; position: relative; }
+    .qr-choice-eye .frame { position: absolute; inset: 0; background: var(--ink, #16261F); }
+    .qr-choice-eye .hole { position: absolute; inset: 22%; background: var(--surface, #fff); }
+    .qr-choice-eye .ball { position: absolute; inset: 37.5%; background: var(--ink, #16261F); }
+    .qr-choice-eye.style-square .frame, .qr-choice-eye.style-square .ball { border-radius: 0; }
+    .qr-choice-eye.style-square .hole { border-radius: 0; }
+    .qr-choice-eye.style-rounded .frame { border-radius: 26%; }
+    .qr-choice-eye.style-rounded .hole { border-radius: 20%; }
+    .qr-choice-eye.style-rounded .ball { border-radius: 30%; }
+    .qr-choice-eye.style-circle .frame, .qr-choice-eye.style-circle .hole, .qr-choice-eye.style-circle .ball { border-radius: 50%; }
+
+    /* ---- Colors + quiet zone + ECC ---- */
+    .qr-settings-row { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px; }
+    .qr-color-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 600; color: var(--text, #1C2B24); }
+    .qr-color-field input[type="color"] { width: 56px; height: 36px; padding: 2px; border: 1px solid var(--line, #D8DCD3); border-radius: 6px; cursor: pointer; background: var(--surface, #fff); }
+    .qr-range-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 600; color: var(--text, #1C2B24); min-width: 200px; }
+    .qr-range-field input[type="range"] { accent-color: var(--accent, #1F6F5C); }
+    .qr-select-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; font-weight: 600; color: var(--text, #1C2B24); }
+    .qr-select-field select { padding: 8px 10px; border: 1px solid var(--line, #D8DCD3); border-radius: 6px; background: var(--surface, #fff); font-family: var(--font-body, "IBM Plex Sans", sans-serif); }
+    #qr-ecc-forced-note { font-size: 0.78rem; color: var(--accent-dark, #195A4A); margin-top: 4px; }
+
+    /* ---- Logo dropzone ---- */
+    .qr-logo-dropzone { border: 2px dashed var(--line, #D8DCD3); border-radius: 10px; padding: 20px; text-align: center; background: var(--paper, #EEF0EA); }
+    .qr-logo-dropzone.has-logo { border-style: solid; }
+    #qr-logo-preview { max-width: 100px; max-height: 100px; border-radius: 8px; margin: 0 auto 10px; }
+    #qr-logo-status { font-size: 0.82rem; color: var(--muted, #5C6D64); margin: 8px 0 0; }
+    #qr-logo-controls { margin-top: 18px; }
+
+    /* ---- Preview + download ---- */
+    .qr-preview-stage { display: flex; gap: 28px; flex-wrap: wrap; align-items: flex-start; }
+    .qr-preview-frame { flex: 0 0 auto; width: 320px; height: 320px; border: 1px solid var(--line, #D8DCD3); border-radius: 10px; background: var(--surface, #fff); display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; }
+    .qr-preview-frame.is-empty { color: var(--muted, #5C6D64); font-size: 0.85rem; }
+    #qr-preview-canvas { max-width: 100%; max-height: 100%; }
+    .qr-preview-frame.is-empty #qr-preview-canvas { display: none; }
+    .qr-preview-empty-msg { display: none; max-width: 22ch; }
+    .qr-preview-frame.is-empty .qr-preview-empty-msg { display: block; }
+    .qr-preview-side { flex: 1 1 260px; min-width: 0; }
+    #qr-status { font-size: 0.9rem; color: var(--muted, #5C6D64); margin: 0 0 16px; min-height: 1.4em; }
+    #qr-status.is-error { color: #C0392B; font-weight: 600; }
+    .qr-download-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+    .qr-export-size-row { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--muted, #5C6D64); margin-bottom: 16px; }
+    .qr-export-size-row input[type="range"] { accent-color: var(--accent, #1F6F5C); flex: 1; max-width: 220px; }
+
+    /* ---- Jargon / collapsibles (same mechanics as other tools' own page-scoped versions) ---- */
+    .qr-collapsible-summary { cursor: pointer; list-style: none; padding: 4px 0; }
+    .qr-collapsible-summary::-webkit-details-marker { display: none; }
+    .qr-collapsible-summary h3 { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 1rem; }
+    .qr-collapsible-summary h3::after { content: '\25be'; font-size: 0.65em; color: var(--muted, #5C6D64); transition: transform 0.15s ease; }
+    .qr-collapsible[open] .qr-collapsible-summary h3::after { transform: rotate(180deg); }
+    .qr-collapsible-body { padding: 8px 0 12px; font-size: 0.9rem; color: var(--text, #1C2B24); }
+    .qr-collapsible + .qr-collapsible { border-top: 1px solid var(--line, #D8DCD3); margin-top: 4px; padding-top: 4px; }
+
+    .qr-config-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 10px; }
+    .qr-config-table th, .qr-config-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line, #D8DCD3); }
+    .qr-config-table th { color: var(--muted, #5C6D64); font-weight: 600; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .qr-config-table code { font-family: var(--font-mono, "IBM Plex Mono", monospace); font-size: 0.8rem; }
+
+    /* ---- Floating quick-nav (same pattern as this site's other tools) ---- */
+    #qr-quick-nav { position: fixed; right: 20px; bottom: 20px; z-index: 50; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .qr-quick-nav-btn { background: #fff; border: 1px solid var(--line, #D8DCD3); border-radius: 999px; color: var(--accent-dark, #195A4A); padding: 8px 14px; font-family: var(--font-body, "IBM Plex Sans", sans-serif); font-weight: 600; font-size: 0.78rem; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.14); white-space: nowrap; }
+    .qr-quick-nav-btn:hover, .qr-quick-nav-btn:focus-visible { border-color: var(--accent, #1F6F5C); color: var(--accent, #1F6F5C); outline: none; }
+    #qr-back-to-top { background: var(--accent, #1F6F5C); color: #fff; border: none; padding: 12px 18px; font-size: 0.88rem; box-shadow: 0 4px 14px rgba(0,0,0,0.18); }
+    #qr-back-to-top:hover { background: var(--accent-dark, #195A4A); color: #fff; }
+
+    @media print {
+      #qr-quick-nav, .no-print { display: none !important; }
+      .qr-preview-frame { border: none; width: auto; height: auto; }
+      .qr-collapsible-body { display: block !important; }
+      .qr-collapsible-summary h3::after { display: none; }
+    }
+    @media (max-width: 700px) {
+      .qr-preview-stage { flex-direction: column; align-items: stretch; }
+      .qr-preview-frame { width: 100%; height: auto; aspect-ratio: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <!-- 11-item list: the 10-item canonical set from cost-structure-
+               checker.html's own nav (itself already reconciled, see that
+               page's comment) plus QR Creator appended at the end, per
+               NAV_ORDER_STANDARD.md's "new tool = append to the end" rule.
+               Other pages' copies of this dropdown aren't patched yet —
+               central reconciliation pass, same as every prior addition. -->
+          <ul class="nav-dropdown-menu">
+            <li><a href="menu-calculator.html">Menu Calculator</a></li>
+            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
+            <li><a href="printing-calculator.html">Printing Calculator</a></li>
+            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
+            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
+            <li><a href="food-worth-calculator.html">Food Worth</a></li>
+            <li><a href="crypto-radar.html">Crypto Radar</a></li>
+            <li><a href="rental-calculator.html">Rental Calculator</a></li>
+            <li><a href="market-radar.html">Market Radar</a></li>
+            <li><a href="cost-structure-checker.html">Cost Structure Checker</a></li>
+            <li><a href="qr-creator.html" aria-current="page">QR Creator</a></li>
+          </ul>
+        </li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; nothing is saved or uploaded</span>
+        <h1>QR Creator</h1>
+        <p class="lead">Generate a QR code with real design control — dot or rounded modules, styled finder eyes, your own colors, and a logo in the center that still scans. Everything happens in your browser; nothing you enter here is ever sent anywhere.</p>
+      </div>
+    </section>
+
+    <!-- ============ CONTENT ============ -->
+    <section class="calc-panel" id="qr-content-section">
+      <div class="wrap">
+        <div class="qr-box">
+          <h2>What should the code do?</h2>
+          <div class="qr-input-tabs no-print" role="tablist">
+            <button type="button" class="qr-input-tab is-active" data-content-type="text">Link / Text</button>
+            <button type="button" class="qr-input-tab" data-content-type="wifi">Wi-Fi</button>
+            <button type="button" class="qr-input-tab" data-content-type="vcard">Contact card</button>
+            <button type="button" class="qr-input-tab" data-content-type="email">Email</button>
+            <button type="button" class="qr-input-tab" data-content-type="phone">Phone / SMS</button>
+          </div>
+
+          <div id="qr-content-panels">
+            <div class="qr-content-panel" data-content-panel="text">
+              <label>Website link or any text
+                <textarea id="qr-text-input" placeholder="https://reysourcez.com/menu or any text at all" rows="3"></textarea>
+              </label>
+            </div>
+
+            <div class="qr-content-panel" data-content-panel="wifi" hidden>
+              <div class="qr-field-grid">
+                <label>Network name (SSID) <input type="text" id="qr-wifi-ssid" placeholder="Reysourcez Guest"></label>
+                <label>Password <input type="text" id="qr-wifi-password" placeholder="Leave blank if open network"></label>
+                <label>Security<span class="tooltip-icon" data-tooltip="WPA covers WPA/WPA2/WPA3 — the vast majority of routers today. Pick WEP only for genuinely old hardware, or 'No password' for an open network.">?</span>
+                  <select id="qr-wifi-encryption"><option value="WPA" selected>WPA / WPA2 / WPA3</option><option value="WEP">WEP</option><option value="nopass">No password (open)</option></select>
+                </label>
+              </div>
+              <label class="qr-inline-check"><input type="checkbox" id="qr-wifi-hidden"> Network is hidden</label>
+            </div>
+
+            <div class="qr-content-panel" data-content-panel="vcard" hidden>
+              <div class="qr-field-grid">
+                <label>First name <input type="text" id="qr-vcard-first" placeholder="Ali"></label>
+                <label>Last name <input type="text" id="qr-vcard-last" placeholder="Bin Ahmad"></label>
+                <label>Company <input type="text" id="qr-vcard-org" placeholder="Reysourcez Enterprise"></label>
+                <label>Job title <input type="text" id="qr-vcard-title" placeholder="Owner"></label>
+                <label>Phone <input type="tel" id="qr-vcard-phone" placeholder="+60123456789"></label>
+                <label>Email <input type="email" id="qr-vcard-email" placeholder="hello@reysourcez.com"></label>
+                <label>Website <input type="url" id="qr-vcard-url" placeholder="https://reysourcez.com"></label>
+                <label>Address <input type="text" id="qr-vcard-address" placeholder="Sarawak, Malaysia"></label>
+              </div>
+            </div>
+
+            <div class="qr-content-panel" data-content-panel="email" hidden>
+              <div class="qr-field-grid">
+                <label>To <input type="email" id="qr-email-to" placeholder="hello@reysourcez.com"></label>
+                <label>Subject <input type="text" id="qr-email-subject" placeholder="Catering enquiry"></label>
+              </div>
+              <label>Message <textarea id="qr-email-body" rows="3" placeholder="Optional — pre-fills the message body"></textarea></label>
+            </div>
+
+            <div class="qr-content-panel" data-content-panel="phone" hidden>
+              <div class="qr-field-grid">
+                <label>Phone number <input type="tel" id="qr-phone-number" placeholder="+60123456789"></label>
+                <label>Action
+                  <select id="qr-phone-mode"><option value="call" selected>Call this number</option><option value="sms">Send a text message</option></select>
+                </label>
+              </div>
+              <label hidden>Message <textarea id="qr-phone-sms-body" rows="2" placeholder="Optional — pre-fills the text message"></textarea></label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ DESIGN ============ -->
+    <section class="calc-panel" id="qr-design-section">
+      <div class="wrap">
+        <div class="qr-box">
+          <h2>Design</h2>
+
+          <h3 style="font-size:0.95rem;">Module style</h3>
+          <div class="qr-choice-row" role="radiogroup" aria-label="Module style">
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-body-style" id="qr-body-square" value="square" checked>
+              <label for="qr-body-square"><span class="qr-choice-swatch qr-swatch-square"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>Square</label>
+            </div>
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-body-style" id="qr-body-dots" value="dots">
+              <label for="qr-body-dots"><span class="qr-choice-swatch qr-swatch-dots"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>Dots</label>
+            </div>
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-body-style" id="qr-body-rounded" value="rounded">
+              <label for="qr-body-rounded"><span class="qr-choice-swatch qr-swatch-rounded"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span>Rounded</label>
+            </div>
+          </div>
+
+          <h3 style="font-size:0.95rem;">Eye frame <span class="toggle-hint">(the outer ring of the 3 corner squares)</span></h3>
+          <div class="qr-choice-row" role="radiogroup" aria-label="Eye frame style">
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-eye-frame-style" id="qr-eyeframe-square" value="square" checked>
+              <label for="qr-eyeframe-square"><span class="qr-choice-eye style-square"><span class="frame"></span><span class="hole"></span></span>Square</label>
+            </div>
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-eye-frame-style" id="qr-eyeframe-rounded" value="rounded">
+              <label for="qr-eyeframe-rounded"><span class="qr-choice-eye style-rounded"><span class="frame"></span><span class="hole"></span></span>Rounded</label>
+            </div>
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-eye-frame-style" id="qr-eyeframe-circle" value="circle">
+              <label for="qr-eyeframe-circle"><span class="qr-choice-eye style-circle"><span class="frame"></span><span class="hole"></span></span>Circle</label>
+            </div>
+          </div>
+
+          <h3 style="font-size:0.95rem;">Eye ball <span class="toggle-hint">(the center dot of each corner square)</span></h3>
+          <div class="qr-choice-row" role="radiogroup" aria-label="Eye ball style">
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-eye-ball-style" id="qr-eyeball-square" value="square" checked>
+              <label for="qr-eyeball-square"><span class="qr-choice-eye style-square"><span class="ball"></span></span>Square</label>
+            </div>
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-eye-ball-style" id="qr-eyeball-rounded" value="rounded">
+              <label for="qr-eyeball-rounded"><span class="qr-choice-eye style-rounded"><span class="ball"></span></span>Rounded</label>
+            </div>
+            <div class="qr-choice-card">
+              <input type="radio" name="qr-eye-ball-style" id="qr-eyeball-circle" value="circle">
+              <label for="qr-eyeball-circle"><span class="qr-choice-eye style-circle"><span class="ball"></span></span>Circle</label>
+            </div>
+          </div>
+
+          <div class="qr-settings-row">
+            <div class="qr-color-field">Code color <input type="color" id="qr-fg-color" value="#1F6F5C"></div>
+            <div class="qr-color-field">Background <input type="color" id="qr-bg-color" value="#FFFFFF"></div>
+            <div class="qr-select-field">Error correction<span class="tooltip-icon" data-tooltip="Higher levels survive more damage or a logo overlay, at the cost of a slightly bigger code. This gets raised to High automatically the moment you add a logo below.">?</span>
+              <select id="qr-ecc-level">
+                <option value="L">Low (~7%)</option>
+                <option value="M" selected>Medium (~15%)</option>
+                <option value="Q">Quartile (~25%)</option>
+                <option value="H">High (~30%)</option>
+              </select>
+              <span id="qr-ecc-forced-note" hidden>Raised to High automatically — a logo is covering part of the code.</span>
+            </div>
+            <div class="qr-range-field">Quiet zone margin <span class="toggle-hint" id="qr-quiet-zone-display">4 modules</span>
+              <input type="range" id="qr-quiet-zone" min="2" max="8" step="1" value="4" oninput="document.getElementById('qr-quiet-zone-display').textContent = this.value + ' modules'">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ LOGO ============ -->
+    <section class="calc-panel" id="qr-logo-section">
+      <div class="wrap">
+        <div class="qr-box">
+          <h2>Logo <span class="toggle-hint">(optional)</span></h2>
+          <p class="structure-note">Adds your logo to the center, with error correction automatically raised to High and the logo capped at a safe size — the combination this tool (and every reliable QR+logo generator) relies on to stay scannable, not a workaround.</p>
+          <div class="qr-logo-dropzone no-print">
+            <img id="qr-logo-preview" alt="" hidden>
+            <label class="btn btn-secondary" style="cursor:pointer;">Choose a logo image<input type="file" accept="image/*" id="qr-logo-input" class="sr-only"></label>
+            <p id="qr-logo-status"></p>
+          </div>
+          <div id="qr-logo-controls" hidden>
+            <div class="qr-settings-row" style="margin-top:16px;">
+              <div class="qr-range-field">Logo size <span class="toggle-hint" id="qr-logo-size-display">22% of code width</span>
+                <input type="range" id="qr-logo-size" min="12" max="32" step="1" value="22" oninput="document.getElementById('qr-logo-size-display').textContent = this.value + '% of code width'">
+              </div>
+              <div>
+                <span class="qr-range-field" style="margin-bottom:6px; display:block;">Backing plate shape</span>
+                <div class="qr-choice-row" style="margin-bottom:0;" role="radiogroup" aria-label="Logo backing plate shape">
+                  <div class="qr-choice-card"><input type="radio" name="qr-logo-shape" id="qr-logoshape-square" value="square" checked><label for="qr-logoshape-square">Square</label></div>
+                  <div class="qr-choice-card"><input type="radio" name="qr-logo-shape" id="qr-logoshape-rounded" value="rounded"><label for="qr-logoshape-rounded">Rounded</label></div>
+                  <div class="qr-choice-card"><input type="radio" name="qr-logo-shape" id="qr-logoshape-circle" value="circle"><label for="qr-logoshape-circle">Circle</label></div>
+                </div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary no-print" id="qr-logo-remove">Remove logo</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PREVIEW & DOWNLOAD ============ -->
+    <section class="calc-panel" id="qr-preview-section">
+      <div class="wrap">
+        <div class="qr-box">
+          <h2>Your code</h2>
+          <div class="qr-preview-stage">
+            <div class="qr-preview-frame is-empty" id="qr-preview-wrap">
+              <canvas id="qr-preview-canvas" width="320" height="320" aria-label="QR code preview"></canvas>
+              <p class="qr-preview-empty-msg">Your QR code will appear here as soon as you add some content above.</p>
+            </div>
+            <div class="qr-preview-side">
+              <p id="qr-status">Fill in the fields above to generate your code.</p>
+              <div class="qr-download-row no-print">
+                <button type="button" class="btn btn-primary qr-download-btn" id="qr-download-png" disabled>Download PNG</button>
+                <button type="button" class="btn btn-secondary qr-download-btn" id="qr-download-svg" disabled>Download SVG</button>
+                <button type="button" class="btn btn-secondary qr-download-btn" id="qr-save-pdf" disabled>Save as PDF</button>
+              </div>
+              <div class="qr-export-size-row no-print">
+                <span>PNG size:</span>
+                <input type="range" id="qr-export-size" min="200" max="4000" step="100" value="1000">
+                <strong id="qr-export-size-display">1000px</strong>
+              </div>
+              <p class="structure-note" style="margin:0;">SVG is vector — best for printing large (menus, posters, table tents) without ever looking pixelated. PNG is best for screens, social posts, or anywhere a plain image is expected.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ JARGON ============ -->
+    <section class="calc-panel no-print">
+      <div class="wrap">
+        <div class="qr-box">
+          <details class="qr-collapsible" open>
+            <summary class="qr-collapsible-summary"><h2 style="display:inline-flex;align-items:center;gap:8px;font-size:1.3rem;">Jargon index</h2></summary>
+            <div class="qr-collapsible-body" id="qr-jargon"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ SETTINGS REFERENCE ============ -->
+    <section class="calc-panel no-print">
+      <div class="wrap">
+        <div class="qr-box">
+          <details class="qr-collapsible">
+            <summary class="qr-collapsible-summary"><h2 style="display:inline-flex;align-items:center;gap:8px;font-size:1.3rem;">Settings reference</h2></summary>
+            <div class="qr-collapsible-body">
+              <p class="structure-note">Everything a developer can retune without touching the encoding logic lives in one <code>CONFIG</code> block at the top of <code>qr-creator.js</code> — see also the companion <code>qr-creator-settings-reference.xlsx</code> for the same table in spreadsheet form.</p>
+              <table class="qr-config-table">
+                <thead><tr><th>Setting</th><th>Current value</th><th>What it does</th></tr></thead>
+                <tbody>
+                  <tr><td><code>DEFAULT_FG</code></td><td>#1F6F5C</td><td>Default code color when the page first loads (the site's own brand teal).</td></tr>
+                  <tr><td><code>DEFAULT_BG</code></td><td>#FFFFFF</td><td>Default background color.</td></tr>
+                  <tr><td><code>DEFAULT_ECC_LEVEL</code></td><td>M</td><td>Error correction level a fresh session starts at.</td></tr>
+                  <tr><td><code>LOGO_SIZE_DEFAULT_PCT</code></td><td>22%</td><td>Starting logo size, as a share of the code's width.</td></tr>
+                  <tr><td><code>LOGO_SIZE_MIN_PCT</code> / <code>MAX_PCT</code></td><td>12% / 32%</td><td>Range the logo-size slider allows.</td></tr>
+                  <tr><td><code>QUIET_ZONE_DEFAULT</code></td><td>4 modules</td><td>Margin around the code — the spec's own recommended minimum.</td></tr>
+                  <tr><td><code>PNG_EXPORT_PX_DEFAULT</code></td><td>1000px</td><td>Starting PNG download resolution.</td></tr>
+                  <tr><td>Dot module radius</td><td>0.46 &times; module size</td><td><code>dotScale</code> inside <code>buildRenderPlan()</code> — empirically scan-tested, see QR_CREATOR_NOTES.md before changing.</td></tr>
+                  <tr><td>Rounded module corner radius</td><td>0.3 &times; module size</td><td><code>roundedScale</code> inside <code>buildRenderPlan()</code>.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HOW THIS WORKS ============ -->
+    <section class="calc-panel no-print">
+      <div class="wrap">
+        <div class="qr-box">
+          <details class="qr-collapsible">
+            <summary class="qr-collapsible-summary"><h2 style="display:inline-flex;align-items:center;gap:8px;font-size:1.3rem;">How this works</h2></summary>
+            <div class="qr-collapsible-body">
+              <p>This page encodes your content into a real QR code itself, in your browser — it isn't a wrapper around another site's generator or API. <code>qr-creator-engine.js</code> implements the QR spec directly (Reed-Solomon error correction, mask selection, the works); <code>qr-creator.js</code> turns the result into styled shapes and draws them.</p>
+              <p>Because everything runs locally, nothing you type — a Wi-Fi password, a phone number, a logo image — is ever sent to a server. There's no Cloudflare Worker behind this tool and there doesn't need to be one.</p>
+              <p>Styling never touches the actual data: the three corner "eyes" and the general dot pattern can look however you like, but the underlying error-correction math is exactly what the QR standard requires — that's what keeps a styled, logo-bearing code just as scannable as a plain black-and-white one.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+    </div>
+  </footer>
+
+  <div id="qr-quick-nav" class="no-print" hidden>
+    <button type="button" class="qr-quick-nav-btn" data-target="qr-content-section">Content</button>
+    <button type="button" class="qr-quick-nav-btn" data-target="qr-design-section">Design</button>
+    <button type="button" class="qr-quick-nav-btn" data-target="qr-preview-section">Preview</button>
+    <button type="button" id="qr-back-to-top" class="qr-quick-nav-btn">&uarr; Top</button>
+  </div>
+
+  <!-- No costing-sync.js on this page, deliberately — same reasoning
+       as Crypto Radar and Cost Structure Checker: a QR generator
+       doesn't exchange cost-per-unit/price data with the other
+       tools, so there's nothing for a switcher to broadcast or
+       listen for. -->
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="qr-creator-engine.js?v=1" defer></script>
+  <script src="qr-creator.js?v=1" defer></script>
+</body>
+</html>
