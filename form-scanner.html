@@ -1,97 +1,40 @@
-<!-- Version: v4.1-pdf-input - 2026-09-20 --><!DOCTYPE html><html lang="en"><head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Document & Payment Voucher Scanner</title>
-  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  </script>
-  <style>
-    :root {
-      --bg: #f4f6f8;
-      --card-bg: #ffffff;
-      --primary: #0f766e;
-      --primary-hover: #115e59;
-      --border: #e2e8f0;
-      --text: #1e293b;
-      --text-muted: #64748b;
-      --danger: #b91c1c;
-      --radius: 8px;
-    }
+<!-- 
+==========================================
+File Name: form-creator.html
+Version: v1.2.0
+Description: Main HTML interface for Form Creator with worker integration.
+==========================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Creator & Extractor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 600px; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .btn { background-color: #0d7355; color: white; border: none; padding: 12px 20px; font-size: 16px; border-radius: 5px; cursor: pointer; width: 100%; margin-top: 15px; }
+        .btn:hover { background-color: #0b5e44; }
+        .error-banner { background-color: #ffebee; color: #c62828; padding: 15px; border-radius: 5px; margin-top: 15px; display: none; border: 1px solid #ef9a9a; }
+        .spinner { display: none; text-align: center; margin-top: 15px; font-weight: bold; color: #0d7355; }
+        input[type="file"] { margin-bottom: 20px; width: 100%; }
+    </style>
+</head>
+<body>
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 2rem 1rem; line-height: 1.5; }
-    .container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
+<div class="container">
+    <h2>Form Structure Scanner & PDF Generator</h2>
+    <input type="file" id="formFileInput" accept=".pdf,image/*">
     
-    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    .card-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
-    .card-subtitle { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem; }
+    <button class="btn" id="scanExtractBtn">Scan & Extract Form Structure</button>
+    <button class="btn" id="makePdfBtn" style="background-color: #2b547e;">Make Editable PDF</button>
+    <button class="btn" id="exportExcelBtn" style="background-color: #2e7d32;">Export to Excel</button>
 
-    .upload-area { border: 2px dashed var(--border); border-radius: var(--radius); padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.2s; position: relative; }
-    .upload-area:hover { border-color: var(--primary); }
-    .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    <div class="spinner" id="loadingSpinner">Processing securely in background worker... Please wait.</div>
+    <div class="error-banner" id="errorBanner"></div>
+</div>
 
-    .preview-img { max-height: 250px; margin: 1rem auto 0; display: block; border-radius: 4px; border: 1px solid var(--border); }
-    
-    .input-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
-    .input-group label { font-size: 0.875rem; font-weight: 500; }
-    .input-group input { padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
-
-    .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 1rem; transition: background 0.2s; }
-    .btn:hover { background: var(--primary-hover); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .status-box { padding: 0.8rem 1rem; border-radius: 6px; font-size: 0.875rem; background: #e0f2fe; color: #0369a1; display: none; }
-    .status-box.active { display: block; }
-    .status-box.is-error { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
-
-    .results-grid { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
-    .field-tag { display: inline-block; background: #f1f5f9; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin: 0.2rem; border: 1px solid #cbd5e1; }
-    .badge { background: #ccfbf1; color: #115e59; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
-  </style></head><body><div class="container">
-  <div class="card">
-    <h1 class="card-title">Form & Payment Voucher Scanner</h1>
-    <p class="card-subtitle">Upload a scanned form, voucher photo, or PDF document to generate a structural fillable PDF.</p>
-
-    <div class="upload-area" id="fs-upload-zone">
-      <p id="fs-upload-prompt">Click or drag & drop voucher image or PDF here</p>
-      <input type="file" id="fs-photo-input" accept="image/*,application/pdf">
-      <img id="fs-preview-img" class="preview-img" hidden alt="Form Preview">
-    </div>
-
-    <div class="input-group">
-      <label for="fs-note">Optional scan guidance/instructions:</label>
-      <input type="text" id="fs-note" placeholder="e.g. Ensure 2-column header and bottom approval table are mapped accurately">
-    </div>
-
-    <button id="fs-scan-btn" class="btn" disabled>Scan & Extract Form Structure</button>
-  </div>
-
-  <div id="fs-status" class="status-box"></div>
-
-  <div id="fs-results-section" class="card" hidden>
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-      <h2 id="fs-preview-title" class="card-title" style="margin: 0;"></h2>
-      <span id="fs-preview-ref" class="badge"></span>
-    </div>
-
-    <div class="results-grid">
-      <div id="fs-header-fields-group" hidden>
-        <strong>Mapped Header Fields:</strong>
-        <div id="fs-header-fields" style="margin-top: 0.4rem;"></div>
-      </div>
-
-      <div id="fs-tables-group" hidden>
-        <strong>Table Structure:</strong>
-        <div id="fs-tables" style="margin-top: 0.4rem;"></div>
-      </div>
-
-      <div id="fs-signatures-group" hidden>
-        <strong>Approval / Signature Grid:</strong>
-        <div id="fs-signatures" style="margin-top: 0.4rem;"></div>
-      </div>
-
-      <button id="fs-download-btn" class="btn" style="background: #0369a1;">Download Fillable PDF</button>
-    </div>
-  </div></div><script src="form-scanner.js"></script></body></html>
+<script src="form-creator.js"></script>
+</body>
+</html>
