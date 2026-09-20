@@ -6,7 +6,7 @@
 console.info('[Form Scanner] Engine initialized: v4.5-dynamic-auto');
 
 const MAX_IMAGE_EDGE = 1280;
-const PROXY_ENDPOINT = '[https://form-scanner-proxy.reysourcez-ent.workers.dev](https://form-scanner-proxy.reysourcez-ent.workers.dev)';
+const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
 
 let currentFileBase64 = null;
 let currentMimeType = 'image/jpeg';
