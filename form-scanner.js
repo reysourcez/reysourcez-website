@@ -6,8 +6,7 @@
 console.info('[Form Scanner] Engine initialized: v4.0-scratch-rebuild');
 
 const MAX_IMAGE_EDGE = 1280;
-const PROXY_ENDPOINT = '[https://form-scanner-proxy.reysourcez-ent.workers.dev](https://form-scanner-proxy.reysourcez-ent.workers.dev)';
-
+const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
 const PAGE_W = 595.28; // Standard A4 Width
 const PAGE_H = 841.89; // Standard A4 Height
 const MARGIN = 36;
