@@ -25,7 +25,7 @@
    one was used.
    ============================================================ */
 
-console.info('[Interactive Costing Analysis] script build: 2026-09-19-cross-tool-import-parity');
+console.info('[Interactive Costing Analysis] script build: 2026-09-20-site-config');
 
 function formatRM(value) {
   if (!isFinite(value) || value < 0) return 'RM0.00';
@@ -74,7 +74,17 @@ const WIZARD_STEPS = [
 // benchmarks (food cost ~28-35%, labor ~25-35%, overhead ~20-30% of
 // revenue for a full-service format), scaled down for leaner formats.
 // Not fixed facts — every one of these is editable in the tool itself.
-const GUIDE_RATIOS = {
+//
+// Sourced from RZ_SITE_CONFIG.guideRatios (site-config.js) when that
+// file is loaded — SITE_CONFIG_STANDARD.md. Margin Analysis keeps
+// this exact object in its own file too; reading from one shared
+// place is what keeps the two tools' "guide" pies from being able to
+// silently drift apart the way costPerPortion could before the
+// 2026-09-19 cross-tool-import fix. The literal object below is only
+// the fallback for a page that hasn't added site-config.js yet — same
+// degrade-gracefully pattern as every other optional global this site
+// reads (RZ_TOOLS, RZ_PANEL_GROUPS, and so on).
+const GUIDE_RATIOS = (typeof RZ_SITE_CONFIG !== 'undefined' && RZ_SITE_CONFIG.guideRatios) || {
   home:  { ingredients: 55, overhead: 15, manpower: 15, margin: 15 },
   stall: { ingredients: 50, overhead: 20, manpower: 15, margin: 15 },
   truck: { ingredients: 42, overhead: 20, manpower: 23, margin: 15 },

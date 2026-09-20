@@ -48,6 +48,30 @@
   --max-width: 1080px;
 }
 
+/* ---- 1b. Alternate theme demo ("Ocean") ----
+   Proves the palette really is a one-block swap: add
+   data-theme="ocean" to any page's <html> tag and every rule that
+   reads --ink/--text/--accent/etc. above updates immediately, with
+   zero changes anywhere else in this file or in any page's own
+   markup. See THEME_GUIDE.md for the full token reference, a second
+   ready-made palette, and how this could become a single site-wide
+   switch (via site-config.js's theme field) instead of a manual
+   per-page attribute, if that's wanted later. Only the core palette
+   shifts here — the per-tool overlay accents (--menu-accent and
+   friends, section 15) and the cost-structure segment colors stay
+   put on purpose, since they're meant to read as distinct FROM the
+   main accent regardless of which theme is active. */
+[data-theme="ocean"] {
+  --ink: #16212B;
+  --text: #1C2733;
+  --muted: #5C6B78;
+  --paper: #EAF0F2;
+  --accent: #1B5A8A;
+  --accent-dark: #164A70;
+  --accent-soft: #D9E7EF;
+  --line: #D3DCE1;
+}
+
 /* ---- 2. Reset-ish basics ---- */
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
