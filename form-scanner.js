@@ -1,18 +1,28 @@
 /* ============================================================
    Form Scanner Frontend Engine
-   Version: v4.5-dynamic-auto
+   Filename: form-scanner.js
+   Version: v4.6
    ============================================================ */
 
-console.info('[Form Scanner] Engine initialized: v4.5-dynamic-auto');
-
-const MAX_IMAGE_EDGE = 1280;
 const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
+const MAX_IMAGE_EDGE = 1280;
 
 let currentFileBase64 = null;
 let currentMimeType = 'image/jpeg';
 let currentOriginalSize = 'A4';
 let currentOriginalOrientation = 'portrait';
 let lastResult = null;
+
+// Exact Dimensions in Points (72 pt/inch)
+const PAPER_SIZES = {
+  'A3': [841.89, 1190.55],
+  'A4': [595.28, 841.89],
+  'A5': [419.53, 595.28],
+  'A6': [297.64, 419.53],
+  'B5': [498.90, 708.66],
+  'LETTER': [612.00, 792.00],
+  'LEGAL': [612.00, 1008.00]
+};
 
 function setStatus(text, isError) {
   const el = document.getElementById('fs-status');
@@ -25,10 +35,6 @@ function cleanPdfText(str) {
   if (str == null) return '';
   return String(str)
     .replace(/[\r\n\t]+/g, ' ')
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201C\u201D]/g, '"')
-    .replace(/[\u2013\u2014]/g, '-')
-    .replace(/\u2026/g, '...')
     .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -37,10 +43,10 @@ function cleanPdfText(str) {
 function resizeImageToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed reading file stream.'));
+    reader.onerror = () => reject(new Error('Failed reading image file.'));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('File could not be parsed as an image.'));
+      img.onerror = () => reject(new Error('File is not a valid image.'));
       img.onload = () => {
         let { width, height } = img;
         const isLandscape = width > height;
@@ -70,7 +76,7 @@ async function handleFileSelect(e) {
   const fileType = (file.type || '').toLowerCase();
   const isPdf = fileType.includes('pdf') || fileName.endsWith('.pdf');
 
-  setStatus('Processing uploaded file\u2026');
+  setStatus('Processing file...');
   try {
     if (isPdf) {
       const base64Data = await new Promise((resolve, reject) => {
@@ -83,7 +89,6 @@ async function handleFileSelect(e) {
       currentFileBase64 = base64Data;
       currentMimeType = 'application/pdf';
 
-      // Measure exact physical points of page 1
       try {
         const binaryString = window.atob(base64Data);
         const len = binaryString.length;
@@ -97,406 +102,248 @@ async function handleFileSelect(e) {
 
         currentOriginalOrientation = w > h ? 'landscape' : 'portrait';
         const maxEdge = Math.max(w, h);
-        currentOriginalSize = maxEdge < 720 ? 'A5' : 'A4';
+        if (maxEdge > 1000) currentOriginalSize = 'A3';
+        else if (maxEdge > 750) currentOriginalSize = 'A4';
+        else if (maxEdge > 500) currentOriginalSize = 'A5';
+        else currentOriginalSize = 'A6';
       } catch (err) {
         currentOriginalSize = 'A4';
         currentOriginalOrientation = 'portrait';
       }
 
       const img = document.getElementById('fs-preview-img');
-      img.hidden = true;
+      if (img) img.hidden = true;
       const pdfPreview = document.getElementById('fs-pdf-preview');
       if (pdfPreview) {
         pdfPreview.style.display = 'block';
         document.getElementById('fs-pdf-filename').textContent = file.name;
-        document.getElementById('fs-pdf-meta').textContent = `PDF Detected: ${currentOriginalSize} ${currentOriginalOrientation.toUpperCase()}`;
+        document.getElementById('fs-pdf-meta').textContent = `PDF Detected: ${currentOriginalSize} (${currentOriginalOrientation})`;
       }
-      document.getElementById('fs-upload-prompt').hidden = true;
-      document.getElementById('fs-scan-btn').disabled = false;
-      setStatus(`PDF ready. Detected paper size: ${currentOriginalSize} (${currentOriginalOrientation}).`);
     } else {
       const { base64, previewUrl, isLandscape } = await resizeImageToBase64(file);
       currentFileBase64 = base64;
       currentMimeType = fileType || 'image/jpeg';
-      currentOriginalSize = 'A5'; // Default receipts/vouchers to A5
+      currentOriginalSize = 'A5';
       currentOriginalOrientation = isLandscape ? 'landscape' : 'portrait';
 
       const pdfPreview = document.getElementById('fs-pdf-preview');
       if (pdfPreview) pdfPreview.style.display = 'none';
 
       const img = document.getElementById('fs-preview-img');
-      img.src = previewUrl;
-      img.hidden = false;
-      document.getElementById('fs-upload-prompt').hidden = true;
-      document.getElementById('fs-scan-btn').disabled = false;
-      setStatus(`Image ready. Target paper size: ${currentOriginalSize} (${currentOriginalOrientation}).`);
+      if (img) { img.src = previewUrl; img.hidden = false; }
     }
+
+    const dropdown = document.getElementById('fs-paper-size');
+    if (dropdown) dropdown.value = currentOriginalSize;
+
+    document.getElementById('fs-scan-btn').disabled = false;
+    setStatus(`File ready. Target: ${currentOriginalSize} (${currentOriginalOrientation}).`);
   } catch (err) {
     document.getElementById('fs-scan-btn').disabled = true;
-    setStatus(err.message || 'File processing failed.', true);
+    setStatus(err.message || 'File loading failed.', true);
   }
-}
-
-async function scanForm(fileBase64, mimeType, note, originalSize, originalOrientation) {
-  let response;
-  try {
-    response = await fetch(PROXY_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        image: fileBase64,
-        mime_type: mimeType,
-        note: note,
-        original_size: originalSize,
-        original_orientation: originalOrientation,
-      }),
-    });
-  } catch (e) {
-    throw new Error('Network error: Unable to reach worker service.');
-  }
-
-  const rawText = await response.text();
-  let data;
-  try {
-    data = JSON.parse(rawText);
-  } catch (e) {
-    throw new Error(`Worker Error (${response.status}): Worker output returned non-JSON data.`);
-  }
-
-  if (!response.ok) throw new Error(data.error || `Scan failed with status ${response.status}.`);
-  return data;
-}
-
-function renderPreview(result) {
-  document.getElementById('fs-preview-title').textContent = result.title || 'Scanned Form Structure';
-  const sizeBadge = ` [${result.page_size} ${result.orientation.toUpperCase()}]`;
-  document.getElementById('fs-preview-ref').textContent = (result.reference_code || '') + sizeBadge;
-
-  const hfGroup = document.getElementById('fs-header-fields-group');
-  const hfEl = document.getElementById('fs-header-fields');
-  const allHeaderLabels = [...(result.header_left || []), ...(result.header_right || [])].map((f) => f.label);
-  if (allHeaderLabels.length) {
-    hfGroup.hidden = false;
-    hfEl.innerHTML = allHeaderLabels.map((lbl) => `<span class="field-tag">${lbl}</span>`).join('');
-  } else {
-    hfGroup.hidden = true;
-  }
-
-  const tblGroup = document.getElementById('fs-tables-group');
-  const tblEl = document.getElementById('fs-tables');
-  if (result.main_table && result.main_table.columns) {
-    tblGroup.hidden = false;
-    tblEl.innerHTML = `<p style="font-size:0.85rem;">Columns: <strong>${result.main_table.columns.join(' | ')}</strong> (${result.main_table.blank_row_count} rows)</p>`;
-  } else {
-    tblGroup.hidden = true;
-  }
-
-  const sigGroup = document.getElementById('fs-signatures-group');
-  const sigEl = document.getElementById('fs-signatures');
-  const totalSigs = (result.left_signatures || []).length + (result.right_signatures || []).length;
-  if (totalSigs > 0) {
-    sigGroup.hidden = false;
-    sigEl.innerHTML = [...(result.left_signatures || []), ...(result.right_signatures || [])].map((s) => `
-      <div style="font-size:0.8rem; margin-top:0.2rem;">
-        <strong>${s.heading || 'Block'}:</strong> ${s.fields.join(', ')}
-      </div>
-    `).join('');
-  } else {
-    sigGroup.hidden = true;
-  }
-
-  document.getElementById('fs-results-section').hidden = false;
-  document.getElementById('fs-results-section').scrollIntoView({ behavior: 'smooth' });
 }
 
 async function runScan() {
-  if (!currentFileBase64) return setStatus('Select an image or PDF file first.', true);
+  if (!currentFileBase64) return setStatus('Please select a file first.', true);
 
   const btn = document.getElementById('fs-scan-btn');
   btn.disabled = true;
-  setStatus('Analyzing layout & mapping fields via AI proxy\u2026');
+  setStatus('Analyzing layout structure...');
 
   try {
-    const note = document.getElementById('fs-note').value.trim();
-    const result = await scanForm(currentFileBase64, currentMimeType, note, currentOriginalSize, currentOriginalOrientation);
-    if (!result.recognized) return setStatus('Form format unrecognized. Try providing a clearer document or photo.', true);
+    const note = document.getElementById('fs-note') ? document.getElementById('fs-note').value : '';
+    const selectedSize = document.getElementById('fs-paper-size') ? document.getElementById('fs-paper-size').value : currentOriginalSize;
 
-    lastResult = result;
-    renderPreview(result);
-    setStatus('Form structure mapped successfully!');
+    const response = await fetch(PROXY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: currentFileBase64,
+        mime_type: currentMimeType,
+        note: note,
+        original_size: selectedSize,
+        original_orientation: currentOriginalOrientation
+      }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Scan request failed.');
+    if (!data.recognized) throw new Error('Unrecognized form structure.');
+
+    lastResult = data;
+    if (selectedSize) lastResult.page_size = selectedSize;
+
+    document.getElementById('fs-preview-title').textContent = data.title || 'Scanned Form';
+    document.getElementById('fs-preview-ref').textContent = `[${lastResult.page_size} ${lastResult.orientation.toUpperCase()}]`;
+    document.getElementById('fs-results-section').hidden = false;
+    
+    setStatus('Document structure mapped successfully!');
   } catch (err) {
-    setStatus(err.message || 'Error occurred during scan.', true);
+    setStatus(err.message, true);
   } finally {
     btn.disabled = false;
   }
 }
 
-/* ================= EXACT PDF BUILDER ================= */
+/* ================= ZERO COLOR PDF BUILDER ================= */
 
 async function buildFillablePdf(result) {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
   const pdfDoc = await PDFDocument.create();
-  pdfDoc.setTitle(cleanPdfText(result.title) || 'Voucher Form');
-  
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const form = pdfDoc.getForm();
 
-  const isA5 = (result.page_size || '').toUpperCase() === 'A5';
   const isLandscape = (result.orientation || '').toLowerCase() === 'landscape';
+  const sizeKey = (result.page_size || 'A4').toUpperCase();
+  let [PAGE_W, PAGE_H] = PAPER_SIZES[sizeKey] || PAPER_SIZES['A4'];
+  if (isLandscape && PAGE_H > PAGE_W) [PAGE_W, PAGE_H] = [PAGE_H, PAGE_W];
 
-  // Point dimensions: A4 = 595.28 x 841.89 pt | A5 = 419.53 x 595.28 pt
-  let PAGE_W, PAGE_H;
-  if (isA5) {
-    PAGE_W = isLandscape ? 595.28 : 419.53;
-    PAGE_H = isLandscape ? 419.53 : 595.28;
-  } else {
-    PAGE_W = isLandscape ? 841.89 : 595.28;
-    PAGE_H = isLandscape ? 595.28 : 841.89;
-  }
-
-  const MARGIN = isA5 ? 20 : 28;
+  const MARGIN = 30;
   const CONTENT_W = PAGE_W - (MARGIN * 2);
-
-  const titleFontSize = isA5 ? 10.5 : 12;
-  const subtitleFontSize = isA5 ? 7.5 : 8.5;
-  const bodyFontSize = isA5 ? 7.5 : 8.5;
-  const smallFontSize = isA5 ? 6.5 : 7.5;
-
   let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
   let y = MARGIN;
   let fieldCounter = 0;
+  
   const toPdfY = (yTop) => PAGE_H - yTop;
+
+  function rect(x, yTop, w, h, borderW = 1) {
+    page.drawRectangle({
+      x, y: toPdfY(yTop + h), width: w, height: h,
+      borderColor: rgb(0, 0, 0), borderWidth: borderW
+    });
+  }
 
   function text(str, x, yTop, opts = {}) {
     const cleanStr = cleanPdfText(str);
     if (!cleanStr) return;
-    const size = opts.size || bodyFontSize;
+    const size = opts.size || 10;
     const useFont = opts.bold ? fontBold : font;
     let drawX = x;
     if (opts.align === 'center') drawX = x - useFont.widthOfTextAtSize(cleanStr, size) / 2;
-    else if (opts.align === 'right') drawX = x - useFont.widthOfTextAtSize(cleanStr, size);
+    if (opts.align === 'right') drawX = x - useFont.widthOfTextAtSize(cleanStr, size);
     page.drawText(cleanStr, { x: drawX, y: toPdfY(yTop), size, font: useFont, color: rgb(0, 0, 0) });
   }
 
-  function line(x1, yTop1, x2, yTop2, w) {
-    page.drawLine({
-      start: { x: x1, y: toPdfY(yTop1) },
-      end: { x: x2, y: toPdfY(yTop2) },
-      thickness: w || 0.8,
-      color: rgb(0, 0, 0),
-    });
-  }
-
-  function rect(x, yTop, w, h, opts = {}) {
-    page.drawRectangle({
-      x, y: toPdfY(yTop + h), width: w, height: h,
-      borderColor: rgb(0, 0, 0), borderWidth: opts.borderWidth ?? 0.8,
-      color: opts.fill,
-    });
+  function line(x1, yTop1, x2, yTop2, w = 1) {
+    page.drawLine({ start: { x: x1, y: toPdfY(yTop1) }, end: { x: x2, y: toPdfY(yTop2) }, thickness: w, color: rgb(0, 0, 0) });
   }
 
   function createField(x, yTop, w, h) {
     fieldCounter++;
     const tf = form.createTextField(`field_${fieldCounter}`);
-    try { tf.setFontSize(bodyFontSize - 0.5); } catch (e) {}
     tf.addToPage(page, { x, y: toPdfY(yTop + h), width: w, height: h, borderWidth: 0 });
     return tf;
   }
 
-  if (result.reference_code) {
-    text(result.reference_code, PAGE_W - MARGIN, y + 8, { size: smallFontSize, bold: true, align: 'right' });
-    y += 10;
-  }
+  // Outer Border Frame
+  rect(MARGIN, MARGIN, CONTENT_W, PAGE_H - (MARGIN * 2), 1.2);
+  y += 15;
 
-  const formStartY = y;
+  // Title & Header Line
+  text(result.title || 'RESIT RASMI', PAGE_W / 2, y, { size: 14, bold: true, align: 'center' });
+  y += 18;
+  line(MARGIN, y - 4, MARGIN + CONTENT_W, y - 4, 1.2);
+  y += 12;
 
-  y += 6;
-  text(result.title || 'BAUCAR BAYARAN / RESIT RASMI', PAGE_W / 2, y, { size: titleFontSize, bold: true, align: 'center' });
-  y += (titleFontSize + 4);
-
-  (result.subtitles || []).forEach((sub) => {
-    text(sub, PAGE_W / 2, y, { size: subtitleFontSize, bold: true, align: 'center' });
-    y += (subtitleFontSize + 3);
+  (result.subtitles || []).forEach(sub => {
+    text(sub, PAGE_W / 2, y, { size: 9, align: 'center', bold: true });
+    y += 13;
   });
-  y += 4;
+  y += 15;
 
-  const headerBoxTop = y;
-  const leftColW = CONTENT_W * (isLandscape ? 0.55 : 0.58);
-  const rightColW = CONTENT_W - leftColW;
-  const colDividerX = MARGIN + leftColW;
-  const headerRowH = isA5 ? 13 : 16;
-
-  let leftY = y + 6;
-  (result.header_left || []).forEach((f) => {
-    text(f.label + ' :', MARGIN + 4, leftY + (headerRowH * 0.65), { size: bodyFontSize, bold: true });
-    const lblW = fontBold.widthOfTextAtSize(f.label + ' :', bodyFontSize) + 4;
-    const boxX = MARGIN + 4 + lblW;
-    const boxW = leftColW - lblW - 8;
-    rect(boxX, leftY, boxW, headerRowH - 2);
-    createField(boxX + 1, leftY + 1, boxW - 2, headerRowH - 4);
-    leftY += headerRowH + 2;
+  // Top Left / Right Fields
+  let leftY = y, rightY = y;
+  (result.top_fields_left || []).forEach(lbl => {
+    text(lbl, MARGIN + 20, leftY + 12, { size: 10 });
+    let lw = font.widthOfTextAtSize(lbl, 10);
+    rect(MARGIN + 28 + lw, leftY + 2, 85, 16, 1);
+    createField(MARGIN + 29 + lw, leftY + 3, 83, 14);
+    leftY += 26;
   });
 
-  let rightY = y + 6;
-  (result.header_right || []).forEach((f) => {
-    text(f.label + ' :', colDividerX + 4, rightY + (headerRowH * 0.65), { size: bodyFontSize, bold: true });
-    const lblW = fontBold.widthOfTextAtSize(f.label + ' :', bodyFontSize) + 4;
-    const boxX = colDividerX + 4 + lblW;
-    const boxW = rightColW - lblW - 8;
-
-    if (f.options && f.options.length) {
-      const optBoxH = f.options.length * (headerRowH - 3) + 4;
-      rect(boxX, rightY, boxW, optBoxH);
-      f.options.forEach((opt, idx) => {
-        text(`[  ] ${opt}`, boxX + 3, rightY + (headerRowH * 0.6) + idx * (headerRowH - 3), { size: smallFontSize });
-      });
-      rightY += optBoxH + 4;
-    } else {
-      rect(boxX, rightY, boxW, headerRowH - 2);
-      createField(boxX + 1, rightY + 1, boxW - 2, headerRowH - 4);
-      rightY += headerRowH + 2;
-    }
+  (result.top_fields_right || []).forEach(lbl => {
+    text(lbl, CONTENT_W / 2 + 40, rightY + 12, { size: 10 });
+    let lw = font.widthOfTextAtSize(lbl, 10);
+    line(CONTENT_W / 2 + 48 + lw, rightY + 14, MARGIN + CONTENT_W - 20, rightY + 14, 1);
+    createField(CONTENT_W / 2 + 48 + lw, rightY, (MARGIN + CONTENT_W - 20) - (CONTENT_W / 2 + 48 + lw), 14);
+    rightY += 26;
   });
 
-  const headerBoxH = Math.max(leftY, rightY) - headerBoxTop + 2;
-  rect(MARGIN, headerBoxTop, CONTENT_W, headerBoxH);
-  line(colDividerX, headerBoxTop, colDividerX, headerBoxTop + headerBoxH);
-  y = headerBoxTop + headerBoxH + (isA5 ? 6 : 10);
+  y = Math.max(leftY, rightY) + 10;
 
-  if (result.main_table && result.main_table.columns && result.main_table.columns.length) {
-    const cols = result.main_table.columns;
-    const colCount = cols.length;
-    
-    const colWidths = cols.map((c, i) => {
-      if (i === 0) return Math.min(CONTENT_W * 0.08, 35);
-      if (i === colCount - 1) return CONTENT_W * 0.20;
-      return (CONTENT_W - Math.min(CONTENT_W * 0.08, 35) - (CONTENT_W * 0.20)) / (colCount - 2);
-    });
+  // Middle Full-Width Lines
+  (result.middle_full_width_fields || []).forEach(f => {
+    let linesToDraw = Math.max(1, f.blank_lines || 1);
+    text(f.label, MARGIN + 20, y + 12, { size: 10 });
+    let lblWidth = font.widthOfTextAtSize(f.label, 10);
+    let startX = MARGIN + 28 + lblWidth;
 
-    const colX = [MARGIN];
-    colWidths.forEach((w) => colX.push(colX[colX.length - 1] + w));
-
-    const tableTop = y;
-    const tblHeaderH = isA5 ? 14 : 18;
-    rect(MARGIN, y, CONTENT_W, tblHeaderH, { fill: rgb(0.92, 0.92, 0.92) });
-
-    cols.forEach((c, i) => {
-      text(c, colX[i] + colWidths[i] / 2, y + (tblHeaderH * 0.68), { size: bodyFontSize, bold: true, align: 'center' });
-    });
-    y += tblHeaderH;
-
-    const rowCount = result.main_table.blank_row_count || 4;
-    const tableRowH = isA5 ? (isLandscape ? 13 : 15) : 18;
-
-    for (let r = 0; r < rowCount; r++) {
-      cols.forEach((c, i) => {
-        createField(colX[i] + 2, y + 1, colWidths[i] - 4, tableRowH - 2);
-      });
-      y += tableRowH;
-      line(MARGIN, y, MARGIN + CONTENT_W, y);
+    for (let i = 0; i < linesToDraw; i++) {
+      line(startX, y + 14, MARGIN + CONTENT_W - 20, y + 14, 1);
+      createField(startX, y, (MARGIN + CONTENT_W - 20) - startX, 14);
+      y += 24;
+      startX = MARGIN + 20;
     }
-
-    if (result.main_table.has_total_row) {
-      const totalLblW = colWidths.reduce((sum, w, i) => i < cols.length - 1 ? sum + w : sum, 0);
-      rect(MARGIN, y, totalLblW, tableRowH, { fill: rgb(0.95, 0.95, 0.95) });
-      text('JUMLAH (RM)', MARGIN + totalLblW - 6, y + (tableRowH * 0.68), { size: bodyFontSize, bold: true, align: 'right' });
-      createField(colX[cols.length - 1] + 2, y + 1, colWidths[cols.length - 1] - 4, tableRowH - 2);
-      y += tableRowH;
-    }
-
-    rect(MARGIN, tableTop, CONTENT_W, y - tableTop);
-    colX.slice(1, -1).forEach((x) => line(x, tableTop, x, y));
-    y += (isA5 ? 6 : 10);
-  }
-
-  if (result.amount_in_words_label) {
-    const amtBoxH = isA5 ? 14 : 18;
-    rect(MARGIN, y, CONTENT_W, amtBoxH);
-    text(result.amount_in_words_label, MARGIN + 4, y + (amtBoxH * 0.68), { size: bodyFontSize, bold: true });
-    const lblW = fontBold.widthOfTextAtSize(result.amount_in_words_label, bodyFontSize) + 8;
-    createField(MARGIN + lblW, y + 1, CONTENT_W - lblW - 4, amtBoxH - 2);
-    y += amtBoxH + (isA5 ? 6 : 10);
-  }
-
-  const sigBoxTop = y;
-  const sigColW = CONTENT_W / 2;
-  const sigMidX = MARGIN + sigColW;
-  const sigLineH = isA5 ? 12 : 15;
-
-  let leftSigY = y + 4;
-  (result.left_signatures || []).forEach((block) => {
-    if (block.heading) {
-      text(block.heading, MARGIN + 4, leftSigY + (sigLineH * 0.65), { size: bodyFontSize, bold: true });
-      leftSigY += sigLineH + 2;
-    }
-    (block.fields || []).forEach((fl) => {
-      text(fl + ' :', MARGIN + 4, leftSigY + (sigLineH * 0.65), { size: smallFontSize, bold: true });
-      const lw = fontBold.widthOfTextAtSize(fl + ' :', smallFontSize) + 4;
-      line(MARGIN + 4 + lw, leftSigY + (sigLineH * 0.75), MARGIN + sigColW - 8, leftSigY + (sigLineH * 0.75));
-      createField(MARGIN + 4 + lw, leftSigY, sigColW - lw - 12, sigLineH - 2);
-      leftSigY += sigLineH + 2;
-    });
-    leftSigY += 4;
-  });
-
-  let rightSigY = y + 4;
-  (result.right_signatures || []).forEach((block) => {
-    if (block.heading) {
-      text(block.heading, sigMidX + 4, rightSigY + (sigLineH * 0.65), { size: bodyFontSize, bold: true });
-      rightSigY += sigLineH + 2;
-    }
-    (block.fields || []).forEach((fl) => {
-      text(fl + ' :', sigMidX + 4, rightSigY + (sigLineH * 0.65), { size: smallFontSize, bold: true });
-      const lw = fontBold.widthOfTextAtSize(fl + ' :', smallFontSize) + 4;
-      line(sigMidX + 4 + lw, rightSigY + (sigLineH * 0.75), MARGIN + CONTENT_W - 8, rightSigY + (sigLineH * 0.75));
-      createField(sigMidX + 4 + lw, rightSigY, sigColW - lw - 12, sigLineH - 2);
-      rightSigY += sigLineH + 2;
-    });
-    rightSigY += 4;
-  });
-
-  const sigBoxH = Math.max(leftSigY, rightSigY) - sigBoxTop + 2;
-  rect(MARGIN, sigBoxTop, CONTENT_W, sigBoxH);
-  line(sigMidX, sigBoxTop, sigMidX, sigBoxTop + sigBoxH);
-  y = sigBoxTop + sigBoxH + 6;
-
-  rect(MARGIN - 3, formStartY - 3, CONTENT_W + 6, y - formStartY + 3, { borderWidth: 1 });
-
-  if (result.footnotes && result.footnotes.length) {
     y += 4;
-    result.footnotes.forEach((fn) => {
-      text(fn, MARGIN, y + 6, { size: smallFontSize - 0.5 });
-      y += smallFontSize + 2;
+  });
+
+  y += 10;
+
+  // Grid Table (If present)
+  if (result.has_grid_table && result.main_table?.columns?.length > 0) {
+    const cols = result.main_table.columns;
+    const colW = (CONTENT_W - 40) / cols.length;
+
+    rect(MARGIN + 20, y, CONTENT_W - 40, 20, 1);
+    cols.forEach((c, i) => {
+      text(c, MARGIN + 20 + (i * colW) + colW / 2, y + 14, { size: 9, bold: true, align: 'center' });
+      if (i > 0) line(MARGIN + 20 + i * colW, y, MARGIN + 20 + i * colW, y + 20, 1);
     });
-    y += 2;
+    y += 20;
+
+    for (let r = 0; r < (result.main_table.blank_row_count || 3); r++) {
+      rect(MARGIN + 20, y, CONTENT_W - 40, 20, 1);
+      cols.forEach((c, i) => {
+        if (i > 0) line(MARGIN + 20 + i * colW, y, MARGIN + 20 + i * colW, y + 20, 1);
+        createField(MARGIN + 22 + i * colW, y + 2, colW - 4, 16);
+      });
+      y += 20;
+    }
+    y += 20;
   }
 
-  if (result.bottom_table && result.bottom_table.columns && result.bottom_table.columns.length) {
-    const bt = result.bottom_table;
-    const bColW = CONTENT_W / bt.columns.length;
-    const btTop = y;
-    const bHeaderH = isA5 ? 11 : 13;
+  // Bottom Box vs Signatures
+  let boxY = y;
+  if (result.bottom_left_box && result.bottom_left_box.length > 0) {
+    let boxWidth = CONTENT_W * 0.38;
+    let boxHeight = result.bottom_left_box.length * 32;
+    rect(MARGIN + 20, boxY, boxWidth, boxHeight, 1);
 
-    rect(MARGIN, y, CONTENT_W, bHeaderH, { fill: rgb(0.88, 0.88, 0.88) });
-    bt.columns.forEach((col, idx) => {
-      text(col, MARGIN + idx * bColW + bColW / 2, y + (bHeaderH * 0.68), { size: smallFontSize, bold: true, align: 'center' });
+    let innerY = boxY;
+    result.bottom_left_box.forEach((lbl, idx) => {
+      text(lbl, MARGIN + 25, innerY + 20, { size: 10, bold: true });
+      let lw = fontBold.widthOfTextAtSize(lbl, 10);
+      createField(MARGIN + 28 + lw, innerY + 5, boxWidth - lw - 15, 20);
+      if (idx < result.bottom_left_box.length - 1) {
+        line(MARGIN + 20, innerY + 32, MARGIN + 20 + boxWidth, innerY + 32, 1);
+      }
+      innerY += 32;
     });
-    y += bHeaderH;
+  }
 
-    const bRowH = isA5 ? 10 : 12;
-    (bt.rows || []).forEach((row) => {
-      row.forEach((cell, idx) => {
-        text(cell, MARGIN + idx * bColW + bColW / 2, y + (bRowH * 0.68), { size: smallFontSize - 0.5, align: 'center' });
-      });
-      y += bRowH;
-      line(MARGIN, y, MARGIN + CONTENT_W, y, 0.5);
+  if (result.bottom_right_signatures && result.bottom_right_signatures.length > 0) {
+    let sigY = boxY + 10;
+    let rightColX = MARGIN + (CONTENT_W * 0.52);
+
+    result.bottom_right_signatures.forEach(lbl => {
+      text(lbl, rightColX, sigY + 12, { size: 10 });
+      let lblW = font.widthOfTextAtSize(lbl, 10);
+      line(rightColX + lblW + 8, sigY + 14, MARGIN + CONTENT_W - 20, sigY + 14, 1);
+      createField(rightColX + lblW + 8, sigY, (MARGIN + CONTENT_W - 20) - (rightColX + lblW + 8), 14);
+      sigY += 32;
     });
-
-    rect(MARGIN, btTop, CONTENT_W, y - btTop);
-    for (let c = 1; c < bt.columns.length; c++) {
-      line(MARGIN + c * bColW, btTop, MARGIN + c * bColW, y);
-    }
   }
 
   return pdfDoc.save();
@@ -506,28 +353,27 @@ async function downloadPdf() {
   if (!lastResult) return;
   const btn = document.getElementById('fs-download-btn');
   btn.disabled = true;
-  btn.textContent = 'Generating PDF\u2026';
+  btn.textContent = 'Generating PDF...';
   try {
     const pdfBytes = await buildFillablePdf(lastResult);
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const name = (cleanPdfText(lastResult.title) || 'voucher-form').toLowerCase().replace(/[^a-z0-9]+/g, '-');
     a.href = url;
-    a.download = `${name}.pdf`;
+    a.download = `fillable-form.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
   } catch (err) {
-    setStatus('PDF construction failed: ' + err.message, true);
+    setStatus('PDF download failed: ' + err.message, true);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Download Fillable PDF';
   }
 }
 
-function init() {
+document.addEventListener('DOMContentLoaded', () => {
   const photoInput = document.getElementById('fs-photo-input');
   if (photoInput) photoInput.addEventListener('change', handleFileSelect);
 
@@ -536,6 +382,4 @@ function init() {
 
   const downloadBtn = document.getElementById('fs-download-btn');
   if (downloadBtn) downloadBtn.addEventListener('click', downloadPdf);
-}
-
-document.addEventListener('DOMContentLoaded', init);
+});
