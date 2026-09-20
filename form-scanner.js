@@ -1,4 +1,4 @@
-// Version: 3.0
+// Version: 4.0
 
 const PROXY_ENDPOINT = '/api/scan'; 
 let currentFileBase64 = null;
@@ -75,7 +75,6 @@ async function handleFileSelect(e) {
   const pdfPreview = document.getElementById('fs-pdf-preview');
   const scanBtn = document.getElementById('fs-scan-btn');
   
-  // Hide prompt, reset previews
   if (uploadPrompt) uploadPrompt.style.display = 'none';
   imgPreview.style.display = 'none';
   pdfPreview.style.display = 'none';
@@ -127,7 +126,7 @@ async function runScan() {
     try {
       data = JSON.parse(rawText);
     } catch (e) {
-      throw new Error(`Server Error (${response.status}): The backend is not returning valid JSON. Route may be missing.`);
+      throw new Error(`Server Error (${response.status}): Endpoint returned invalid format.`);
     }
 
     if (!response.ok) throw new Error(data.error || `Scan failed with status ${response.status}.`);
@@ -149,7 +148,6 @@ async function runScan() {
   }
 }
 
-// Initialization and Drag-and-Drop Setup
 let rzInitialized = false;
 function init() {
   if (rzInitialized) return;
@@ -159,19 +157,9 @@ function init() {
   const dropZone = document.getElementById('fs-upload-zone');
   const scanBtn = document.getElementById('fs-scan-btn');
 
-  // 1. File Input Change Event
   if (photoInput) photoInput.addEventListener('change', handleFileSelect);
 
-  // 2. Click to Upload
-  if (dropZone && photoInput) {
-    dropZone.addEventListener('click', (e) => {
-      // Prevent triggering if they click the image or text inside
-      if (e.target !== photoInput) {
-        photoInput.click();
-      }
-    });
-
-    // 3. Drag and Drop Events
+  if (dropZone) {
     dropZone.addEventListener('dragover', (e) => {
       e.preventDefault();
       dropZone.style.borderColor = 'var(--accent, #1F6F5C)';
@@ -189,9 +177,8 @@ function init() {
       dropZone.style.borderColor = 'var(--line, #D8DCD3)';
       dropZone.style.backgroundColor = 'transparent';
       
-      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0 && photoInput) {
         photoInput.files = e.dataTransfer.files;
-        // Manually dispatch change event so handleFileSelect fires
         photoInput.dispatchEvent(new Event('change'));
       }
     });
