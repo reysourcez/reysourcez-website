@@ -1,4 +1,4 @@
-<!-- Version: 3.0 -->
+<!-- Version: 4.0 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -34,8 +34,9 @@
   <main class="container" style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
     <h1 style="color: var(--ink, #16261F); margin-bottom: 1.5rem;">AI Form Scanner</h1>
     
-    <div class="upload-area" id="fs-upload-zone" style="border: 2px dashed var(--line, #D8DCD3); padding: 2rem; text-align: center; border-radius: 8px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s;">
-      <p id="fs-upload-prompt" style="color: var(--muted, #5C6D64);">Click or drag & drop voucher photo or PDF here</p>
+    <!-- Upload Zone styled as a direct label wrapper for guaranteed clickability -->
+    <label for="fs-photo-input" class="upload-area" id="fs-upload-zone" style="display: block; border: 2px dashed var(--line, #D8DCD3); padding: 2rem; text-align: center; border-radius: 8px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s;">
+      <span id="fs-upload-prompt" style="color: var(--muted, #5C6D64);">Click or drag & drop voucher photo or PDF here</span>
       <input type="file" id="fs-photo-input" accept="image/*, application/pdf" style="display: none;">
       
       <!-- Image Preview -->
@@ -49,7 +50,7 @@
         <strong style="color: var(--ink, #16261F);">PDF Document Selected</strong><br>
         <span id="fs-pdf-name" style="font-size: 0.875rem;"></span>
       </div>
-    </div>
+    </label>
 
     <div style="margin-top: 1.5rem;">
       <textarea id="fs-note" placeholder="Add any specific instructions for the AI..." style="width: 100%; height: 80px; padding: 0.5rem; border: 1px solid var(--line, #D8DCD3); border-radius: 4px; resize: vertical;"></textarea>
@@ -60,7 +61,7 @@
     <div id="fs-status" style="margin-top: 1rem; font-weight: bold; font-size: 0.9rem;"></div>
   </main>
 
-  <script src="nav-dropdown.js?v=3" defer></script>
-  <script src="form-scanner_v3.js" defer></script>
+  <script src="nav-dropdown.js?v=4" defer></script>
+  <script src="form-scanner_v4.js" defer></script>
 </body>
 </html>
