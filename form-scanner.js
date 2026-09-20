@@ -74,10 +74,201 @@ function escapeHTML(str) {
   return div.innerHTML;
 }
 
-function setStatus(text, isError) {
-  const el = document.getElementById('fs-status');
-  el.textContent = text;
-  el.classList.toggle('is-error', !!isError);
+function cleanPdfText(str) {
+  if (str == null) return '';
+  let cleaned = String(str)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2013\u2014]/g, '-')
+    .replace(/\u2026/g, '...')
+    .replace(/\u00A0/g, ' ');
+
+  let result = '';
+  for (let i = 0; i < cleaned.length; i++) {
+    const code = cleaned.charCodeAt(i);
+    if ((code >= 32 && code <= 126) || (code >= 160 && code <= 255)) {
+      result += cleaned[i];
+    } else {
+      result += ' ';
+    }
+  }
+  return result.replace(/\s+/g, ' ').trim();
+}
+
+function wrapToWidth(font, text, size, maxWidth) {
+  const clean = cleanPdfText(text);
+  const words = clean.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  words.forEach((w) => {
+    const trial = line ? line + ' ' + w : w;
+    if (font.widthOfTextAtSize(trial, size) > maxWidth && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = trial;
+    }
+  });
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}
+
+async function buildFillablePdf(result) {
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const pdfDoc = await PDFDocument.create();
+  pdfDoc.setTitle(cleanPdfText(result.title) || 'Scanned form');
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const form = pdfDoc.getForm();
+
+  let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+  let y = MARGIN;
+  let fieldCounter = 0;
+  const GRAY = rgb(0.78, 0.78, 0.78);
+
+  const toPdfY = (yTop) => PAGE_H - yTop;
+
+  function newPage() {
+    page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+    y = MARGIN;
+  }
+  function ensureSpace(h) {
+    if (y + h > PAGE_H - MARGIN) { newPage(); return true; }
+    return false;
+  }
+  function text(str, x, yTop, opts = {}) {
+    const cleanStr = cleanPdfText(str);
+    if (!cleanStr) return;
+    const size = opts.size || 9;
+    const useFont = opts.bold ? fontBold : font;
+    let drawX = x;
+    if (opts.align === 'center') drawX = x - useFont.widthOfTextAtSize(cleanStr, size) / 2;
+    else if (opts.align === 'right') drawX = x - useFont.widthOfTextAtSize(cleanStr, size);
+    page.drawText(cleanStr, { x: drawX, y: toPdfY(yTop), size, font: useFont, color: rgb(0, 0, 0) });
+  }
+  function line(x1, yTop, x2, w) {
+    page.drawLine({ start: { x: x1, y: toPdfY(yTop) }, end: { x: x2, y: toPdfY(yTop) }, thickness: w || 0.75, color: rgb(0, 0, 0) });
+  }
+  function vline(x, yTop1, yTop2, w) {
+    page.drawLine({ start: { x, y: toPdfY(yTop1) }, end: { x, y: toPdfY(yTop2) }, thickness: w || 0.75, color: rgb(0, 0, 0) });
+  }
+  function rect(x, yTop, w, h, opts = {}) {
+    page.drawRectangle({ x, y: toPdfY(yTop + h), width: w, height: h, borderColor: rgb(0, 0, 0), borderWidth: opts.borderWidth ?? 0.9, color: opts.fill });
+  }
+  function field(x, yTop, w, h, opts = {}) {
+    fieldCounter++;
+    const tf = form.createTextField('field_' + fieldCounter);
+    if (opts.multiline) tf.enableMultiline();
+    try { tf.setFontSize(8); } catch (e) {}
+    const addOpts = { x, y: toPdfY(yTop + h), width: w, height: h, borderWidth: 0 };
+    if (FIELD_BACKGROUND_COLOR) addOpts.backgroundColor = FIELD_BACKGROUND_COLOR;
+    tf.addToPage(page, addOpts);
+    return tf;
+  }
+
+  // ---- Title ----
+  text(result.title || 'Scanned form', PAGE_W / 2, y + 16, { size: 15, bold: true, align: 'center' });
+  y += 22;
+  if (result.reference_code) {
+    text(result.reference_code, PAGE_W - MARGIN, y, { size: 9, align: 'right' });
+  }
+  y += 20;
+
+  // ---- Header fields: label + underlined blank ----
+  result.header_fields.forEach((f) => {
+    const h = f.multiline ? 30 : 16;
+    ensureSpace(h + 4);
+    const labelText = cleanPdfText(f.label) + ' :';
+    text(labelText, MARGIN, y + 10, { size: 9, bold: true });
+    const labelW = fontBold.widthOfTextAtSize(labelText, 9) + 10;
+    const fx = MARGIN + labelW;
+    field(fx, y, PAGE_W - MARGIN - fx, h, { multiline: f.multiline });
+    line(fx, y + h, PAGE_W - MARGIN, 0.75);
+    y += h + 10;
+  });
+  if (result.header_fields.length) y += 6;
+
+  // ---- Tables ----
+  result.tables.forEach((t) => {
+    ensureSpace(40);
+    if (t.section_title) {
+      rect(MARGIN, y, CONTENT_W, 16, { fill: GRAY });
+      text(t.section_title, PAGE_W / 2, y + 11, { size: 9.5, bold: true, align: 'center' });
+      y += 16;
+    }
+
+    const weights = t.columns.map((c) => Math.max(3, cleanPdfText(c).length));
+    const totalWeight = weights.reduce((s, w) => s + w, 0);
+    const colWidths = weights.map((w) => (w / totalWeight) * CONTENT_W);
+    const colX = [MARGIN];
+    colWidths.forEach((w) => colX.push(colX[colX.length - 1] + w));
+
+    const drawHeaderRow = () => {
+      rect(MARGIN, y, CONTENT_W, 22, { fill: rgb(0.88, 0.88, 0.88) });
+      t.columns.forEach((c, i) => {
+        const lines = wrapToWidth(fontBold, c, 7, colWidths[i] - 6);
+        const startY = y + (lines.length === 1 ? 14 : 9);
+        lines.slice(0, 2).forEach((ln, li) => {
+          text(ln, colX[i] + colWidths[i] / 2, startY + li * 9, { size: 7, bold: true, align: 'center' });
+        });
+      });
+      colX.forEach((x) => vline(x, y, y + 22 + t.blank_row_count * 18));
+      line(MARGIN, y, MARGIN + CONTENT_W, 0.9);
+      y += 22;
+      line(MARGIN, y, MARGIN + CONTENT_W, 0.75);
+    };
+    drawHeaderRow();
+
+    for (let r = 0; r < t.blank_row_count; r++) {
+      const paginated = ensureSpace(18);
+      if (paginated) { drawHeaderRow(); }
+      t.columns.forEach((c, i) => {
+        field(colX[i] + 3, y + 2, colWidths[i] - 6, 14);
+      });
+      y += 18;
+      line(MARGIN, y, MARGIN + CONTENT_W, 0.75);
+    }
+    rect(MARGIN, y - (22 + t.blank_row_count * 18), CONTENT_W, 22 + t.blank_row_count * 18, { borderWidth: 0.9 });
+    y += 14;
+  });
+
+  // ---- Signature blocks ----
+  const sigs = result.signature_blocks;
+  if (sigs.length === 2) {
+    ensureSpace(20 + sigs[0].fields.length * 20);
+    const colW = (CONTENT_W - 30) / 2;
+    [0, 1].forEach((i) => {
+      const x = MARGIN + i * (colW + 30);
+      text(sigs[i].heading || 'Signature', x, y + 10, { size: 9.5, bold: true });
+      sigs[i].fields.forEach((fl, fi) => {
+        const fy = y + 24 + fi * 20;
+        const fieldLabelText = cleanPdfText(fl) + ' :';
+        text(fieldLabelText, x, fy + 10, { size: 8.5, bold: true });
+        const lw = fontBold.widthOfTextAtSize(fieldLabelText, 8.5) + 8;
+        field(x + lw, fy, colW - lw, 14);
+        line(x + lw, fy + 14, x + colW, 0.75);
+      });
+    });
+    y += 24 + Math.max(sigs[0].fields.length, sigs[1].fields.length) * 20 + 10;
+  } else {
+    sigs.forEach((s) => {
+      ensureSpace(20 + s.fields.length * 20);
+      text(s.heading || 'Signature', MARGIN, y + 10, { size: 9.5, bold: true });
+      y += 22;
+      s.fields.forEach((fl) => {
+        const fieldLabelText = cleanPdfText(fl) + ' :';
+        text(fieldLabelText, MARGIN, y + 10, { size: 8.5, bold: true });
+        const lw = fontBold.widthOfTextAtSize(fieldLabelText, 8.5) + 8;
+        field(MARGIN + lw, y, 240, 14);
+        line(MARGIN + lw, y + 14, MARGIN + lw + 240, 0.75);
+        y += 20;
+      });
+      y += 8;
+    });
+  }
+
+  return pdfDoc.save();
 }
 
 /* ================= SOFT USAGE CAP (same pattern as food-worth-calculator.js) ================= */
