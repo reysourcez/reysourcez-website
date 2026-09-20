@@ -1,11 +1,14 @@
 /* ============================================================
    Form Scanner Frontend Engine
-   Version: v4.1-pdf-support - 2026-09-20
+   Version: v4.2-robust-upload - 2026-09-20
    ============================================================ 
-   */console.info('[Form Scanner] Engine initialized: v4.1-pdf-support');const 
-      MAX_IMAGE_EDGE = 1280;
-const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev;
-const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4 Heightconst MARGIN = 36;const CONTENT_W = PAGE_W - (MARGIN * 2);let currentFileBase64 = null;let currentMimeType = 'image/jpeg';let lastResult = null;function setStatus(text, isError) {
+   */console.info('[Form Scanner] Engine initialized: v4.2-robust-upload');
+const MAX_IMAGE_EDGE = 1280;
+const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
+const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4 Heightconst MARGIN = 36;const CONTENT_W = PAGE_W - (MARGIN * 2);
+let currentFileBase64 = null;let currentMimeType = 'image/jpeg';
+let lastResult = null;function setStatus(text, isError) 
+{
   const el = document.getElementById('fs-status');
   if (!el) return;
   el.textContent = text;
@@ -23,7 +26,12 @@ const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4
     .trim();
 }function resizeImageToBase64(file) {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) return reject(new Error("Selected file is not an image."));
+    const fileName = (file.name || '').toLowerCase();
+    const fileType = (file.type || '').toLowerCase();
+    const isImage = fileType.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp|gif)$/.test(fileName);
+
+    if (!isImage) return reject(new Error("Selected file is not a valid image."));
+
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Failed reading file.'));
     reader.onload = () => {
@@ -51,8 +59,11 @@ const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4
   const file = e.target.files[0];
   if (!file) return;
 
-  const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-  const isImage = file.type.startsWith('image/');
+  const fileName = (file.name || '').toLowerCase();
+  const fileType = (file.type || '').toLowerCase();
+
+  const isPdf = fileType === 'application/pdf' || fileName.endsWith('.pdf');
+  const isImage = fileType.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp|gif)$/.test(fileName);
 
   if (!isPdf && !isImage) {
     return setStatus('Selected file must be an image or a PDF document.', true);
@@ -84,7 +95,7 @@ const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4
     } else {
       const { base64, previewUrl } = await resizeImageToBase64(file);
       currentFileBase64 = base64;
-      currentMimeType = file.type || 'image/jpeg';
+      currentMimeType = fileType || 'image/jpeg';
 
       const pdfPreview = document.getElementById('fs-pdf-preview');
       if (pdfPreview) pdfPreview.style.display = 'none';
