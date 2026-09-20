@@ -1,5 +1,7 @@
 # Market Radar — Setup & Reference
 
+> **Current package version: v1.4.0 (2026-09-20).** Newest changes are in the "2026-09-20 (v1.4.0)" section below; every release is listed in `MARKET_RADAR_VERSION_HISTORY.md`. The dated sections that follow are history — read each as "what was true on that date", and where a later section corrects an earlier claim, trust the later one.
+
 ## Current status (as of 2026-09-16, revised)
 
 **A note on how this doc and the shipped code drifted apart, for whichever session reads this next:** the previous version of this table said Geoapify, the 10s timeout, and the DOSM fixes were already done. Re-reading `market-radar-proxy-worker.js`'s own code on 2026-09-16 (not just re-trusting this doc) turned up that none of those three had actually made it into the file — they were designed and written up here, but the code itself still only had the 2026-09-13 Overpass-mirrors fix. That gap is closed as of this revision, confirmed by reading the actual file this time, and the file versions in this same output batch are the ones that now genuinely match this table. Lesson for next time baked into the process, not just this paragraph: treat this table as a claim to verify against the real file before repeating it, the same way this round did.
@@ -61,6 +63,70 @@ While comparing the two files, two genuinely good details from that other draft 
 
 **Heat map recalibrated.** Reported as "just a blue gradient, hard to interpret" — and that was a real calibration bug, not a misunderstanding: Leaflet.heat's default `max` (1.0) combined with this tool's low per-point weight (0.6) meant even a single, fully isolated competitor could never cross about the "cyan" mark on the default blue-to-red gradient. At this tool's actual scale (single digits to a few dozen competitors per search, not the thousands a heat map is usually tuned for), that default was never going to show red. Recalibrated: `max: 3` (3 overlapping same-category competitors now reads as fully saturated), weight raised to 1, and an explicit 3-stop gradient (teal → amber → red) matching the site's own accent colors. A caption next to the toggle now spells out what the colors mean. One isolated competitor should now show as a clear, visible color — but a spot with only 1-2 well-spaced competitors will still correctly look mild, since that's an accurate reflection of low clustering, not a sign it's still broken.
 
+## 2026-09-20 (v1.4.0): "still no Geoapify backstop?" — what was actually true
+
+**Short version.** The backstop *was* in the shipped Worker. That was checked by reading the real code and by running it against mocked network responses (40 checks, see "Re-running the checks" below) — not by trusting this doc, which has been wrong about the code before. It works when every Overpass mirror fails hard (HTTP 429 and the like). That is only half the story, though: four real problems turned up, and the most likely reason it *looked* missing was in the settings spreadsheet, not the code.
+
+**1. The settings spreadsheet named the wrong secret.** Row 5 said `GOOGLE_PLACES_API_KEY`; the Worker reads `GEOAPIFY_API_KEY`. Following the sheet literally leaves the backstop unconfigured — and, tested, the Geoapify key then gets sent to Google's Places endpoint on every analysis (Google rejects it; a rejected call is never cached, so it repeats each time, and the Worker deliberately swallows that failure, so nothing on screen hints at it). Fixed in the sheet. **If you followed the old sheet:** delete the mis-named secret, create one named exactly `GEOAPIFY_API_KEY`, and rotate the Geoapify key at myprojects.geoapify.com.
+
+**2. "Soft failures" bypassed the backstop.** Overpass reports a query that timed out or ran out of memory as **HTTP 200 with a `remark` field**, not as an error status (the maintainer's own explanation is in the Overpass-API repo, issue #94: once the server has started sending the body it can no longer change the status line). The Worker read that as a good, empty answer — skipped the remaining mirrors, skipped Geoapify, and **cached "0 competitors" for 24 hours**. With no Geoapify key it showed no error at all, which is the "0 found" vs "couldn't check" confusion this tool is supposed to make impossible. Now a `runtime error` remark (or any remark with zero results) counts as a failed mirror: skipped, never cached. A genuine empty answer (no remark) is still accepted as a real zero.
+
+**3. Geoapify places without usable coordinates.** The old code read `geometry.coordinates` blindly. Geoapify documents Places results as Points, so this was dormant, but its own spec allows other geometry types; a Polygon would have produced `lat: undefined` and an array for `lng`, enough to make Leaflet throw and blank the results. Such places are now dropped.
+
+**4. Nobody could tell whether the backstop had run.** The Worker now reports `poisSource` (which Overpass mirror, or `geoapify`), `poisCached` and `workerVersion`, and the page prints them under *Competitors in catchment*. A page that says "Worker version unknown — older than v1.4.0" means the old Worker is still deployed.
+
+**Two more found while reviewing the code line by line, both fixed:** (a) the Geoapify key travels in the request URL and error text is shown on the public page — a test proved that a network error echoing the URL would have printed the key to every visitor, so the key is now scrubbed from any message; (b) Geoapify's 500-place cap applies to *all* categories combined, and a 10–15 minute *drive* catchment (radius up to ~10 km) can hold more than that. Results are now requested nearest-first and, when the cap is hit, the page says the count may be an undercount and suggests a shorter catchment.
+
+**Smaller fixes in the same release:** the error message now lists what *every* mirror returned (the 2026-09-17 note above said it did; in fact it kept only the last one until now); it names the exact secret to create when the key is missing; Geoapify 401 / 429 / 400 get a plain-English hint; and the *Nearby institutions* card no longer says "None found" when institutions simply weren't checked (Overpass unavailable, or the backstop, which has no institution mapping).
+
+### Prove it works: the fire drill (about two minutes)
+
+1. Worker → **Settings → Variables and Secrets** → confirm a **Secret** named exactly `GEOAPIFY_API_KEY` exists.
+2. Add a **Variable** (not a secret) named `FORCE_OVERPASS_FAIL` with value `1` — Type *Text* is the intended choice, though a JSON `1` also works. Deploy.
+3. Run an analysis. Expected: *Competitors in catchment* says "OSM via Geoapify backstop", the status line says Overpass was unavailable and the backstop answered, and *Nearby institutions* says "Not checked".
+4. **Delete the variable.** Run the same analysis twice: the second should say "cached up to 24h" (see the caching caveat below).
+
+If step 3 shows an error instead, the message now says which link failed — missing/misnamed key, Geoapify 401 (key rejected), 429 (credits or 5-requests/second limit), or 400 (a category name).
+
+### What this release did NOT verify
+
+- **A live call to Geoapify with a real key.** The test environment had no network or keys; the fire drill above is the real end-to-end proof.
+- **Whether Cloudflare's Cache API works on a `*.workers.dev` address.** Cloudflare's own docs disagree: an older copy says caching does nothing on `*.workers.dev`, while the current page dropped that sentence. Unresolved. If step 4 never shows "cached", attach the Worker to a custom domain or route (e.g. an `api.` sub-domain of your own site) — that is the documented-safe setup — because without a working cache every analysis spends live quota on the free services.
+- **The Geoapify Places pricing rule.** The ~1 credit per 20 places figure is inferred (see "Getting a free Geoapify key").
+- **Whether Geoapify's free plan covers a paid product.** Its pricing page lists the free plan as "Limited Commercial Use" and paid plans as "Commercial Use". Read their terms before charging customers for something that depends on this backstop (first paid tier listed on 2026-09-20: 10,000 credits/day, USD 59/month). Their Places docs say results may be cached with no limits, so the 24-hour cache is fine.
+
+### How a competitor lookup flows now
+
+```mermaid
+flowchart TD
+    A["Browser: Analyze click"] --> B["Worker receives the request"]
+    B --> C{"FORCE_OVERPASS_FAIL = 1?<br/>(fire drill)"}
+    C -- "yes: skip Overpass and its cache" --> G{"Secret GEOAPIFY_API_KEY set?"}
+    C -- "no" --> D{"Answer cached (24h)?"}
+    D -- "yes" --> R1["Return cached answer<br/>page: cached up to 24h"]
+    D -- "no" --> E["Ask Overpass mirror 1, then 2, then 3<br/>10 s limit each"]
+    E --> F{"What did the mirror return?"}
+    F -- "real data" --> S1["Cache 24h and return<br/>page: OSM via Overpass (mirror)"]
+    F -- "HTTP error or timeout" --> E
+    F -- "HTTP 200 + runtime-error remark<br/>NEW: counts as a failure" --> E
+    E -. "all 3 failed" .-> G
+    G -- "no" --> X1["Honest error naming the exact secret<br/>page: Competitors Unavailable"]
+    G -- "yes" --> H["Geoapify Places API<br/>10 s limit, cached 24h"]
+    H -- "places found" --> S2["Return them<br/>page: via Geoapify backstop<br/>institutions: Not checked"]
+    H -- "error or nothing found" --> X2["Honest error with Geoapify's status<br/>and a plain-English hint"]
+```
+
+### Re-running the checks
+
+Two small test scripts live in the `tests/` folder next to this file. They need only [Node.js](https://nodejs.org) (18 or newer should work; they were run here on Node 22), no internet and no API keys — they run the real Worker and client code against pretend responses.
+
+```
+node tests/test-worker.mjs market-radar-proxy-worker.js
+node tests/test-client.js  market-radar.js
+```
+
+Expected: `40/40 passed` and `all 9 client scenarios passed`. Run both after *any* edit to either file; before this release, three fixes were described in this doc as done when the code didn't contain them, and this is the guard against that happening again. If Overpass or Geoapify ever change how they answer, add a case to the test first, watch it fail, then fix the code.
+
 ---
 
 Three files, one job each, same split as every other tool on this site:
@@ -101,7 +167,9 @@ openrouteservice moved its whole account system to HeiGIT (the org behind it) pa
 
 ### Getting a free Geoapify key (only needed as an Overpass backstop)
 
-Sign up at [myprojects.geoapify.com](https://myprojects.geoapify.com) — free, no card, 3,000 credits/day (roughly 1,000+ place searches, at ~1-2 credits each). This is never the primary source; it only gets called when every entry in `OVERPASS_MIRRORS` has already failed. See below for why that turned out to matter more than expected.
+Sign up at [myprojects.geoapify.com](https://myprojects.geoapify.com) — free, no card, 3,000 credits/day. **Cost (corrected 2026-09-20):** an earlier version of this line said "roughly 1,000+ place searches, at ~1-2 credits each" — that was too optimistic. Geoapify appears to bill the Places API at about **1 credit per 20 places returned** (inferred from Geoapify's own sample repo, which says 60,000 places/day are free on that 3,000-credit budget; the Places pricing section itself could not be read), so one full 500-place answer could cost ~25 credits. A small-town catchment normally returns far fewer than 500, and `GEOAPIFY_RESULT_LIMIT` in the Worker lets you cap it. This is never the primary source; it only gets called when every entry in `OVERPASS_MIRRORS` has already failed (or reported a runtime error — see the 2026-09-20 section). See below for why that turned out to matter more than expected.
+
+**The secret's name must be exactly `GEOAPIFY_API_KEY`** — capital letters, underscores, no spaces. Saved under any other name, the Worker never sees it and the backstop stays off.
 
 ### A note on Overpass, since it broke twice during real testing
 
@@ -109,7 +177,7 @@ Sign up at [myprojects.geoapify.com](https://myprojects.geoapify.com) — free, 
 
 **Round two, a full day later, same problem:** every mirror started returning `429` (rate limited) — consistently, from the first request of a fresh day, which rules out ordinary temporary overload. The actual cause: Cloudflare Workers share outbound IP ranges across every Workers customer worldwide, and free services that can only rate-limit by IP (Overpass has no concept of an API key) have no way to tell this Worker's traffic apart from any other Workers-hosted script that has ever hit the same server. This is a documented, known category of problem for calling IP-rate-limited free APIs from inside a Workers function — not something fixable by retrying harder from the same architecture.
 
-**The actual fix:** `market-radar-proxy-worker.js` now tries Geoapify's Places API as a genuine second-tier fallback once every Overpass mirror has failed. Geoapify is also OSM-based underneath, but rate-limits by API key rather than by IP, which is the one property that actually sidesteps this specific failure mode. Needs `GEOAPIFY_API_KEY` (above) — without it, a full Overpass outage still degrades honestly to "competitor data unavailable" rather than crashing, it just doesn't get a second chance to recover first. One open item: Geoapify's category taxonomy doesn't match OpenStreetMap's tags one-for-one, so `GEOAPIFY_CATEGORY_MAP` in the Worker is a best-effort translation, not confirmed against a live response the way the data.gov.my fixes below were — worth a check against [apidocs.geoapify.com/docs/places/#categories](https://apidocs.geoapify.com/docs/places/#categories) if one specific category seems to return too little once it's coming from this path.
+**The actual fix:** `market-radar-proxy-worker.js` now tries Geoapify's Places API as a genuine second-tier fallback once every Overpass mirror has failed. Geoapify is also OSM-based underneath, but rate-limits by API key rather than by IP, which is the one property that actually sidesteps this specific failure mode. Needs `GEOAPIFY_API_KEY` (above) — without it, a full Overpass outage still degrades honestly to "competitor data unavailable" rather than crashing, it just doesn't get a second chance to recover first. Geoapify's category names don't match OpenStreetMap's tags one-for-one, so `GEOAPIFY_CATEGORY_MAP` in the Worker is a translation. **Confirmed 2026-09-20** against Geoapify's own published OpenAPI spec and its docs page ([apidocs.geoapify.com/docs/places/#categories](https://apidocs.geoapify.com/docs/places/#categories)): all 17 distinct category strings in the map exist (one unknown name would make Geoapify reject the whole request with a 400). That checks the *names*, not how complete Geoapify's data is for Miri — if one category seems to return too little via this path, that is the thing to look at.
 
 ### The population figure that was wrong three times over
 
@@ -151,6 +219,10 @@ Everything a layperson might want to change lives in one `CONFIG` block near the
 | Timeout per external call (each Overpass mirror, Geoapify, ORS, data.gov.my, Gemini) | 10 seconds | `EXTERNAL_CALL_TIMEOUT_MS`, `market-radar-proxy-worker.js` |
 | How often the "still working" status message updates during a slow analysis | Every 7 seconds | `PROGRESS_MESSAGES` / `startProgressMessages()`, `market-radar.js` |
 | Geoapify category mapping (Overpass-fallback only) | 10 categories mapped, "printing" unmapped (Geoapify has no print-shop equivalent) — see `GEOAPIFY_CATEGORY_MAP` | `GEOAPIFY_CATEGORY_MAP`, `market-radar-proxy-worker.js` |
+| Most places Geoapify may return per backstop call | 500 (Geoapify's documented maximum), across all categories combined, nearest-first — lower it to cap credit spend per call; the page warns when the cap is hit | `GEOAPIFY_RESULT_LIMIT`, `market-radar-proxy-worker.js` |
+| Backstop fire-drill switch | Off. A plain-text *Variable* (not a secret) named `FORCE_OVERPASS_FAIL`; set to `1` to force the Geoapify backstop for a test, then delete it | Worker → Settings → Variables and Secrets |
+| Worker version shown on the page | 1.4.0 | `WORKER_VERSION`, `market-radar-proxy-worker.js` |
+| Client version (browser console, F12) | 1.4.0 | `CLIENT_VERSION`, `market-radar.js` |
 | Brand-name / keyword fallback for categories where the primary OSM tag is shared with other business types | "drinks" only for now (bubble tea brand names + generic words) | `NAME_HINTS`, `market-radar.js` — add another category's array the same way if it runs into the same problem |
 | Isochrone cache duration | 30 days | `fetchIsochrone`, `market-radar-proxy-worker.js` |
 | Demographics cache duration | 7 days | `fetchDemographics`, `market-radar-proxy-worker.js` — data.gov.my's Data Catalogue API allows only 4 requests/minute total, confirmed at developer.data.gov.my/rate-limit, so this is deliberately long |
@@ -223,3 +295,12 @@ Per `AI_BUILD_BRIEF.md`'s own rule, a single-tool build session doesn't patch ev
 | DOSM | Department of Statistics Malaysia — the government body behind the population and household-income datasets this tool uses, both published freely via data.gov.my. |
 | HIES | Household Income and Expenditure Survey — the actual survey DOSM's income-by-district numbers come from, most recently run in 2022. |
 | Worker | The Cloudflare Worker (`market-radar-proxy-worker.js`) — holds the OpenRouteService and Gemini keys server-side and caches every external call so this tool doesn't quietly exhaust a shared free-tier allowance. |
+| Backstop | A second source used only when the first has failed. Here: Geoapify's Places API, tried after every Overpass mirror has failed or reported a runtime error. "Backstop" is also the word the page uses when it tells you the answer came from Geoapify. |
+| Soft failure | A failure that doesn't look like one: the server answers "200 OK" but the body says the query timed out or ran out of memory. Overpass does this. It has to be caught by reading the `remark` field, because the status code alone says everything is fine. |
+| Remark (Overpass) | A text field Overpass adds to its answer when something went wrong mid-query, e.g. "runtime error: Query timed out". Normal answers don't have one. |
+| Credit (Geoapify) | Geoapify's billing unit. The free plan gives 3,000 a day; a Places lookup costs roughly 1 per 20 places returned (inferred — see the 2026-09-20 section). Credits reset daily. |
+| Secret vs Variable (Cloudflare) | Both live under the Worker's Settings → Variables and Secrets. A **Secret** is hidden after saving — use it for API keys. A **Variable** is plain text anyone with account access can read — fine for switches like `FORCE_OVERPASS_FAIL`, never for keys. |
+| Fire drill | A deliberate, harmless test of the failure path. Setting `FORCE_OVERPASS_FAIL` to `1` pretends Overpass is down so you can watch the Geoapify backstop take over. Delete the variable afterwards. |
+| Worker version | The `1.4.0`-style number the Worker sends back with every answer and the page prints beside the competitor count. If the page says "Worker version unknown", the old Worker is still deployed. |
+| Truncated (backstop) | Geoapify returned its maximum number of places, so there may be more it didn't send. Results are requested nearest-first, so what's missing is the farthest places — but the competitor count can still be an undercount, and the page says so. |
+| Source label | The small line under *Competitors in catchment* saying where the list came from — which Overpass mirror, or the Geoapify backstop — and whether it was served from the 24-hour cache. |

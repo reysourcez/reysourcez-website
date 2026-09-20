@@ -69,6 +69,18 @@
        than made here, since it touches files this session didn't own.
 
    ------------------------------------------------------------
+   ADDED / FIXED, 2026-09-20 (package v1.4.0): the page now SHOWS where
+   the competitor list came from — "OSM via Overpass (<mirror>)", or
+   "OSM via Geoapify backstop" when every Overpass mirror failed — plus
+   whether it was served from the 24h cache and which Worker version is
+   deployed (see describePoiSource / describeWorker at the bottom of
+   this file). Before this, there was no way to tell whether the Geoapify
+   backstop had ever run. Also fixed: the "Nearby institutions" card said
+   "None found" whenever competitor data was unavailable or came from the
+   backstop — but institutions simply weren't checked in those cases, and
+   "0 found" vs "not checked" must never look the same on screen (same
+   principle as poisAvailable below).
+
    FIXED, 2026-09-16: "Drink stall / bubble tea" was invisible for
    real bubble tea shops. Root cause was in CATEGORY_TAGS below plus
    categorize() in market-radar-proxy-worker.js — see the comment on
@@ -79,7 +91,11 @@
    tag added here.
    ============================================================ */
 
-console.info('[Market Radar] script build: 2026-09-18-v5');
+// Bumped 2026-09-20 with package v1.4.0. Check this line in the browser
+// console (F12) to confirm which copy of this file the visitor is really
+// running — the page can be cached separately from the Worker.
+const CLIENT_VERSION = '1.4.0';
+console.info('[Market Radar] script build: 2026-09-20-v6 (package v' + CLIENT_VERSION + ')');
 
 /* ================= CONFIG =================
    Everything below is meant to be changed. See the Settings
@@ -686,6 +702,7 @@ async function analyzeSpot() {
       district: town.district,
     });
     recordUsage();
+    const sourceLabel = describePoiSource(data);
 
     const catchment = drawCatchment(data.isochrone, pin.lat, pin.lng, catchmentModeKey);
 
@@ -765,10 +782,10 @@ async function analyzeSpot() {
     };
 
     if (lastAnalysis.poisAvailable) {
-      document.getElementById('mr-competitor-count').innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback)}`;
+      document.getElementById('mr-competitor-count').innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML((catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback) + ' \u00b7 ' + sourceLabel)}`;
       document.getElementById('mr-diversity-value').textContent = Math.round(lastAnalysis.diversityIndex * 100) + '% mixed';
     } else {
-      document.getElementById('mr-competitor-count').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
+      document.getElementById('mr-competitor-count').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below \u00b7 ' + describeWorker(data))}`;
       document.getElementById('mr-diversity-value').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
     }
     document.getElementById('mr-population-value').textContent = lastAnalysis.districtPopulation ? lastAnalysis.districtPopulation.toLocaleString() : 'Not available';
@@ -785,8 +802,17 @@ async function analyzeSpot() {
     const anchorCounts = {};
     anchorList.forEach((a) => { anchorCounts[a.anchorType] = (anchorCounts[a.anchorType] || 0) + 1; });
     const anchorSummary = Object.entries(anchorCounts).map(([k, n]) => `${n} ${(ANCHOR_TAGS[k] || {}).label || k}`).join(', ');
-    document.getElementById('mr-anchor-value').textContent = anchorList.length ? anchorList.length : 'None found';
-    document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official \u2014 OSM: ' + anchorSummary) : 'Official \u2014 OSM (none of the tracked types found nearby)';
+    if (data.poisSource === 'geoapify') {
+      // The backstop only maps competitor categories, so institutions were never looked up.
+      document.getElementById('mr-anchor-value').textContent = 'Not checked';
+      document.getElementById('mr-anchor-provenance').textContent = 'Backstop source has no institution mapping \u2014 run again once Overpass recovers';
+    } else if (data.poisError) {
+      document.getElementById('mr-anchor-value').textContent = 'Not checked';
+      document.getElementById('mr-anchor-provenance').textContent = 'Overpass unavailable \u2014 see status message';
+    } else {
+      document.getElementById('mr-anchor-value').textContent = anchorList.length ? anchorList.length : 'None found';
+      document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official \u2014 OSM: ' + anchorSummary) : 'Official \u2014 OSM (none of the tracked types found nearby)';
+    }
 
     const trend = lastAnalysis.wholesaleRetailTrend;
     if (trend) {
@@ -809,7 +835,10 @@ async function analyzeSpot() {
     document.getElementById('mr-ai-insight').classList.add('is-empty');
 
     if (data.poisError) {
-      setStatus(data.poisError, true);
+      // The Worker version is appended so "is the old Worker still live?" is answerable from the screen.
+      setStatus(data.poisError + ' [' + describeWorker(data) + ']', true);
+    } else if (data.poisSource === 'geoapify') {
+      setStatus(`Found ${lastAnalysis.competitorCount} matching ${lastAnalysis.categoryLabel} competitor${lastAnalysis.competitorCount === 1 ? '' : 's'} in this catchment. Overpass was unavailable, so this came from the Geoapify backstop instead \u2014 nearby institutions weren't checked in this mode.` + (data.poisTruncated ? ' The backstop hit its 500-place cap (nearest places are kept first), so this count may be an undercount \u2014 try a shorter catchment.' : ''));
     } else {
       setStatus(`Found ${lastAnalysis.competitorCount} matching ${lastAnalysis.categoryLabel} competitor${lastAnalysis.competitorCount === 1 ? '' : 's'} in this catchment.`);
     }
@@ -830,6 +859,26 @@ async function analyzeSpot() {
   }
 }
 function provenanceHTML(text) { return `<span class="mr-provenance">${escapeHTML(text)}</span>`; }
+
+// Which Worker answered, e.g. "Worker v1.4.0". A Worker older than v1.4.0
+// sends no version at all — say so plainly, because "the old file is
+// still deployed" is the most common reason a fix appears not to work.
+function describeWorker(data) {
+  return data && data.workerVersion ? ('Worker v' + data.workerVersion) : 'Worker version unknown \u2014 older than v1.4.0, redeploy it';
+}
+
+// Where the competitor list actually came from, in plain words. Pure
+// function on purpose: no DOM, easy to check on its own.
+function describePoiSource(data) {
+  const src = (data && data.poisSource) || '';
+  let label;
+  if (src === 'geoapify') label = 'OSM via Geoapify backstop (Overpass was unavailable)';
+  else if (src.indexOf('overpass:') === 0) label = 'OSM via Overpass (' + src.slice('overpass:'.length) + ')';
+  else if (src === 'overpass') label = 'OSM via Overpass';
+  else label = 'OpenStreetMap';
+  if (data && data.poisCached) label += ', cached up to 24h';
+  return label + ' \u00b7 ' + describeWorker(data);
+}
 
 /* ================= GEMINI INSIGHT (narration only \u2014 see this file's own header) ================= */
 
