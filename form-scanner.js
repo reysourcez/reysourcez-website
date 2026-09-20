@@ -1,13 +1,19 @@
 /* ============================================================
    Form Scanner Frontend Engine
    Version: v4.2-robust-upload - 2026-09-20
-   ============================================================ 
-   */console.info('[Form Scanner] Engine initialized: v4.2-robust-upload');
+   ============================================================ */
+console.info('[Form Scanner] Engine initialized: v4.2-robust-upload');
+
 const MAX_IMAGE_EDGE = 1280;
 const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
-const PAGE_W = 595.28; // Standard A4 Widthconst PAGE_H = 841.89; // Standard A4 Heightconst MARGIN = 36;const CONTENT_W = PAGE_W - (MARGIN * 2);
-let currentFileBase64 = null;let currentMimeType = 'image/jpeg';
-let lastResult = null;function setStatus(text, isError) 
+const PAGE_W = 595.28; // Standard A4 Width
+const PAGE_H = 841.89; // Standard A4 Height
+const MARGIN = 36;
+const CONTENT_W = PAGE_W - (MARGIN * 2);
+
+let currentFileBase64 = null;
+let currentMimeType = 'image/jpeg';
+let lastResult = null;
 {
   const el = document.getElementById('fs-status');
   if (!el) return;
