@@ -1,8 +1,9 @@
 /* ============================================================
    Form Scanner Frontend Engine
-   Version: v4.2-robust-upload - 2026-09-20
+   Version: v4.3-bulletproof-upload - 2026-09-20
    ============================================================ */
-console.info('[Form Scanner] Engine initialized: v4.2-robust-upload');
+
+console.info('[Form Scanner] Engine initialized: v4.3-bulletproof-upload');
 
 const MAX_IMAGE_EDGE = 1280;
 const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
@@ -14,12 +15,15 @@ const CONTENT_W = PAGE_W - (MARGIN * 2);
 let currentFileBase64 = null;
 let currentMimeType = 'image/jpeg';
 let lastResult = null;
-{
+
+function setStatus(text, isError) {
   const el = document.getElementById('fs-status');
   if (!el) return;
   el.textContent = text;
   el.className = 'status-box active' + (isError ? ' is-error' : '');
-}function cleanPdfText(str) {
+}
+
+function cleanPdfText(str) {
   if (str == null) return '';
   return String(str)
     .replace(/[\r\n\t]+/g, ' ')
@@ -30,19 +34,15 @@ let lastResult = null;
     .replace(/[^\x20-\x7E\xA0-\xFF]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}function resizeImageToBase64(file) {
+}
+
+function resizeImageToBase64(file) {
   return new Promise((resolve, reject) => {
-    const fileName = (file.name || '').toLowerCase();
-    const fileType = (file.type || '').toLowerCase();
-    const isImage = fileType.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp|gif)$/.test(fileName);
-
-    if (!isImage) return reject(new Error("Selected file is not a valid image."));
-
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error('Failed reading file.'));
+    reader.onerror = () => reject(new Error('Failed reading file stream.'));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('Failed loading image stream.'));
+      img.onerror = () => reject(new Error('File could not be parsed as an image. Ensure it is a valid photo.'));
       img.onload = () => {
         let { width, height } = img;
         if (width > MAX_IMAGE_EDGE || height > MAX_IMAGE_EDGE) {
@@ -61,19 +61,17 @@ let lastResult = null;
     };
     reader.readAsDataURL(file);
   });
-}async function handleFileSelect(e) {
+}
+
+async function handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
 
   const fileName = (file.name || '').toLowerCase();
   const fileType = (file.type || '').toLowerCase();
 
-  const isPdf = fileType === 'application/pdf' || fileName.endsWith('.pdf');
-  const isImage = fileType.startsWith('image/') || /\.(jpg|jpeg|png|webp|bmp|gif)$/.test(fileName);
-
-  if (!isPdf && !isImage) {
-    return setStatus('Selected file must be an image or a PDF document.', true);
-  }
+  // Bulletproof detection for PDF vs Image (supports missing MIME types & broad extensions)
+  const isPdf = fileType.includes('pdf') || fileName.endsWith('.pdf');
 
   setStatus('Processing uploaded file\u2026');
   try {
@@ -99,6 +97,7 @@ let lastResult = null;
       document.getElementById('fs-scan-btn').disabled = false;
       setStatus('PDF document ready for analysis.');
     } else {
+      // Treat as image
       const { base64, previewUrl } = await resizeImageToBase64(file);
       currentFileBase64 = base64;
       currentMimeType = fileType || 'image/jpeg';
@@ -114,9 +113,12 @@ let lastResult = null;
       setStatus('Image ready for analysis.');
     }
   } catch (err) {
+    document.getElementById('fs-scan-btn').disabled = true;
     setStatus(err.message || 'File processing failed.', true);
   }
-}async function scanForm(fileBase64, mimeType, note) {
+}
+
+async function scanForm(fileBase64, mimeType, note) {
   let response;
   try {
     response = await fetch(PROXY_ENDPOINT, {
@@ -139,7 +141,9 @@ let lastResult = null;
 
   if (!response.ok) throw new Error(data.error || `Scan failed with status ${response.status}.`);
   return data;
-}function renderPreview(result) {
+}
+
+function renderPreview(result) {
   document.getElementById('fs-preview-title').textContent = result.title || 'Scanned Form Structure';
   document.getElementById('fs-preview-ref').textContent = result.reference_code || '';
 
@@ -178,7 +182,9 @@ let lastResult = null;
 
   document.getElementById('fs-results-section').hidden = false;
   document.getElementById('fs-results-section').scrollIntoView({ behavior: 'smooth' });
-}async function runScan() {
+}
+
+async function runScan() {
   if (!currentFileBase64) return setStatus('Select an image or PDF file first.', true);
 
   const btn = document.getElementById('fs-scan-btn');
@@ -198,7 +204,11 @@ let lastResult = null;
   } finally {
     btn.disabled = false;
   }
-}/* ================= EXACT STRUCTURAL PDF BUILDER ================= */async function buildFillablePdf(result) {
+}
+
+/* ================= EXACT STRUCTURAL PDF BUILDER ================= */
+
+async function buildFillablePdf(result) {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
   const pdfDoc = await PDFDocument.create();
   pdfDoc.setTitle(cleanPdfText(result.title) || 'Voucher Form');
@@ -444,7 +454,9 @@ let lastResult = null;
   }
 
   return pdfDoc.save();
-}async function downloadPdf() {
+}
+
+async function downloadPdf() {
   if (!lastResult) return;
   const btn = document.getElementById('fs-download-btn');
   btn.disabled = true;
@@ -467,7 +479,9 @@ let lastResult = null;
     btn.disabled = false;
     btn.textContent = 'Download Fillable PDF';
   }
-}function init() {
+}
+
+function init() {
   const photoInput = document.getElementById('fs-photo-input');
   if (photoInput) photoInput.addEventListener('change', handleFileSelect);
 
@@ -476,4 +490,6 @@ let lastResult = null;
 
   const downloadBtn = document.getElementById('fs-download-btn');
   if (downloadBtn) downloadBtn.addEventListener('click', downloadPdf);
-}document.addEventListener('DOMContentLoaded', init);
+}
+
+document.addEventListener('DOMContentLoaded', init);
