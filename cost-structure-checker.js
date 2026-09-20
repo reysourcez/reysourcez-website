@@ -48,7 +48,7 @@
    construction rather than by luck.
    ============================================================ */
 
-console.info('[Cost Structure Checker] script build: 2026-09-13-v1');
+console.info('[Cost Structure Checker] script build: 2026-09-20-v1.2');
 
 /* ================= CONFIG =================
    Everything a layperson might want to retune without reading
@@ -82,7 +82,7 @@ const USAGE_STORAGE_KEY = 'csc-usage';
 // cost-structure-checker-proxy-worker.js's own header for deploy
 // steps. Tool works completely without this; only the "Get your
 // AI action plan" button needs it.
-const WORKER_ENDPOINT = 'https://cost-structure-checker-proxy-worker.reysourcez-ent.workers.dev/';
+const WORKER_ENDPOINT = 'https://cost-structure-checker-proxy.reysourcez-ent.workers.dev/';
 
 /* ================= SHARED UTILITIES ================= */
 
@@ -457,6 +457,72 @@ function renderCauseSections() {
   });
 }
 
+/* ================= DAILY WASTAGE LOG =================
+   An event log, not a reconciliation \u2014 modeled directly on a
+   real operational SOP form a user shared (see REASON_CODES's own
+   comment in cost-structure-checker-content.js). Every row is one
+   wastage event logged as it happens: what, roughly how much, an
+   estimated RM cost, and a reason code. Sums to a daily total, the
+   same "JUMLAH KESELURUHAN HARIAN" (daily grand total) the source
+   form computes by hand at the bottom of the page. */
+
+let logRowIdCounter = 0;
+
+function reasonCodeOptions() {
+  return REASON_CODES.map((r) => `<option value="${r.code}">${r.code} \u2014 ${escapeHTML(r.label)}</option>`).join('');
+}
+function categoryOptions() {
+  return WASTAGE_LOG_CATEGORIES.map((c) => `<option value="${escapeHTML(c)}">${escapeHTML(c)}</option>`).join('');
+}
+
+function createLogRow() {
+  logRowIdCounter++;
+  const tbody = document.getElementById('csc-wl-rows');
+  const tr = document.createElement('tr');
+  tr.dataset.rowId = 'wl-' + logRowIdCounter;
+  tr.innerHTML = `
+    <td><input type="time" class="csc-wl-time"></td>
+    <td><input type="text" class="csc-wl-item" placeholder="e.g. Chicken thigh"></td>
+    <td><select class="csc-wl-category">${categoryOptions()}</select></td>
+    <td><input type="text" class="csc-wl-qty" placeholder="e.g. 1.2kg"></td>
+    <td><input type="number" class="csc-wl-cost" min="0" step="0.01" value="0"></td>
+    <td><select class="csc-wl-reason">${reasonCodeOptions()}</select></td>
+    <td><input type="text" class="csc-wl-notes" placeholder="What was done about it"></td>
+    <td class="no-print"><button type="button" class="delete-row" aria-label="Remove this entry">&times;</button></td>
+  `;
+  tbody.appendChild(tr);
+  tr.querySelector('.csc-wl-cost').addEventListener('input', recalcWastageLog);
+  tr.querySelector('.delete-row').addEventListener('click', () => { tr.remove(); recalcWastageLog(); });
+}
+
+function recalcWastageLog() {
+  let total = 0;
+  document.querySelectorAll('#csc-wl-rows > tr').forEach((tr) => { total += num(tr.querySelector('.csc-wl-cost')); });
+  document.getElementById('csc-wl-total').textContent = 'RM ' + total.toFixed(2);
+}
+
+function resetWastageLog() {
+  const ok = confirm('Clear every entry in the Daily Wastage Log? This can\u2019t be undone.');
+  if (!ok) return;
+  document.getElementById('csc-wl-rows').innerHTML = '';
+  logRowIdCounter = 0;
+  createLogRow(); createLogRow(); createLogRow();
+  recalcWastageLog();
+}
+
+function renderReasonLegend() {
+  document.getElementById('csc-wl-legend').innerHTML = REASON_CODES.map((r) => `<span><strong>${r.code}</strong> \u2014 ${escapeHTML(r.label)}</span>`).join('');
+}
+
+// Same WS-YYYYMMDD scheme as the source SOP's own "NO. RUJUKAN BORANG"
+// field \u2014 purely a display convenience, nothing is stored or submitted
+// anywhere, so there's no real uniqueness to guarantee here.
+function updateFormRef() {
+  const raw = document.getElementById('csc-wl-date').value; // yyyy-mm-dd from <input type="date">
+  const out = document.getElementById('csc-wl-form-ref');
+  out.textContent = raw ? 'WS-' + raw.replace(/-/g, '') : 'WS\u2014';
+}
+
 /* ================= WASTAGE & PAR-LEVEL TRACKER ================= */
 
 let wastageRowIdCounter = 0;
@@ -674,6 +740,16 @@ function init() {
   });
   document.getElementById('csc-guide-venue-select').addEventListener('change', renderStructureComparison);
 
+  document.getElementById('csc-wl-add-row').addEventListener('click', () => { createLogRow(); recalcWastageLog(); });
+  document.getElementById('csc-wl-reset').addEventListener('click', resetWastageLog);
+  document.getElementById('csc-wl-date').addEventListener('input', updateFormRef);
+  updateFormRef(); // establish the WS— placeholder correctly on load, same "wire the listener, then render once" pattern as recalcWastageLog()/recalcWastageTracker() below
+  renderReasonLegend();
+  createLogRow();
+  createLogRow();
+  createLogRow();
+  recalcWastageLog();
+
   document.getElementById('csc-add-wastage-row').addEventListener('click', () => { createWastageRow(); recalcWastageTracker(); });
   document.getElementById('csc-reset-wastage').addEventListener('click', resetWastageTracker);
   ['csc-wastage-period-days', 'csc-wastage-lead-time', 'csc-wastage-safety-buffer'].forEach((id) => {
@@ -700,6 +776,20 @@ function init() {
   });
   window.addEventListener('scroll', () => { quickNav.hidden = window.scrollY < window.innerHeight * 0.4; }, { passive: true });
   document.getElementById('csc-back-to-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+  // Now that the Wastage & Par-Level Tracker is collapsible too (2026-09-20),
+  // a plain <a href="#csc-wastage-log">/<a href="#csc-wastage-tracker"> tool
+  // link from a ticked cause (see renderCauseSections()) does a native browser
+  // anchor-jump, NOT the quick-nav click handler above \u2014 so it wouldn't know
+  // to open a closed <details> on its own. Same one-liner as the quick-nav
+  // handler already uses, just generalized to any in-page hash link so this
+  // doesn't need revisiting if more collapsibles get anchor-linked later.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const target = document.getElementById(a.getAttribute('href').slice(1));
+    if (target) target.querySelectorAll('details:not([open])').forEach((d) => { d.open = true; });
+  });
 }
 
 document.addEventListener('DOMContentLoaded', init);

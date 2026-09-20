@@ -1,6 +1,6 @@
 # Cost Structure Checker — build notes
 
-New tool, built 2026-09-14 — the 10th tool in the Business Analysis dropdown. This doc assumes no prior context; everything needed is below. Companion file: `cost-structure-checker-settings-reference.xlsx` (same settings table below, in spreadsheet form).
+New tool, built 2026-09-14 — the 10th tool in the Business Analysis dropdown. This doc assumes no prior context; everything needed is below. Companion files: `cost-structure-checker-settings-reference.xlsx` (same settings table below, in spreadsheet form) and `WASTAGE_TOOLS_PLACEMENT_NOTES.md` (2026-09-20 — the "should the Daily Wastage Log / Wastage & Par-Level Tracker live on a different page instead?" question, settled: no — read that file before relitigating it).
 
 **A nav-standard conflict was found and fixed as part of this build — see the very end of this doc before anything else if you're only reading one section.**
 
@@ -10,7 +10,7 @@ New tool, built 2026-09-14 — the 10th tool in the Business Analysis dropdown. 
 
 Pick a venue type → optionally enter your real Ingredients / Overhead / Manpower / Margin percentages (skip this entirely if you don't know them yet — it's a bonus diagnostic aid, not a gate) → four category cards show your guide benchmark and auto-suggest which ones are running on the wrong side of it → tap any card, flagged or not, to open its full list of standard F&B cost-creep causes → tick whatever sounds familiar → each ticked cause expands into concrete, menu-engineering-grounded guidance right there on the page → a consolidated, impact-sorted Action Plan builds itself from everything ticked → optionally, send that same selection to Gemini for a short prioritized narrative on top of it, which never invents a cause you haven't ticked or a number you haven't given it.
 
-A built-in **Wastage & Par-Level Tracker** sits inside the page for the single most commonly-cited cause (high wastage / no par levels): log opening stock, purchases, and closing counts for a period, and it works out consumption, wastage (if you also give it an expected usage), and a suggested order quantity from your own average usage.
+A built-in **Daily Wastage Log** and **Wastage & Par-Level Tracker** sit inside the page for the single most commonly-cited cause (high wastage / no par levels) — two genuinely different, complementary tools rather than one tool twice. See section 6 below for why both exist rather than just one.
 
 ## 2. Flow chart
 
@@ -25,7 +25,8 @@ flowchart TD
     F --> G[Cause checklist for that category<br/>&#40mutually-exclusive tab if 2+ flagged&#41]
     G --> H[Tick causes that sound familiar]
     H --> I[Each tick expands:<br/>what this looks like + what to do]
-    I --> J[High-wastage causes link to the<br/>Wastage &amp; Par-Level Tracker]
+    I --> J1[Wastage-related causes link to<br/>the Daily Wastage Log: log it as it happens]
+    I --> J2[Par-level causes link to<br/>the Par-Level Tracker: reconcile periodically]
     H --> K[Action Plan: every ticked cause,<br/>sorted worst-deviation-first]
     K --> L{Want an AI-prioritized narrative?}
     L -- yes --> M[Cloudflare Worker -> Gemini:<br/>narrate/prioritize ONLY what was ticked,<br/>never invent a cause or number]
@@ -40,14 +41,16 @@ The core interaction asked for was "users can click which cost structures, and t
 
 ## 4. The cause library
 
-Lives entirely in `cost-structure-checker-content.js`, deliberately separated from the rendering logic in `cost-structure-checker.js` so it's the one file a non-coder could open and edit without reading any code that actually runs anything. 41 causes total, each with a "what this looks like" line and 3 concrete action steps grounded in standard F&B cost-control / menu-engineering practice:
+Lives entirely in `cost-structure-checker-content.js`, deliberately separated from the rendering logic in `cost-structure-checker.js` so it's the one file a non-coder could open and edit without reading any code that actually runs anything. 44 causes total, each with a "what this looks like" line and 3 concrete action steps grounded in standard F&B cost-control / menu-engineering practice:
 
 | Category | Causes | A few examples |
 |---|---|---|
-| Ingredients & Packaging | 13 | High wastage, not practicing FIFO, no par levels, no yield testing, theoretical vs. actual variance not tracked |
+| Ingredients & Packaging | 16 | High wastage, burnt/overcooked, spillage, not practicing FIFO, no par levels, customer returns not tracked, theoretical vs. actual variance not tracked |
 | Overhead | 10 | Rent too high for revenue potential, energy inefficiency, no preventive maintenance, fixed vs. variable never separated |
 | Manpower | 10 | Overstaffed for actual volume, high turnover, excess overtime, owner's own labor not counted as a cost |
 | Margin | 8 | Menu not engineered to true cost, delivery-app commission not priced in, low volume below break-even, unpriced "value adds" |
+
+Three of the sixteen Ingredients causes (burnt/overcooked, spillage/handling, customer returns) were added after a user shared a real operational SOP form (`SOP-KIT-WS01`, see section 6a) — its six wastage reason codes were checked against the existing library one by one: two already mapped cleanly onto existing causes, three genuinely didn't and became new causes, and one (unrecorded tasting/sampling) tightened an existing cause's wording rather than needing a wholly new entry.
 
 Several causes deliberately point back at another tool already on this site rather than re-explaining something that tool already does properly — a "menu costing not updated" cause tells you to use Menu Calculator's Inflation Buffer %, a "menu not engineered" cause points at Margin Analysis's own Star/Plowhorse/Puzzle/Dog chart, and so on. This ties the diagnostic back into the rest of the product suite instead of duplicating logic.
 
@@ -60,7 +63,24 @@ Several causes deliberately point back at another tool already on this site rath
 - **Problem direction**: Ingredients/Overhead/Manpower are a problem when running *high*; Margin is a problem when running *low*. One `badDirection` flag per category (in `CATEGORY_META`) is what lets every status check use the same function without a single Margin-specific `if` anywhere in the render code.
 - **Auto-suggest, always overridable**: a category outside the band gets pre-flagged with a "suggested" badge, but tapping its card always toggles the flag regardless of what the numbers say — a gut feeling that something's off is a perfectly good reason to check, and the tool never argues with that.
 
-## 6. Wastage & Par-Level Tracker — the mechanics
+## 6. Daily Wastage Log and Wastage & Par-Level Tracker — two tools, not one twice
+
+Both were built around a real operational document a user shared directly: a Daily Wastage Sheet (`SOP-KIT-WS01`, "Borang Kawalan Kebocoran & Pembaziran Dapur Harian") already in use in an actual Malaysian kitchen. Worth being explicit about why there are two rather than one, since on the surface they both compute "wastage":
+
+- **Daily Wastage Log** is an **event log** — the source form's own model exactly: log each wastage event *as it happens*, with a time, item, category, quantity, an estimated RM cost, one of six reason codes (A: expired/spoiled, B: burnt/overcooked, C: spilled/dropped, D: customer return, E: wrong cut/over-portion, F: unrecorded taste-test), and a corrective-action note. Sums to a daily RM total, the same `JUMLAH KESELURUHAN HARIAN` the source form computes by hand. Tells you *why* wastage happened, in the moment — but only catches what staff actually remember to write down.
+- **Wastage & Par-Level Tracker** is a **period reconciliation** — count stock at the start and end of a week (or whatever period), back-calculate total consumption, and compare it against an expected usage if you have one. Catches everything that left the shelf, including anything the daily log missed — but tells you nothing about *why*.
+
+A kitchen running only one of the two has a real, specific blind spot the other one covers. They're presented as sequential, always-visible sections (Daily Wastage Log first, Tracker second) rather than tabs, since they're complementary steps in one workflow, not competing views of the same thing — the "don't stack independently-togglable panels" rule from section 8 below doesn't apply to two panels that aren't alternatives of each other.
+
+**Reason codes are used verbatim from the source form** (`REASON_CODES` in `cost-structure-checker-content.js`) rather than invented fresh, since a business already running that SOP may have staff already trained on exactly those six letters. The "Category" column's preset options (Protein / Vegetable / Dairy / Dry goods / Beverage / Prepared dish / Other) are **not** from the source form — it left that column's values undefined — so this is a reasonable general default, not a source-verified list; flagged here in case that matters.
+
+The "Form ref" field auto-fills as `WS-YYYYMMDD` from the date entered, mirroring the source form's own `NO. RUJUKAN BORANG` field exactly — display-only, nothing is stored or needs to be unique.
+
+### Daily Wastage Log — the mechanics
+
+Per row: Time, Item, Category, Quantity/weight (free text — the source form itself just says "KUANTITI / BERAT" with no fixed unit), Estimated cost (RM), Reason code, Notes/corrective action. **Daily total** = sum of the Estimated cost column, recalculated on every keystroke. Outlet/date/shift/head chef/staff are simple text fields at the top, and Prepared-by/Confirmed-by/Reviewed-by are simple text fields at the bottom, mirroring the source form's own three-tier sign-off — these are typed names, not real signatures (a stateless browser tool has no persistence or authentication to back a real digital signature with), intended to be filled in digitally and then printed via Save as PDF as an actual replacement for a paper copy of this exact form.
+
+### Wastage & Par-Level Tracker — the mechanics
 
 Directly built from the example given: *"a table of ingredients usage, where they can track wastage and plan better use... when they know daily how much an order is, so project it and prepare only that amount."*
 
@@ -100,7 +120,9 @@ The live symptom, confirmed directly against both pages' own markup: `rental-cal
 | Wastage tracker: default period length | 7 days | `DEFAULT_PERIOD_DAYS`, `cost-structure-checker.js` |
 | Wastage tracker: default supplier lead time | 2 days | `DEFAULT_LEAD_TIME_DAYS`, `cost-structure-checker.js` |
 | Wastage tracker: default safety buffer | 1 day | `DEFAULT_SAFETY_BUFFER_DAYS`, `cost-structure-checker.js` |
-| Cause library size per category | Ingredients 13, Overhead 10, Manpower 10, Margin 8 | `CAUSE_LIBRARY`, `cost-structure-checker-content.js` |
+| Cause library size per category | Ingredients 16, Overhead 10, Manpower 10, Margin 8 | `CAUSE_LIBRARY`, `cost-structure-checker-content.js` |
+| Daily Wastage Log reason codes | 6 codes, A\u2013F, verbatim from source SOP form | `REASON_CODES`, `cost-structure-checker-content.js` |
+| Daily Wastage Log category presets | Protein, Vegetable, Dairy, Dry goods, Beverage, Prepared dish, Other | `WASTAGE_LOG_CATEGORIES`, `cost-structure-checker-content.js` |
 | AI daily usage cap (per browser) | 20 | `MAX_ANALYSES_PER_DAY`, `cost-structure-checker.js` |
 | Cloudflare Worker URL | needs pasting after deploy | `WORKER_ENDPOINT`, `cost-structure-checker.js` |
 | Gemini model used | `gemini-flash-lite-latest` | `GEMINI_MODEL`, `cost-structure-checker-proxy-worker.js` |
@@ -134,7 +156,11 @@ Built into the page itself as a collapsible section (`renderJargon()` reads from
 - **Auto-pull computed % from Margin Analysis or Interactive Costing Analysis**, instead of typing the four percentages in by hand. Both of those tools already compute this exact mix internally (`structureMixFromTotals()` / `structureMix()`), but neither currently *broadcasts* it over `costing-sync.js` — only their raw cost inputs get broadcast today, not the derived percentage mix. This page deliberately doesn't include `costing-sync.js` at all yet, for exactly this reason (an unused sync listener with nothing to listen to is worse than no listener) — see the comment above the `<script>` tags in `cost-structure-checker.html`. Adding the broadcast is a small, contained edit to those two other files' own `renderStructureComparison()`/`recalculate()` functions, not made here since it touches files this build doesn't own.
 - **Reconciling Margin Analysis's and Rental Calculator's own calc-tabs** against the newer "don't stack independently-togglable panels" UI/UX standard this build followed — see section 8 above. Not changed here; flagged for whoever owns that call.
 - **Central nav reconciliation** across the other 12 pages — see the Deploy checklist above.
+- **Auto-suggesting a cause from Daily Wastage Log entries** — e.g., several reason-code-B (burnt/overcooked) entries in the log could reasonably nudge the "Burnt, overcooked, or spoiled in cooking" cause toward pre-ticked, the same way an entered % auto-suggests a flagged category. Not wired up in this build; the log and the cause checklist are currently independent of each other.
+- **Category preset list for the Daily Wastage Log** (Protein/Vegetable/Dairy/etc.) is a reasonable default, not sourced from the reference SOP, which left that column undefined — worth confirming against real usage if the business has its own preferred categories.
 
 ## Version history
 
+- **v1.2 (2026-09-20)** — Wastage & Par-Level Tracker made collapsible (`<details class="csc-collapsible" open>`, same mechanics as Jargon/Methodology below), defaulting OPEN so the existing cause→tool anchor links land on a ready-to-use tool exactly as before rather than a collapsed summary bar. Two small bugs found and fixed while in this area: (1) the Jargon index and Methodology section's `<h2>` summaries never actually rendered a collapse/expand indicator — `.csc-collapsible-summary`'s chevron CSS only ever targeted `h3` (built for the per-jargon-term rows), so both top-level collapsibles were togglable with zero visual affordance; the CSS now covers `h2` too, fixing all three collapsibles in one pass. (2) A plain `<a href="#csc-wastage-log">`/`<a href="#csc-wastage-tracker">` tool link from a ticked cause does a native anchor-jump, bypassing the quick-nav's click handler entirely — so it wouldn't have opened a closed tracker on its own; a small delegated click listener now opens any closed `<details>` ahead of any in-page hash-link jump, not just quick-nav clicks. Also fixed: the Daily Wastage Log's "Form ref" field showed the literal 6 characters `\u2014` instead of an em dash on first load (real Unicode em dash now in the static HTML; `updateFormRef()` also now runs once at init to match the "wire the listener, then render once" pattern every other sub-tool on this page already follows) — and the same literal-escape-sequence bug existed in three of the Tracker's own column tooltips (Consumed/Wastage/Suggested par), now real en-dash/minus/multiply characters instead of `\u2212`/`\u2014`/`\u00d7`. **Not fixed, flagged only:** the identical literal-escape pattern also turned up in two comments in this HTML file (harmless — comments aren't rendered) and in this very notes file's own v1.1 entry below (harmless — internal docs, not user-facing); worth a search-and-fix across the OTHER tool pages sometime, since nothing here suggests it's unique to this one. See `WASTAGE_TOOLS_PLACEMENT_NOTES.md` for the placement question this session also answered (kept on this page, not moved) and the live-site findings that came out of researching it (a stale default branch on GitHub, and confirmed nav drift on Interactive Costing Analysis). `cost-structure-checker.js`'s script-build banner bumped to `2026-09-20-v1.2`; its `<script>` tag's cache-bust bumped to `?v=2` (content.js unchanged, stays at `?v=1`).
+- **v1.1 (2026-09-15)** — Added the **Daily Wastage Log**, a real-time wastage event log modeled directly on a Malaysian kitchen SOP form a user shared (`SOP-KIT-WS01`), sitting alongside the existing Par-Level Tracker as a genuinely complementary tool rather than a duplicate — event log (what/why, as it happens) vs. period reconciliation (how much, in total). Carries the source form's own six reason codes (A–F) verbatim, a daily RM total, and outlet/date/shift/sign-off fields for a proper Save-as-PDF record. Cross-checking those six reason codes against the existing cause library surfaced three genuine gaps, now added as new Ingredients causes (burnt/overcooked, spillage/handling, customer returns not tracked) and one existing cause's wording tightened (comps/tasting) — cause library grows from 41 to 44. Quick-nav gained a fourth section button (Daily Log).
 - **v1.0 (2026-09-14)** — Initial build. Wizard, optional %-entry with two-pie guide comparison, 4-category diagnostic cards, 41-cause library across Ingredients/Overhead/Manpower/Margin, mutually-exclusive cause-checklist tabs, Wastage & Par-Level Tracker, deterministic impact-sorted Action Plan, optional Gemini-narrated AI plan via Cloudflare Worker proxy, jargon index, methodology section, Save as PDF, floating quick-nav. Also: reconciled a documentation fork in `NAV_ORDER_STANDARD.md` (see section 9) and confirmed the new page complies with AI_BUILD_BRIEF.md's 2026-09-08 UI/UX standards (top-right Save as PDF, bottom-right floating quick-nav, no stacked independently-togglable panels, natural-length tooltips).
