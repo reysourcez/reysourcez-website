@@ -1,16 +1,17 @@
 /* ============================================================
    Form Scanner Frontend Engine
-   Version: v4.4-autoscale (Based on v4.3 Default Best)
+   Version: v4.5-dynamic-auto
    ============================================================ */
 
-console.info('[Form Scanner] Engine initialized: v4.4-autoscale');
+console.info('[Form Scanner] Engine initialized: v4.5-dynamic-auto');
 
 const MAX_IMAGE_EDGE = 1280;
-const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
+const PROXY_ENDPOINT = '[https://form-scanner-proxy.reysourcez-ent.workers.dev](https://form-scanner-proxy.reysourcez-ent.workers.dev)';
 
 let currentFileBase64 = null;
 let currentMimeType = 'image/jpeg';
-let currentOriginalSize = 'Unknown';
+let currentOriginalSize = 'A4';
+let currentOriginalOrientation = 'portrait';
 let lastResult = null;
 
 function setStatus(text, isError) {
@@ -39,9 +40,10 @@ function resizeImageToBase64(file) {
     reader.onerror = () => reject(new Error('Failed reading file stream.'));
     reader.onload = () => {
       const img = new Image();
-      img.onerror = () => reject(new Error('File could not be parsed as an image. Ensure it is a valid photo.'));
+      img.onerror = () => reject(new Error('File could not be parsed as an image.'));
       img.onload = () => {
         let { width, height } = img;
+        const isLandscape = width > height;
         if (width > MAX_IMAGE_EDGE || height > MAX_IMAGE_EDGE) {
           const scale = MAX_IMAGE_EDGE / Math.max(width, height);
           width = Math.round(width * scale);
@@ -52,7 +54,7 @@ function resizeImageToBase64(file) {
         canvas.height = height;
         canvas.getContext('2d').drawImage(img, 0, 0, width, height);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-        resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl });
+        resolve({ base64: dataUrl.split(',')[1], previewUrl: dataUrl, isLandscape });
       };
       img.src = reader.result;
     };
@@ -80,9 +82,8 @@ async function handleFileSelect(e) {
 
       currentFileBase64 = base64Data;
       currentMimeType = 'application/pdf';
-      currentOriginalSize = 'A4'; // default fallback
 
-      // Physics Engine: Extract actual page dimensions natively
+      // Measure exact physical points of page 1
       try {
         const binaryString = window.atob(base64Data);
         const len = binaryString.length;
@@ -91,16 +92,15 @@ async function handleFileSelect(e) {
         
         const pdfDocUpload = await PDFLib.PDFDocument.load(bytes);
         const firstPage = pdfDocUpload.getPages()[0];
-        const { width, height } = firstPage.getSize();
-        
-        // A5 long edge is ~595pts. A4 long edge is ~842pts.
-        if (Math.max(width, height) < 700) {
-          currentOriginalSize = 'A5';
-        } else {
-          currentOriginalSize = 'A4';
-        }
+        const w = firstPage.getWidth();
+        const h = firstPage.getHeight();
+
+        currentOriginalOrientation = w > h ? 'landscape' : 'portrait';
+        const maxEdge = Math.max(w, h);
+        currentOriginalSize = maxEdge < 720 ? 'A5' : 'A4';
       } catch (err) {
-        console.warn('Could not determine original PDF dimensions, defaulting to AI guess.');
+        currentOriginalSize = 'A4';
+        currentOriginalOrientation = 'portrait';
       }
 
       const img = document.getElementById('fs-preview-img');
@@ -109,15 +109,17 @@ async function handleFileSelect(e) {
       if (pdfPreview) {
         pdfPreview.style.display = 'block';
         document.getElementById('fs-pdf-filename').textContent = file.name;
+        document.getElementById('fs-pdf-meta').textContent = `PDF Detected: ${currentOriginalSize} ${currentOriginalOrientation.toUpperCase()}`;
       }
       document.getElementById('fs-upload-prompt').hidden = true;
       document.getElementById('fs-scan-btn').disabled = false;
-      setStatus(`PDF document ready. Auto-detected size: ${currentOriginalSize}.`);
+      setStatus(`PDF ready. Detected paper size: ${currentOriginalSize} (${currentOriginalOrientation}).`);
     } else {
-      const { base64, previewUrl } = await resizeImageToBase64(file);
+      const { base64, previewUrl, isLandscape } = await resizeImageToBase64(file);
       currentFileBase64 = base64;
       currentMimeType = fileType || 'image/jpeg';
-      currentOriginalSize = 'Unknown (Analyze layout: typically A5 for Malaysian payment vouchers, otherwise A4)';
+      currentOriginalSize = 'A5'; // Default receipts/vouchers to A5
+      currentOriginalOrientation = isLandscape ? 'landscape' : 'portrait';
 
       const pdfPreview = document.getElementById('fs-pdf-preview');
       if (pdfPreview) pdfPreview.style.display = 'none';
@@ -127,7 +129,7 @@ async function handleFileSelect(e) {
       img.hidden = false;
       document.getElementById('fs-upload-prompt').hidden = true;
       document.getElementById('fs-scan-btn').disabled = false;
-      setStatus('Image ready for analysis.');
+      setStatus(`Image ready. Target paper size: ${currentOriginalSize} (${currentOriginalOrientation}).`);
     }
   } catch (err) {
     document.getElementById('fs-scan-btn').disabled = true;
@@ -135,13 +137,19 @@ async function handleFileSelect(e) {
   }
 }
 
-async function scanForm(fileBase64, mimeType, note, originalSize) {
+async function scanForm(fileBase64, mimeType, note, originalSize, originalOrientation) {
   let response;
   try {
     response = await fetch(PROXY_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: fileBase64, mime_type: mimeType, note: note, original_size: originalSize }),
+      body: JSON.stringify({
+        image: fileBase64,
+        mime_type: mimeType,
+        note: note,
+        original_size: originalSize,
+        original_orientation: originalOrientation,
+      }),
     });
   } catch (e) {
     throw new Error('Network error: Unable to reach worker service.');
@@ -152,8 +160,7 @@ async function scanForm(fileBase64, mimeType, note, originalSize) {
   try {
     data = JSON.parse(rawText);
   } catch (e) {
-    console.error("Non-JSON Server Output:", rawText.slice(0, 300));
-    throw new Error(`Cloudflare/Worker Error (${response.status}): Worker output returned HTML instead of JSON. Ensure route deployment is active.`);
+    throw new Error(`Worker Error (${response.status}): Worker output returned non-JSON data.`);
   }
 
   if (!response.ok) throw new Error(data.error || `Scan failed with status ${response.status}.`);
@@ -162,7 +169,7 @@ async function scanForm(fileBase64, mimeType, note, originalSize) {
 
 function renderPreview(result) {
   document.getElementById('fs-preview-title').textContent = result.title || 'Scanned Form Structure';
-  const sizeBadge = result.page_size === 'A5' ? ' [A5 Format]' : ' [A4 Format]';
+  const sizeBadge = ` [${result.page_size} ${result.orientation.toUpperCase()}]`;
   document.getElementById('fs-preview-ref').textContent = (result.reference_code || '') + sizeBadge;
 
   const hfGroup = document.getElementById('fs-header-fields-group');
@@ -211,7 +218,7 @@ async function runScan() {
 
   try {
     const note = document.getElementById('fs-note').value.trim();
-    const result = await scanForm(currentFileBase64, currentMimeType, note, currentOriginalSize);
+    const result = await scanForm(currentFileBase64, currentMimeType, note, currentOriginalSize, currentOriginalOrientation);
     if (!result.recognized) return setStatus('Form format unrecognized. Try providing a clearer document or photo.', true);
 
     lastResult = result;
@@ -224,7 +231,7 @@ async function runScan() {
   }
 }
 
-/* ================= EXACT STRUCTURAL PDF BUILDER ================= */
+/* ================= EXACT PDF BUILDER ================= */
 
 async function buildFillablePdf(result) {
   const { PDFDocument, StandardFonts, rgb } = PDFLib;
@@ -235,14 +242,26 @@ async function buildFillablePdf(result) {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const form = pdfDoc.getForm();
 
-  const isA5 = result.page_size === 'A5';
-  const scaleFactor = isA5 ? 0.707 : 1.0; 
-  const PAGE_W = 595.28 * scaleFactor;
-  const PAGE_H = 841.89 * scaleFactor;
-  const MARGIN = 36 * scaleFactor;
+  const isA5 = (result.page_size || '').toUpperCase() === 'A5';
+  const isLandscape = (result.orientation || '').toLowerCase() === 'landscape';
+
+  // Point dimensions: A4 = 595.28 x 841.89 pt | A5 = 419.53 x 595.28 pt
+  let PAGE_W, PAGE_H;
+  if (isA5) {
+    PAGE_W = isLandscape ? 595.28 : 419.53;
+    PAGE_H = isLandscape ? 419.53 : 595.28;
+  } else {
+    PAGE_W = isLandscape ? 841.89 : 595.28;
+    PAGE_H = isLandscape ? 595.28 : 841.89;
+  }
+
+  const MARGIN = isA5 ? 20 : 28;
   const CONTENT_W = PAGE_W - (MARGIN * 2);
 
-  const s = (val) => val * scaleFactor;
+  const titleFontSize = isA5 ? 10.5 : 12;
+  const subtitleFontSize = isA5 ? 7.5 : 8.5;
+  const bodyFontSize = isA5 ? 7.5 : 8.5;
+  const smallFontSize = isA5 ? 6.5 : 7.5;
 
   let page = pdfDoc.addPage([PAGE_W, PAGE_H]);
   let y = MARGIN;
@@ -252,7 +271,7 @@ async function buildFillablePdf(result) {
   function text(str, x, yTop, opts = {}) {
     const cleanStr = cleanPdfText(str);
     if (!cleanStr) return;
-    const size = s(opts.size || 8.5);
+    const size = opts.size || bodyFontSize;
     const useFont = opts.bold ? fontBold : font;
     let drawX = x;
     if (opts.align === 'center') drawX = x - useFont.widthOfTextAtSize(cleanStr, size) / 2;
@@ -264,7 +283,7 @@ async function buildFillablePdf(result) {
     page.drawLine({
       start: { x: x1, y: toPdfY(yTop1) },
       end: { x: x2, y: toPdfY(yTop2) },
-      thickness: s(w || 0.8),
+      thickness: w || 0.8,
       color: rgb(0, 0, 0),
     });
   }
@@ -272,7 +291,7 @@ async function buildFillablePdf(result) {
   function rect(x, yTop, w, h, opts = {}) {
     page.drawRectangle({
       x, y: toPdfY(yTop + h), width: w, height: h,
-      borderColor: rgb(0, 0, 0), borderWidth: s(opts.borderWidth ?? 0.8),
+      borderColor: rgb(0, 0, 0), borderWidth: opts.borderWidth ?? 0.8,
       color: opts.fill,
     });
   }
@@ -280,188 +299,197 @@ async function buildFillablePdf(result) {
   function createField(x, yTop, w, h) {
     fieldCounter++;
     const tf = form.createTextField(`field_${fieldCounter}`);
-    try { tf.setFontSize(s(8)); } catch (e) {}
+    try { tf.setFontSize(bodyFontSize - 0.5); } catch (e) {}
     tf.addToPage(page, { x, y: toPdfY(yTop + h), width: w, height: h, borderWidth: 0 });
     return tf;
   }
 
   if (result.reference_code) {
-    text(result.reference_code, PAGE_W - MARGIN, y + s(8), { size: 8, bold: true, align: 'right' });
-    y += s(12);
+    text(result.reference_code, PAGE_W - MARGIN, y + 8, { size: smallFontSize, bold: true, align: 'right' });
+    y += 10;
   }
 
   const formStartY = y;
 
-  y += s(8);
-  text(result.title || 'BAUCAR BAYARAN', PAGE_W / 2, y, { size: 12, bold: true, align: 'center' });
-  y += s(14);
+  y += 6;
+  text(result.title || 'BAUCAR BAYARAN / RESIT RASMI', PAGE_W / 2, y, { size: titleFontSize, bold: true, align: 'center' });
+  y += (titleFontSize + 4);
 
   (result.subtitles || []).forEach((sub) => {
-    text(sub, PAGE_W / 2, y, { size: 8.5, bold: true, align: 'center' });
-    y += s(12);
+    text(sub, PAGE_W / 2, y, { size: subtitleFontSize, bold: true, align: 'center' });
+    y += (subtitleFontSize + 3);
   });
-  y += s(4);
+  y += 4;
 
   const headerBoxTop = y;
-  const leftColW = CONTENT_W * 0.58;
+  const leftColW = CONTENT_W * (isLandscape ? 0.55 : 0.58);
   const rightColW = CONTENT_W - leftColW;
   const colDividerX = MARGIN + leftColW;
+  const headerRowH = isA5 ? 13 : 16;
 
-  let leftY = y + s(8);
+  let leftY = y + 6;
   (result.header_left || []).forEach((f) => {
-    text(f.label + ' :', MARGIN + s(6), leftY + s(9), { size: 8, bold: true });
-    const lblW = fontBold.widthOfTextAtSize(f.label + ' :', s(8)) + s(6);
-    const boxX = MARGIN + s(6) + lblW;
-    const boxW = leftColW - lblW - s(12);
-    rect(boxX, leftY, boxW, s(13));
-    createField(boxX + s(1), leftY + s(1), boxW - s(2), s(11));
-    leftY += s(17);
+    text(f.label + ' :', MARGIN + 4, leftY + (headerRowH * 0.65), { size: bodyFontSize, bold: true });
+    const lblW = fontBold.widthOfTextAtSize(f.label + ' :', bodyFontSize) + 4;
+    const boxX = MARGIN + 4 + lblW;
+    const boxW = leftColW - lblW - 8;
+    rect(boxX, leftY, boxW, headerRowH - 2);
+    createField(boxX + 1, leftY + 1, boxW - 2, headerRowH - 4);
+    leftY += headerRowH + 2;
   });
 
-  let rightY = y + s(8);
+  let rightY = y + 6;
   (result.header_right || []).forEach((f) => {
-    text(f.label + ' :', colDividerX + s(6), rightY + s(9), { size: 8, bold: true });
-    const lblW = fontBold.widthOfTextAtSize(f.label + ' :', s(8)) + s(6);
-    const boxX = colDividerX + s(6) + lblW;
-    const boxW = rightColW - lblW - s(12);
+    text(f.label + ' :', colDividerX + 4, rightY + (headerRowH * 0.65), { size: bodyFontSize, bold: true });
+    const lblW = fontBold.widthOfTextAtSize(f.label + ' :', bodyFontSize) + 4;
+    const boxX = colDividerX + 4 + lblW;
+    const boxW = rightColW - lblW - 8;
 
     if (f.options && f.options.length) {
-      rect(boxX, rightY, boxW, f.options.length * s(12) + s(4));
+      const optBoxH = f.options.length * (headerRowH - 3) + 4;
+      rect(boxX, rightY, boxW, optBoxH);
       f.options.forEach((opt, idx) => {
-        text(`[  ] ${opt}`, boxX + s(4), rightY + s(9) + idx * s(11), { size: 7.5 });
+        text(`[  ] ${opt}`, boxX + 3, rightY + (headerRowH * 0.6) + idx * (headerRowH - 3), { size: smallFontSize });
       });
-      rightY += f.options.length * s(12) + s(6);
+      rightY += optBoxH + 4;
     } else {
-      rect(boxX, rightY, boxW, s(13));
-      createField(boxX + s(1), rightY + s(1), boxW - s(2), s(11));
-      rightY += s(17);
+      rect(boxX, rightY, boxW, headerRowH - 2);
+      createField(boxX + 1, rightY + 1, boxW - 2, headerRowH - 4);
+      rightY += headerRowH + 2;
     }
   });
 
-  const headerBoxH = Math.max(leftY, rightY) - headerBoxTop + s(4);
+  const headerBoxH = Math.max(leftY, rightY) - headerBoxTop + 2;
   rect(MARGIN, headerBoxTop, CONTENT_W, headerBoxH);
   line(colDividerX, headerBoxTop, colDividerX, headerBoxTop + headerBoxH);
-  y = headerBoxTop + headerBoxH + s(10);
+  y = headerBoxTop + headerBoxH + (isA5 ? 6 : 10);
 
   if (result.main_table && result.main_table.columns && result.main_table.columns.length) {
     const cols = result.main_table.columns;
+    const colCount = cols.length;
+    
     const colWidths = cols.map((c, i) => {
-      if (i === 0) return s(30);
-      if (i === cols.length - 1) return s(90);
-      return CONTENT_W - s(120);
+      if (i === 0) return Math.min(CONTENT_W * 0.08, 35);
+      if (i === colCount - 1) return CONTENT_W * 0.20;
+      return (CONTENT_W - Math.min(CONTENT_W * 0.08, 35) - (CONTENT_W * 0.20)) / (colCount - 2);
     });
 
     const colX = [MARGIN];
     colWidths.forEach((w) => colX.push(colX[colX.length - 1] + w));
 
     const tableTop = y;
-    const headerH = s(16);
-    rect(MARGIN, y, CONTENT_W, headerH, { fill: rgb(0.92, 0.92, 0.92) });
+    const tblHeaderH = isA5 ? 14 : 18;
+    rect(MARGIN, y, CONTENT_W, tblHeaderH, { fill: rgb(0.92, 0.92, 0.92) });
 
     cols.forEach((c, i) => {
-      text(c, colX[i] + colWidths[i] / 2, y + s(11), { size: 8, bold: true, align: 'center' });
+      text(c, colX[i] + colWidths[i] / 2, y + (tblHeaderH * 0.68), { size: bodyFontSize, bold: true, align: 'center' });
     });
-    y += headerH;
+    y += tblHeaderH;
 
-    const rowH = s(15);
     const rowCount = result.main_table.blank_row_count || 4;
+    const tableRowH = isA5 ? (isLandscape ? 13 : 15) : 18;
+
     for (let r = 0; r < rowCount; r++) {
       cols.forEach((c, i) => {
-        createField(colX[i] + s(2), y + s(1), colWidths[i] - s(4), rowH - s(2));
+        createField(colX[i] + 2, y + 1, colWidths[i] - 4, tableRowH - 2);
       });
-      y += rowH;
+      y += tableRowH;
       line(MARGIN, y, MARGIN + CONTENT_W, y);
     }
 
     if (result.main_table.has_total_row) {
       const totalLblW = colWidths.reduce((sum, w, i) => i < cols.length - 1 ? sum + w : sum, 0);
-      rect(MARGIN, y, totalLblW, rowH, { fill: rgb(0.95, 0.95, 0.95) });
-      text('JUMLAH (RM)', MARGIN + totalLblW - s(8), y + s(10), { size: 8, bold: true, align: 'right' });
-      createField(colX[cols.length - 1] + s(2), y + s(1), colWidths[cols.length - 1] - s(4), rowH - s(2));
-      y += rowH;
+      rect(MARGIN, y, totalLblW, tableRowH, { fill: rgb(0.95, 0.95, 0.95) });
+      text('JUMLAH (RM)', MARGIN + totalLblW - 6, y + (tableRowH * 0.68), { size: bodyFontSize, bold: true, align: 'right' });
+      createField(colX[cols.length - 1] + 2, y + 1, colWidths[cols.length - 1] - 4, tableRowH - 2);
+      y += tableRowH;
     }
 
     rect(MARGIN, tableTop, CONTENT_W, y - tableTop);
     colX.slice(1, -1).forEach((x) => line(x, tableTop, x, y));
-    y += s(10);
+    y += (isA5 ? 6 : 10);
   }
 
   if (result.amount_in_words_label) {
-    rect(MARGIN, y, CONTENT_W, s(16));
-    text(result.amount_in_words_label, MARGIN + s(6), y + s(11), { size: 8, bold: true });
-    const lblW = fontBold.widthOfTextAtSize(result.amount_in_words_label, s(8)) + s(10);
-    createField(MARGIN + lblW, y + s(2), CONTENT_W - lblW - s(6), s(12));
-    y += s(22);
+    const amtBoxH = isA5 ? 14 : 18;
+    rect(MARGIN, y, CONTENT_W, amtBoxH);
+    text(result.amount_in_words_label, MARGIN + 4, y + (amtBoxH * 0.68), { size: bodyFontSize, bold: true });
+    const lblW = fontBold.widthOfTextAtSize(result.amount_in_words_label, bodyFontSize) + 8;
+    createField(MARGIN + lblW, y + 1, CONTENT_W - lblW - 4, amtBoxH - 2);
+    y += amtBoxH + (isA5 ? 6 : 10);
   }
 
   const sigBoxTop = y;
   const sigColW = CONTENT_W / 2;
   const sigMidX = MARGIN + sigColW;
+  const sigLineH = isA5 ? 12 : 15;
 
-  let leftSigY = y + s(8);
+  let leftSigY = y + 4;
   (result.left_signatures || []).forEach((block) => {
     if (block.heading) {
-      text(block.heading, MARGIN + s(6), leftSigY + s(9), { size: 8, bold: true });
-      leftSigY += s(15);
+      text(block.heading, MARGIN + 4, leftSigY + (sigLineH * 0.65), { size: bodyFontSize, bold: true });
+      leftSigY += sigLineH + 2;
     }
     (block.fields || []).forEach((fl) => {
-      text(fl + ' :', MARGIN + s(6), leftSigY + s(9), { size: 7.5, bold: true });
-      const lw = fontBold.widthOfTextAtSize(fl + ' :', s(7.5)) + s(6);
-      line(MARGIN + s(6) + lw, leftSigY + s(10), MARGIN + sigColW - s(10), leftSigY + s(10));
-      createField(MARGIN + s(6) + lw, leftSigY, sigColW - lw - s(16), s(10));
-      leftSigY += s(14);
+      text(fl + ' :', MARGIN + 4, leftSigY + (sigLineH * 0.65), { size: smallFontSize, bold: true });
+      const lw = fontBold.widthOfTextAtSize(fl + ' :', smallFontSize) + 4;
+      line(MARGIN + 4 + lw, leftSigY + (sigLineH * 0.75), MARGIN + sigColW - 8, leftSigY + (sigLineH * 0.75));
+      createField(MARGIN + 4 + lw, leftSigY, sigColW - lw - 12, sigLineH - 2);
+      leftSigY += sigLineH + 2;
     });
-    leftSigY += s(6);
+    leftSigY += 4;
   });
 
-  let rightSigY = y + s(8);
+  let rightSigY = y + 4;
   (result.right_signatures || []).forEach((block) => {
     if (block.heading) {
-      text(block.heading, sigMidX + s(6), rightSigY + s(9), { size: 8, bold: true });
-      rightSigY += s(15);
+      text(block.heading, sigMidX + 4, rightSigY + (sigLineH * 0.65), { size: bodyFontSize, bold: true });
+      rightSigY += sigLineH + 2;
     }
     (block.fields || []).forEach((fl) => {
-      text(fl + ' :', sigMidX + s(6), rightSigY + s(9), { size: 7.5, bold: true });
-      const lw = fontBold.widthOfTextAtSize(fl + ' :', s(7.5)) + s(6);
-      line(sigMidX + s(6) + lw, rightSigY + s(10), MARGIN + CONTENT_W - s(10), rightSigY + s(10));
-      createField(sigMidX + s(6) + lw, rightSigY, sigColW - lw - s(16), s(10));
-      rightSigY += s(14);
+      text(fl + ' :', sigMidX + 4, rightSigY + (sigLineH * 0.65), { size: smallFontSize, bold: true });
+      const lw = fontBold.widthOfTextAtSize(fl + ' :', smallFontSize) + 4;
+      line(sigMidX + 4 + lw, rightSigY + (sigLineH * 0.75), MARGIN + CONTENT_W - 8, rightSigY + (sigLineH * 0.75));
+      createField(sigMidX + 4 + lw, rightSigY, sigColW - lw - 12, sigLineH - 2);
+      rightSigY += sigLineH + 2;
     });
-    rightSigY += s(6);
+    rightSigY += 4;
   });
 
-  const sigBoxH = Math.max(leftSigY, rightSigY) - sigBoxTop + s(4);
+  const sigBoxH = Math.max(leftSigY, rightSigY) - sigBoxTop + 2;
   rect(MARGIN, sigBoxTop, CONTENT_W, sigBoxH);
   line(sigMidX, sigBoxTop, sigMidX, sigBoxTop + sigBoxH);
-  y = sigBoxTop + sigBoxH + s(10);
+  y = sigBoxTop + sigBoxH + 6;
 
-  rect(MARGIN - s(4), formStartY - s(4), CONTENT_W + s(8), y - formStartY + s(4), { borderWidth: s(1) });
+  rect(MARGIN - 3, formStartY - 3, CONTENT_W + 6, y - formStartY + 3, { borderWidth: 1 });
 
   if (result.footnotes && result.footnotes.length) {
-    y += s(4);
+    y += 4;
     result.footnotes.forEach((fn) => {
-      text(fn, MARGIN, y + s(8), { size: 6.5 });
-      y += s(9);
+      text(fn, MARGIN, y + 6, { size: smallFontSize - 0.5 });
+      y += smallFontSize + 2;
     });
-    y += s(4);
+    y += 2;
   }
 
   if (result.bottom_table && result.bottom_table.columns && result.bottom_table.columns.length) {
     const bt = result.bottom_table;
     const bColW = CONTENT_W / bt.columns.length;
     const btTop = y;
+    const bHeaderH = isA5 ? 11 : 13;
 
-    rect(MARGIN, y, CONTENT_W, s(13), { fill: rgb(0.88, 0.88, 0.88) });
+    rect(MARGIN, y, CONTENT_W, bHeaderH, { fill: rgb(0.88, 0.88, 0.88) });
     bt.columns.forEach((col, idx) => {
-      text(col, MARGIN + idx * bColW + bColW / 2, y + s(9), { size: 7, bold: true, align: 'center' });
+      text(col, MARGIN + idx * bColW + bColW / 2, y + (bHeaderH * 0.68), { size: smallFontSize, bold: true, align: 'center' });
     });
-    y += s(13);
+    y += bHeaderH;
 
+    const bRowH = isA5 ? 10 : 12;
     (bt.rows || []).forEach((row) => {
       row.forEach((cell, idx) => {
-        text(cell, MARGIN + idx * bColW + bColW / 2, y + s(8), { size: 6.5, align: 'center' });
+        text(cell, MARGIN + idx * bColW + bColW / 2, y + (bRowH * 0.68), { size: smallFontSize - 0.5, align: 'center' });
       });
-      y += s(11);
+      y += bRowH;
       line(MARGIN, y, MARGIN + CONTENT_W, y, 0.5);
     });
 
