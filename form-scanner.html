@@ -1,67 +1,97 @@
-<!-- Version: 4.0 -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
+<!-- Version: v4.1-pdf-input - 2026-09-20 --><!DOCTYPE html><html lang="en"><head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI Form Scanner - Reysourcez Enterprise</title>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <header class="site-header">
-    <nav class="nav">
-      <a href="index.html" class="brand">Reysourcez Enterprise</a>
-      <ul class="nav-links">
-        <li class="nav-dropdown">
-          <button type="button" class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">
-            Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i>
-          </button>
-          <ul class="nav-dropdown-menu">
-            <li><a href="menu-calculator.html">Menu Calculator</a></li>
-            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-            <li><a href="printing-calculator.html">Printing Calculator</a></li>
-            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
-            <li><a href="food-worth-calculator.html">Food Worth</a></li>
-            <li><a href="crypto-radar.html">Crypto Radar</a></li>
-            <li><a href="rental-calculator.html">Rental Calculator</a></li>
-          </ul>
-        </li>
-      </ul>
-    </nav>
-  </header>
+  <title>Document & Payment Voucher Scanner</title>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card-bg: #ffffff;
+      --primary: #0f766e;
+      --primary-hover: #115e59;
+      --border: #e2e8f0;
+      --text: #1e293b;
+      --text-muted: #64748b;
+      --danger: #b91c1c;
+      --radius: 8px;
+    }
 
-  <main class="container" style="max-width: 800px; margin: 2rem auto; padding: 0 1rem;">
-    <h1 style="color: var(--ink, #16261F); margin-bottom: 1.5rem;">AI Form Scanner</h1>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 2rem 1rem; line-height: 1.5; }
+    .container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
     
-    <!-- Upload Zone styled as a direct label wrapper for guaranteed clickability -->
-    <label for="fs-photo-input" class="upload-area" id="fs-upload-zone" style="display: block; border: 2px dashed var(--line, #D8DCD3); padding: 2rem; text-align: center; border-radius: 8px; cursor: pointer; transition: background-color 0.2s, border-color 0.2s;">
-      <span id="fs-upload-prompt" style="color: var(--muted, #5C6D64);">Click or drag & drop voucher photo or PDF here</span>
-      <input type="file" id="fs-photo-input" accept="image/*, application/pdf" style="display: none;">
-      
-      <!-- Image Preview -->
-      <img id="fs-preview-img" class="preview-img" alt="Form Preview" style="display: none; max-width: 100%; max-height: 400px; border-radius: 6px; margin-top: 1rem; margin-left: auto; margin-right: auto;">
-      
-      <!-- PDF Preview -->
-      <div id="fs-pdf-preview" style="display: none; margin-top: 1rem; padding: 2rem; background: var(--paper, #EEF0EA); border: 1px solid var(--line, #D8DCD3); border-radius: 6px; color: var(--muted, #5C6D64);">
-        <svg style="width: 48px; height: 48px; margin-bottom: 0.5rem; stroke: var(--accent, #1F6F5C);" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-        </svg><br>
-        <strong style="color: var(--ink, #16261F);">PDF Document Selected</strong><br>
-        <span id="fs-pdf-name" style="font-size: 0.875rem;"></span>
-      </div>
-    </label>
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .card-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .card-subtitle { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem; }
 
-    <div style="margin-top: 1.5rem;">
-      <textarea id="fs-note" placeholder="Add any specific instructions for the AI..." style="width: 100%; height: 80px; padding: 0.5rem; border: 1px solid var(--line, #D8DCD3); border-radius: 4px; resize: vertical;"></textarea>
+    .upload-area { border: 2px dashed var(--border); border-radius: var(--radius); padding: 2rem; text-align: center; cursor: pointer; transition: border-color 0.2s; position: relative; }
+    .upload-area:hover { border-color: var(--primary); }
+    .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+
+    .preview-img { max-height: 250px; margin: 1rem auto 0; display: block; border-radius: 4px; border: 1px solid var(--border); }
+    
+    .input-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
+    .input-group label { font-size: 0.875rem; font-weight: 500; }
+    .input-group input { padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+
+    .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 1rem; transition: background 0.2s; }
+    .btn:hover { background: var(--primary-hover); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .status-box { padding: 0.8rem 1rem; border-radius: 6px; font-size: 0.875rem; background: #e0f2fe; color: #0369a1; display: none; }
+    .status-box.active { display: block; }
+    .status-box.is-error { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
+
+    .results-grid { display: flex; flex-direction: column; gap: 1rem; margin-top: 1rem; }
+    .field-tag { display: inline-block; background: #f1f5f9; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; margin: 0.2rem; border: 1px solid #cbd5e1; }
+    .badge { background: #ccfbf1; color: #115e59; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+  </style></head><body><div class="container">
+  <div class="card">
+    <h1 class="card-title">Form & Payment Voucher Scanner</h1>
+    <p class="card-subtitle">Upload a scanned form, voucher photo, or PDF document to generate a structural fillable PDF.</p>
+
+    <div class="upload-area" id="fs-upload-zone">
+      <p id="fs-upload-prompt">Click or drag & drop voucher image or PDF here</p>
+      <input type="file" id="fs-photo-input" accept="image/*,application/pdf">
+      <img id="fs-preview-img" class="preview-img" hidden alt="Form Preview">
     </div>
-    
-    <button id="fs-scan-btn" disabled style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--accent, #1F6F5C); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; opacity: 0.5;">Run AI Scan</button>
-    
-    <div id="fs-status" style="margin-top: 1rem; font-weight: bold; font-size: 0.9rem;"></div>
-  </main>
 
-  <script src="nav-dropdown.js?v=4" defer></script>
-  <script src="form-scanner_v4.js" defer></script>
-</body>
-</html>
+    <div class="input-group">
+      <label for="fs-note">Optional scan guidance/instructions:</label>
+      <input type="text" id="fs-note" placeholder="e.g. Ensure 2-column header and bottom approval table are mapped accurately">
+    </div>
+
+    <button id="fs-scan-btn" class="btn" disabled>Scan & Extract Form Structure</button>
+  </div>
+
+  <div id="fs-status" class="status-box"></div>
+
+  <div id="fs-results-section" class="card" hidden>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+      <h2 id="fs-preview-title" class="card-title" style="margin: 0;"></h2>
+      <span id="fs-preview-ref" class="badge"></span>
+    </div>
+
+    <div class="results-grid">
+      <div id="fs-header-fields-group" hidden>
+        <strong>Mapped Header Fields:</strong>
+        <div id="fs-header-fields" style="margin-top: 0.4rem;"></div>
+      </div>
+
+      <div id="fs-tables-group" hidden>
+        <strong>Table Structure:</strong>
+        <div id="fs-tables" style="margin-top: 0.4rem;"></div>
+      </div>
+
+      <div id="fs-signatures-group" hidden>
+        <strong>Approval / Signature Grid:</strong>
+        <div id="fs-signatures" style="margin-top: 0.4rem;"></div>
+      </div>
+
+      <button id="fs-download-btn" class="btn" style="background: #0369a1;">Download Fillable PDF</button>
+    </div>
+  </div></div><script src="form-scanner.js"></script></body></html>
