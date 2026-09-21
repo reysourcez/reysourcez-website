@@ -2,7 +2,7 @@
 
 New tool, built 2026-09-20 — the 12th tool in the Business Analysis dropdown. This doc assumes no prior context; everything needed is below. Companion file: `qr-creator-settings-reference.xlsx` (same settings table below, in spreadsheet form, with a blank column for your own values).
 
-**Read this before anything else: `styles.css` and `nav-dropdown.js` were not available in this build session** — see the "Missing files" section near the end before deploying.
+This page is built against your real, current `styles.css` — see section 9 for one small correction that came out of confirming that (the content-type tabs now reuse the real `.menu-tabs`/`.menu-tab-btn` component instead of a page-invented one). `nav-dropdown.js` still wasn't in this project's files; see the end of section 9.
 
 ---
 
@@ -81,17 +81,20 @@ This tool is a from-scratch implementation of a real encoding standard (ISO/IEC 
 6. **The real page, in a real browser** (headless Chromium): loaded with zero JavaScript exceptions; every module-style and eye-style combination was cycled with zero errors; the full content-tab / logo-upload / error-correction-forcing interactive flow was exercised end to end.
 7. **The actual browser-rendered canvas output** — dots + circular eyes + a custom color, and separately with a real logo composited on top — was extracted and decoded by an independent scanner. **Both decoded correctly**, including the logo-covered one. This is the strongest test available short of a physical printout and a real phone: genuine pixels from a genuine browser Canvas 2D implementation, read back correctly.
 
+8. **Re-verified after the `styles.css` correction in section 9**: with the real stylesheet actually loaded (not the earlier fallback values), re-ran the real-browser checks — page loads with the stylesheet returning 200, the active content-tab genuinely renders in the real `--accent` teal (confirmed via computed style, not just visual guess), tab-switching still works correctly with the updated markup, and the freshly-rendered canvas still decodes correctly.
+
 **Not done, given there's no way to print a physical page or use a real phone camera from here:** scanning a printed copy at a small physical size, and scanning at an angle or under uneven lighting. The margin built into the defaults (quiet zone at the spec minimum, logo well under the ECC-H budget) is intended to leave real headroom for this, but it's worth a physical test before, say, printing QR Creator output at business-card scale.
 
-## 9. Missing files this build session didn't have
+## 9. `styles.css` — confirmed and reconciled; `nav-dropdown.js` still not on hand
 
-`AI_BUILD_BRIEF.md` lists `styles.css` (always, current version) as a required companion for building or updating any page — **it wasn't provided in this project's files**, and neither was `nav-dropdown.js`. Every color, font, and spacing value in `qr-creator.html`'s page-specific `<style>` block is written as `var(--token, fallback)`, so:
-- With the real `styles.css` loaded (as it will be once this file sits in the real site folder), the page inherits your actual design tokens exactly, with no changes needed.
-- Without it, as in this build session, the fallback values keep the page fully readable and on-brand — matched carefully against the color/font evidence visible across every other tool's own files (the brand SVG's `#1F6F5C`, "Fraunces"/"IBM Plex Sans" from every page's `<link>` tag, `.tooltip-icon`'s documented hover behavior, etc.) — but they're a reconstruction, not a copy.
+The first pass of this build mistakenly treated `styles.css` as missing from this project and shipped page-scoped fallback values instead of confirming the real file. That was wrong — it was already available — and once actually checked line-by-line against `qr-creator.html`, two things followed:
 
-`nav-dropdown.js` is referenced with the same `<script src="nav-dropdown.js?v=1" defer>` tag every other page uses, on the assumption it already exists in the deployed site (every other page depends on it identically) — nothing about it needed to change for this page.
+- Every color/font token guessed at in the first pass (`--ink #16261F`, `--accent #1F6F5C`, `--accent-soft #DCEAE4`, `--line #D8DCD3`, `--paper #EEF0EA`, Fraunces/IBM Plex Sans, etc.) matched the real file exactly — no visual drift, nothing to fix there.
+- The content-type tabs (Link/Text, Wi-Fi, Contact card, Email, Phone/SMS) were rebuilt as a page-specific `.qr-input-tab` component, when `styles.css` already has `.menu-tabs` + `.btn.btn-secondary.menu-tab-btn` for exactly this "row of pills, one active" shape — the same combination Menu Calculator's dish tabs and Cost Structure Checker's cause-category tabs already use. **Fixed**: the tabs now use the real shared component; the page-scoped CSS for the old one was removed.
 
-**Please upload the current `styles.css`** so a follow-up pass can confirm the fallback values match exactly and remove them if they're no longer needed.
+Every color/font/spacing value in the page-specific `<style>` block still reads as `var(--token, fallback))` — a defensive habit worth keeping regardless (a page that degrades gracefully if a token is ever renamed is simply more robust), not a sign of continued uncertainty about the file.
+
+`nav-dropdown.js` still isn't in this project's files. It's referenced with the same `<script src="nav-dropdown.js?v=1" defer>` tag every other page uses, on the assumption it already exists in the deployed site (every other page depends on it identically) — nothing about it needed to change for this page, so its absence here didn't block anything.
 
 ## 10. Nav
 
@@ -111,7 +114,7 @@ This tool is a from-scratch implementation of a real encoding standard (ISO/IEC 
 | Dot module radius | 0.46 × module size | `dotScale` inside `buildRenderPlan()`, `qr-creator.js` |
 | Rounded module corner radius | 0.3 × module size | `roundedScale` inside `buildRenderPlan()`, `qr-creator.js` |
 | vCard version | 3.0 | `buildVCardPayload()`, `qr-creator.js` |
-| `styles.css` version referenced | `v=18` | `<link>` tag, `qr-creator.html` (placeholder — see "Missing files" above) |
+| `styles.css` version referenced | `v=18` | `<link>` tag, `qr-creator.html` — matches the version already used across the project's other pages; bump centrally if that ever changes |
 
 ## Jargon index
 
@@ -120,7 +123,6 @@ Also built into the page itself as a collapsible section — same content, conde
 ## Deploy checklist
 
 - [ ] `qr-creator.html`, `qr-creator-engine.js`, `qr-creator.js` → push to GitHub Pages as usual.
-- [ ] **Upload the current `styles.css`** and confirm this page's fallback CSS values match — see section 9.
 - [ ] `NAV_ORDER_STANDARD.md` → add QR Creator as item 11 (or update once QR Listing Creator's reserved slot is resolved — see KIV below).
 - [ ] Central nav-reconciliation pass (not done in this build, per standing convention): add the QR Creator entry to the other 11 pages' nav dropdowns.
 - [ ] Quick manual fix on `index.html`'s existing QR-tool placeholder links (nav says `qrcreator`, footer says `qr-creator` — neither has `.html`; both should point at `qr-creator.html`).
@@ -142,4 +144,5 @@ Covered in full in section 8 above — summarized: RS golden-vector match, capac
 
 ## Version history
 
-- **v1.0 (2026-09-20)** — Initial build. From-scratch QR encoder (all 40 versions, all 4 ECC levels, byte/UTF-8 mode), three module body styles (square/dots/rounded with neighbor-aware corner rounding), three independent eye-frame and eye-ball styles, custom colors, logo overlay with automatic ECC-H forcing and safe size capping, five content-type generators (Link/Text, Wi-Fi, Contact card, Email, Phone/SMS), PNG/SVG/PDF export, full site UI integration (nav, tooltips, quick-nav, jargon index, settings reference). No backend, no Worker, nothing persisted — matches every non-negotiable in `AI_BUILD_BRIEF.md`. See section 8 for the full testing account and section 9 for the one open gap (missing `styles.css` in this build session).
+- **v1.0 (2026-09-20)** — Initial build. From-scratch QR encoder (all 40 versions, all 4 ECC levels, byte/UTF-8 mode), three module body styles (square/dots/rounded with neighbor-aware corner rounding), three independent eye-frame and eye-ball styles, custom colors, logo overlay with automatic ECC-H forcing and safe size capping, five content-type generators (Link/Text, Wi-Fi, Contact card, Email, Phone/SMS), PNG/SVG/PDF export, full site UI integration (nav, tooltips, quick-nav, jargon index, settings reference). No backend, no Worker, nothing persisted — matches every non-negotiable in `AI_BUILD_BRIEF.md`. See section 8 for the full testing account.
+- **v1.1 (2026-09-20, same day)** — Corrected a mistake from v1.0: `styles.css` was wrongly treated as unavailable and the page shipped with reconstructed fallback values instead of being checked against the real file. Re-verified line-by-line against the actual `styles.css`: every color/font token already matched, and the content-type tabs were rebuilt onto the real `.menu-tabs`/`.menu-tab-btn` component instead of a page-invented one. Re-ran the full real-browser verification (real stylesheet loaded, tab-switching, style combinations, decode test) after the change — see section 8.

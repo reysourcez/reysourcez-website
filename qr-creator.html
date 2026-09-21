@@ -15,39 +15,29 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <!-- styles.css wasn't available in this build session (flagged in
-       QR_CREATOR_NOTES.md) — version number left at the highest one
-       seen elsewhere in the project pending the usual central
-       reconciliation pass, per AI_BUILD_BRIEF.md. -->
   <link rel="stylesheet" href="styles.css?v=18">
 
-  <!-- Page-specific styles only, per AI_BUILD_BRIEF.md. Every color/
-       font/spacing token below is written as var(--token, fallback)
-       — with styles.css loaded, this page inherits the real site
-       design exactly; without it (as in this build session), the
-       fallback values keep it fully readable and on-brand using
-       colors/fonts pulled from the site's own SVG logo, tooltip
-       styling notes, and class names referenced across every other
-       tool page. Reuses .btn/.calc-panel/.result-card/.tooltip-icon/
-       etc. as-is; new here: the content-type tabs, the style-choice
-       cards, the logo dropzone, and the live preview stage. -->
+  <!-- Page-specific styles only, per AI_BUILD_BRIEF.md. Reuses
+       .btn/.calc-panel/.calc-intro/.result-card/.tooltip-icon/
+       .structure-note/.toggle-hint/.sr-only/.menu-tabs+.menu-tab-btn
+       etc. as-is straight from styles.css; new here (nothing else on
+       the site needed it yet): the style-choice cards, the logo
+       dropzone, and the live preview stage. Every color/font/spacing
+       value still falls back to a literal (var(--token, fallback))
+       as a defensive habit, not because styles.css is in doubt. -->
   <style>
-    /* styles.css references .sr-only on every calculator page but
-       this build session doesn't have that file to confirm it's
-       defined there — printing-calculator.html already flagged this
-       exact gap once before. Defined defensively here so this page
-       is correct regardless. */
-    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-
     .qr-box { background: var(--surface, #fff); border: 1px solid var(--line, #D8DCD3); border-radius: 10px; padding: 24px; margin-bottom: 24px; }
     .qr-box > h2:first-child, .qr-box > h3:first-child { margin-top: 0; }
 
-    /* ---- Content-type tabs ---- */
-    .qr-input-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
-    .qr-input-tab { background: var(--surface, #fff); border: 2px solid var(--line, #D8DCD3); border-radius: 999px; padding: 9px 18px; font-family: var(--font-body, "IBM Plex Sans", sans-serif); font-weight: 600; font-size: 0.88rem; color: var(--text, #1C2B24); cursor: pointer; }
-    .qr-input-tab:hover { border-color: var(--accent, #1F6F5C); color: var(--accent-dark, #195A4A); }
-    .qr-input-tab.is-active { background: var(--accent, #1F6F5C); border-color: var(--accent, #1F6F5C); color: #fff; }
-    .qr-input-tab:focus-visible { outline: 3px solid var(--accent, #1F6F5C); outline-offset: 2px; }
+    /* ---- Content-type tabs ----
+       Deliberately NOT a custom component: this is exactly the "row
+       of pills, one active at a time" shape .menu-tabs/.menu-tab-btn
+       already covers (Menu Calculator's dish tabs, Cost Structure
+       Checker's cause-category tabs use the identical combo of
+       .btn.btn-secondary.menu-tab-btn, plus .is-active). Reused
+       as-is straight from styles.css; margin-bottom is the only
+       page-scoped addition needed. */
+    #qr-content-tabs { margin-bottom: 18px; }
     .qr-content-panel label { display: flex; flex-direction: column; gap: 6px; font-size: 0.88rem; font-weight: 600; color: var(--text, #1C2B24); margin-bottom: 14px; }
     .qr-content-panel input[type="text"], .qr-content-panel input[type="email"], .qr-content-panel input[type="tel"], .qr-content-panel input[type="url"], .qr-content-panel select, .qr-content-panel textarea {
       padding: 9px 11px; border: 1px solid var(--line, #D8DCD3); border-radius: 6px; font-family: var(--font-body, "IBM Plex Sans", sans-serif); font-size: 0.94rem; background: var(--surface, #fff); color: var(--text, #1C2B24); font-weight: 400;
@@ -211,12 +201,12 @@
       <div class="wrap">
         <div class="qr-box">
           <h2>What should the code do?</h2>
-          <div class="qr-input-tabs no-print" role="tablist">
-            <button type="button" class="qr-input-tab is-active" data-content-type="text">Link / Text</button>
-            <button type="button" class="qr-input-tab" data-content-type="wifi">Wi-Fi</button>
-            <button type="button" class="qr-input-tab" data-content-type="vcard">Contact card</button>
-            <button type="button" class="qr-input-tab" data-content-type="email">Email</button>
-            <button type="button" class="qr-input-tab" data-content-type="phone">Phone / SMS</button>
+          <div class="menu-tabs no-print" id="qr-content-tabs" role="tablist">
+            <button type="button" class="btn btn-secondary menu-tab-btn is-active" data-content-type="text">Link / Text</button>
+            <button type="button" class="btn btn-secondary menu-tab-btn" data-content-type="wifi">Wi-Fi</button>
+            <button type="button" class="btn btn-secondary menu-tab-btn" data-content-type="vcard">Contact card</button>
+            <button type="button" class="btn btn-secondary menu-tab-btn" data-content-type="email">Email</button>
+            <button type="button" class="btn btn-secondary menu-tab-btn" data-content-type="phone">Phone / SMS</button>
           </div>
 
           <div id="qr-content-panels">

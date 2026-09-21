@@ -358,7 +358,7 @@ function val(id) { var el = document.getElementById(id); return el ? el.value.tr
 
 function switchContentType(type) {
   activeContentType = type;
-  document.querySelectorAll('.qr-input-tab').forEach(function (t) { t.classList.toggle('is-active', t.dataset.contentType === type); });
+  document.querySelectorAll('[data-content-type]').forEach(function (t) { t.classList.toggle('is-active', t.dataset.contentType === type); });
   document.querySelectorAll('[data-content-panel]').forEach(function (p) { p.hidden = p.dataset.contentPanel !== type; });
   updatePhoneModeVisibility();
   updateWifiPasswordVisibility();
@@ -544,7 +544,7 @@ function init() {
   if (rzInitialized) return;
   rzInitialized = true;
 
-  document.querySelectorAll('.qr-input-tab').forEach(function (t) {
+  document.querySelectorAll('[data-content-type]').forEach(function (t) {
     t.addEventListener('click', function () { switchContentType(t.dataset.contentType); });
   });
   document.querySelectorAll('#qr-content-panels input, #qr-content-panels textarea, #qr-content-panels select').forEach(function (el) {
