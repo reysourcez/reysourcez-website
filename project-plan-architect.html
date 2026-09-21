@@ -180,7 +180,7 @@ Reysourcez Enterprise
 <div class="wrap">
 <span class="eyebrow">Free tool · nothing saved automatically</span>
 <h1>Project Plan Architect</h1>
-<p class="lead">Work through one category at a time — charter, scope, schedule, risk, stakeholders — and get a structured project plan you can print or save as PDF at the end. Built around what CAPM and PMP actually test, not a generic form.</p>
+<p class="lead">Work through one category at a time — charter, scope, schedule, cost, quality, resources, risk, communications, procurement, stakeholders — and get a structured project plan you can print or save as PDF at the end. Built around what CAPM and PMP actually test, not a generic form.</p>
 <p class="ppa-progress" id="ppa-progress"></p>
 </div>
 </section>
@@ -215,11 +215,11 @@ Reysourcez Enterprise
 <button type="button" class="ppa-tab" data-step="schedule">Schedule</button>
 <button type="button" class="ppa-tab" data-step="risk">Risk</button>
 <button type="button" class="ppa-tab" data-step="stakeholders">Stakeholders</button>
-<button type="button" class="ppa-tab soon" disabled>Cost<span class="soon-badge">soon</span></button>
-<button type="button" class="ppa-tab soon" disabled>Quality<span class="soon-badge">soon</span></button>
-<button type="button" class="ppa-tab soon" disabled>Resources<span class="soon-badge">soon</span></button>
-<button type="button" class="ppa-tab soon" disabled>Comms<span class="soon-badge">soon</span></button>
-<button type="button" class="ppa-tab soon" disabled>Procurement<span class="soon-badge">soon</span></button>
+<button type="button" class="ppa-tab" data-step="cost">Cost</button>
+<button type="button" class="ppa-tab" data-step="quality">Quality</button>
+<button type="button" class="ppa-tab" data-step="resources">Resources</button>
+<button type="button" class="ppa-tab" data-step="comms">Comms</button>
+<button type="button" class="ppa-tab" data-step="procurement">Procurement</button>
 <button type="button" class="ppa-tab" data-step="document">📄 Document</button>
 </div>
 
@@ -294,6 +294,85 @@ Reysourcez Enterprise
 <button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="st-rows" data-tpl="stakeholder">+ Add stakeholder</button>
 </div>
 
+<!-- ============ COST ============ -->
+<div class="ppa-card" id="step-cost" data-panel hidden>
+<h2>Cost Management</h2>
+<div class="ppa-grid-2">
+<label class="ppa-field"><span class="label-text">Cost baseline (<span id="currency-label-2">RM</span>)<span class="tooltip-icon" data-tooltip="The approved, time-phased budget you manage against — usually built up bottom-up, so it's often a firmer number than the Charter's rough estimate.">?</span></span><input type="number" id="co-baseline" min="0" step="100"></label>
+<label class="ppa-field"><span class="label-text">Estimating method</span>
+<select id="co-method">
+<option>Analogous — compare to a past project</option>
+<option>Parametric — rate × quantity</option>
+<option>Bottom-up — sum every work package</option>
+<option>Three-point — best/likely/worst average</option>
+</select>
+</label>
+<label class="ppa-field"><span class="label-text">Contingency reserve %<span class="tooltip-icon" data-tooltip="Extra budget for the risks already on your Risk Register — known unknowns.">?</span></span><input type="number" id="co-contingency" min="0" step="1"></label>
+<label class="ppa-field"><span class="label-text">Management reserve %<span class="tooltip-icon" data-tooltip="Extra budget for whatever isn't on the Risk Register yet — unknown unknowns, usually controlled by the sponsor rather than the PM.">?</span></span><input type="number" id="co-mgmt-reserve" min="0" step="1"></label>
+</div>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Major cost line items</h3>
+<div id="co-lines"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="co-lines" data-tpl="costline">+ Add line item</button>
+</div>
+
+<!-- ============ QUALITY ============ -->
+<div class="ppa-card" id="step-quality" data-panel hidden>
+<h2>Quality Management</h2>
+<label class="ppa-field"><span class="label-text">Quality standards to meet<span class="tooltip-icon" data-tooltip="Any specification, regulation, or client requirement the deliverable has to satisfy.">?</span></span><textarea id="q-standards"></textarea></label>
+<h3 style="font-size:1rem;">Quality metrics</h3>
+<div id="q-metrics"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="q-metrics" data-tpl="metric">+ Add metric</button>
+<label class="ppa-field" style="margin-top:1.5rem;"><span class="label-text">Quality assurance approach<span class="tooltip-icon" data-tooltip="How you'll PREVENT defects — reviews, standards, training — as opposed to control, which catches them after the fact.">?</span></span><textarea id="q-assurance"></textarea></label>
+<label class="ppa-field"><span class="label-text">Quality control checkpoints<span class="tooltip-icon" data-tooltip="Where and when you'll INSPECT the work — testing, sign-offs, sampling.">?</span></span><textarea id="q-control"></textarea></label>
+</div>
+
+<!-- ============ RESOURCES ============ -->
+<div class="ppa-card" id="step-resources" data-panel hidden>
+<h2>Resource Management</h2>
+<h3 style="font-size:1rem;">Team roles</h3>
+<div id="re-roles"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="re-roles" data-tpl="role">+ Add role</button>
+<label class="ppa-field" style="margin-top:1.5rem;"><span class="label-text">Acquisition approach<span class="tooltip-icon" data-tooltip="Where the team is actually coming from.">?</span></span>
+<select id="re-acquisition">
+<option>Existing internal staff</option>
+<option>New hires</option>
+<option>Contractors / agency</option>
+<option>Mixed</option>
+</select>
+</label>
+<label class="ppa-field"><span class="label-text">Training needs</span><textarea id="re-training"></textarea></label>
+<label class="ppa-field"><span class="label-text">Team ground rules</span><textarea id="re-groundrules" placeholder="e.g. Daily standup 9am, decisions logged within 24h"></textarea></label>
+</div>
+
+<!-- ============ COMMUNICATIONS ============ -->
+<div class="ppa-card" id="step-comms" data-panel hidden>
+<h2>Communications Management</h2>
+<h3 style="font-size:1rem;">Communication matrix<span class="tooltip-icon" data-tooltip="Who needs what information, how often, and through which channel.">?</span></h3>
+<div id="cm-rows"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="cm-rows" data-tpl="comm">+ Add row</button>
+<label class="ppa-field" style="margin-top:1.5rem;"><span class="label-text">Reporting cadence</span><textarea id="cm-cadence" placeholder="e.g. Weekly status email, monthly steering committee"></textarea></label>
+<label class="ppa-field"><span class="label-text">Escalation path</span><textarea id="cm-escalation"></textarea></label>
+</div>
+
+<!-- ============ PROCUREMENT ============ -->
+<div class="ppa-card" id="step-procurement" data-panel hidden>
+<h2>Procurement Management</h2>
+<h3 style="font-size:1rem;">Make-or-buy items</h3>
+<div id="pr-items"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="pr-items" data-tpl="makebuy">+ Add item</button>
+<label class="ppa-field" style="margin-top:1.5rem;"><span class="label-text">Contract type<span class="tooltip-icon" data-tooltip="Fixed-price = one agreed sum. Time &amp; Materials = billed by hours/materials used. Cost-reimbursable = actual cost plus a fee.">?</span></span>
+<select id="pr-contract-type">
+<option>Fixed-price</option>
+<option>Time &amp; Materials</option>
+<option>Cost-reimbursable</option>
+<option>Not applicable</option>
+</select>
+</label>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Key vendors / suppliers</h3>
+<div id="pr-vendors"></div>
+<button type="button" class="btn btn-primary ppa-add-btn no-print" data-add="pr-vendors" data-tpl="vendor">+ Add vendor</button>
+</div>
+
 <!-- ============ DOCUMENT ============ -->
 <div class="ppa-card" id="step-document" data-panel hidden>
 <div class="no-print" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
@@ -316,12 +395,12 @@ Reysourcez Enterprise
 <script src="nav-dropdown.js?v=1" defer></script>
 <!--
   ============================================================
-  v0.2 — PREVIEW / CONCEPT BUILD. Inline for easy previewing;
+  v0.3 — PREVIEW / CONCEPT BUILD. Inline for easy previewing;
   the real drop-in version splits this into project-plan-architect.js
   (loaded as <script src="project-plan-architect.js?v=1" defer>),
   matching every other page's pattern. No costing-sync.js and no
   connector-panel/tool-dock — this tool doesn't exchange cost data
-  with the other five, so per AI_BUILD_BRIEF.md that whole system
+  with the other tools, so per AI_BUILD_BRIEF.md that whole system
   is left out entirely rather than wired up to do nothing.
 
   v0.2 changes: nav moved into the Business Analysis dropdown;
@@ -330,6 +409,18 @@ Reysourcez Enterprise
   since storage is blocked in Claude's sandbox); optional ✨ AI-assist
   buttons wired to a companion pm-assist-worker.js (off until you
   deploy it and set RZ_PM_CONFIG.aiAssistEndpoint).
+
+  v0.3 changes: real styles.css values swapped in for the guessed
+  fallback CSS; nav expanded to the real ~11-tool dropdown (Crypto
+  Radar, Rental Calculator, Market Radar, Cost Structure Checker
+  were missing before); footer simplified to match the current
+  convention (footer-grid etc. have been display:none for a while);
+  button classes fixed to match real usage (btn-primary for "+ Add"
+  rows, btn-secondary for Save as PDF); pm-assist-worker.js rewritten
+  to match the real Gemini-based pattern instead of the earlier
+  Claude-API placeholder; and the five remaining knowledge areas
+  (Cost, Quality, Resources, Communications, Procurement) are now
+  built out, so all ten categories plus the Document view work.
   ============================================================
 -->
 <script>
@@ -340,7 +431,7 @@ const RZ_PM_CONFIG = {
   currencySymbol: "RM",          // shown next to Budget; swap if a project isn't RM-denominated
   totalCategoriesPlanned: 11,     // Charter + 9 knowledge areas + Document, for the progress line
   storageKey: "rz_ppa_draft_v1", // localStorage key for Save/Resume — bump the v if the saved shape ever changes
-  aiAssistEndpoint: "https://pm-assist-worker.reysourcez-ent.workers.dev/",          // paste your deployed pm-assist-worker.js URL here to turn on the ✨ buttons — blank = they explain themselves instead of failing silently
+  aiAssistEndpoint: "",          // paste your deployed pm-assist-worker.js URL here to turn on the ✨ buttons — blank = they explain themselves instead of failing silently
 };
 
 let rzInitialized = false;
@@ -349,6 +440,7 @@ function init() {
   rzInitialized = true;
 
   document.getElementById('currency-label-1').textContent = RZ_PM_CONFIG.currencySymbol;
+  document.getElementById('currency-label-2').textContent = RZ_PM_CONFIG.currencySymbol;
 
   // ---- repeatable rows -------------------------------------------------
   const templates = {
@@ -369,6 +461,28 @@ function init() {
       <div><input type="text" placeholder="Engagement strategy"></div>
       <button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button>
     </div>`,
+    costline: () => `<div class="ppa-repeat-row"><div><input type="text" placeholder="Line item"></div><div><input type="number" min="0" step="10" placeholder="Amount"></div><button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    metric: () => `<div class="ppa-repeat-row"><div><input type="text" placeholder="Metric"></div><div><input type="text" placeholder="Target"></div><button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    role: () => `<div class="ppa-repeat-row">
+      <div><input type="text" placeholder="Role"></div>
+      <div><input type="text" placeholder="Responsibility"></div>
+      <div><input type="number" min="0" step="0.1" placeholder="FTE / count"></div>
+      <button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button>
+    </div>`,
+    comm: () => `<div class="ppa-repeat-row">
+      <div><input type="text" placeholder="Audience"></div>
+      <div><input type="text" placeholder="Info needed"></div>
+      <div><input type="text" placeholder="Frequency"></div>
+      <div><input type="text" placeholder="Channel"></div>
+      <button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button>
+    </div>`,
+    makebuy: () => `<div class="ppa-repeat-row">
+      <div><input type="text" placeholder="Item / work package"></div>
+      <div><select><option>Make</option><option>Buy</option></select></div>
+      <div><input type="text" placeholder="Rationale"></div>
+      <button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button>
+    </div>`,
+    vendor: () => `<div class="ppa-repeat-row"><div><input type="text" placeholder="Vendor / supplier"></div><div><input type="text" placeholder="What they provide"></div><button type="button" class="ppa-remove-btn" aria-label="Remove">&times;</button></div>`,
   };
 
   function addRow(containerId, tpl, ph, prefill) {
@@ -401,6 +515,12 @@ function init() {
   addRow('sc-milestones', 'milestone');
   addRow('r-rows', 'risk');
   addRow('st-rows', 'stakeholder');
+  addRow('co-lines', 'costline');
+  addRow('q-metrics', 'metric');
+  addRow('re-roles', 'role');
+  addRow('cm-rows', 'comm');
+  addRow('pr-items', 'makebuy');
+  addRow('pr-vendors', 'vendor');
 
   // ---- save / resume / backup ---------------------------------------------
   // The one deliberate exception to "nothing persists" on this site — and
@@ -418,7 +538,11 @@ function init() {
 
   function collectState() {
     const fieldIds = ['c-name','c-sponsor','c-pm','c-budget','c-start','c-end','c-case','c-success',
-      's-acceptance','sc-approach','sc-duration'];
+      's-acceptance','sc-approach','sc-duration',
+      'co-baseline','co-method','co-contingency','co-mgmt-reserve',
+      'q-standards','q-assurance','q-control',
+      're-acquisition','re-training','re-groundrules',
+      'cm-cadence','cm-escalation','pr-contract-type'];
     const fields = {};
     fieldIds.forEach(id => { fields[id] = val(id); });
 
@@ -439,6 +563,12 @@ function init() {
         'sc-milestones': rowsOf('sc-milestones', 'input'),
         'r-rows': rowsOf('r-rows', 'input, select'),
         'st-rows': rowsOf('st-rows', 'input, select'),
+        'co-lines': rowsOf('co-lines', 'input'),
+        'q-metrics': rowsOf('q-metrics', 'input'),
+        're-roles': rowsOf('re-roles', 'input'),
+        'cm-rows': rowsOf('cm-rows', 'input'),
+        'pr-items': rowsOf('pr-items', 'input, select'),
+        'pr-vendors': rowsOf('pr-vendors', 'input'),
       },
     };
   }
@@ -458,6 +588,12 @@ function init() {
     clearRepeats('sc-milestones'); (r['sc-milestones']?.length ? r['sc-milestones'] : [[]]).forEach(v => addRow('sc-milestones','milestone','',v));
     clearRepeats('r-rows'); (r['r-rows']?.length ? r['r-rows'] : [[]]).forEach(v => addRow('r-rows','risk','',v));
     clearRepeats('st-rows'); (r['st-rows']?.length ? r['st-rows'] : [[]]).forEach(v => addRow('st-rows','stakeholder','',v));
+    clearRepeats('co-lines'); (r['co-lines']?.length ? r['co-lines'] : [[]]).forEach(v => addRow('co-lines','costline','',v));
+    clearRepeats('q-metrics'); (r['q-metrics']?.length ? r['q-metrics'] : [[]]).forEach(v => addRow('q-metrics','metric','',v));
+    clearRepeats('re-roles'); (r['re-roles']?.length ? r['re-roles'] : [[]]).forEach(v => addRow('re-roles','role','',v));
+    clearRepeats('cm-rows'); (r['cm-rows']?.length ? r['cm-rows'] : [[]]).forEach(v => addRow('cm-rows','comm','',v));
+    clearRepeats('pr-items'); (r['pr-items']?.length ? r['pr-items'] : [[]]).forEach(v => addRow('pr-items','makebuy','',v));
+    clearRepeats('pr-vendors'); (r['pr-vendors']?.length ? r['pr-vendors'] : [[]]).forEach(v => addRow('pr-vendors','vendor','',v));
     updateProgress();
   }
 
@@ -569,7 +705,7 @@ function init() {
     let touched = 0;
     filled.forEach(f => { if (f.value && f.value.trim() !== '') touched++; });
     document.getElementById('ppa-progress').textContent =
-      touched > 0 ? `In progress — 5 of ${RZ_PM_CONFIG.totalCategoriesPlanned} categories built so far (Cost, Quality, Resources, Comms, Procurement coming next)` : '';
+      touched > 0 ? `In progress — ${touched} fields filled across all ${RZ_PM_CONFIG.totalCategoriesPlanned} categories` : '';
   }
   document.addEventListener('input', updateProgress);
   updateProgress();
@@ -606,6 +742,23 @@ function init() {
       return name ? [name, sels[0]?.value, sels[1]?.value, texts[1]?.value.trim() || '—'] : null;
     }).filter(Boolean);
 
+    function simpleRows(containerId) {
+      return Array.from(document.querySelectorAll('#' + containerId + ' .ppa-repeat-row')).map(r =>
+        Array.from(r.querySelectorAll('input')).map(el => el.value.trim())
+      ).filter(row => row.some(Boolean));
+    }
+    const costLines = simpleRows('co-lines');
+    const metricRows = simpleRows('q-metrics');
+    const roleRows = simpleRows('re-roles');
+    const commRows = simpleRows('cm-rows');
+    const vendorRows = simpleRows('pr-vendors');
+    const makebuyRows = Array.from(document.querySelectorAll('#pr-items .ppa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sel = r.querySelector('select');
+      const item = texts[0]?.value.trim();
+      return item ? [item, sel?.value, texts[1]?.value.trim() || '—'] : null;
+    }).filter(Boolean);
+
     document.getElementById('ppa-doc').innerHTML = `
       <h1 style="margin-bottom:0;">${escapeHtml(val('c-name') || 'Untitled Project')}</h1>
       <p class="ppa-empty" style="margin-top:.2rem;">Project Charter &amp; Management Plan — drafted ${new Date().toLocaleDateString()}</p>
@@ -636,8 +789,32 @@ function init() {
       <h2>5. Stakeholder Register</h2>
       ${stRows.length ? `<table><tr><th>Stakeholder</th><th>Interest</th><th>Influence</th><th>Engagement strategy</th></tr>${stRows.map(s => `<tr><td>${escapeHtml(s[0])}</td><td>${s[1]}</td><td>${s[2]}</td><td>${escapeHtml(s[3])}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No stakeholders entered yet.</p>'}
 
-      <h2 style="opacity:.5;">6–10. Cost · Quality · Resources · Communications · Procurement</h2>
-      <p class="ppa-empty">Coming in the next build — see chat for the plan.</p>
+      <h2>6. Cost Management</h2>
+      <p><strong>Baseline:</strong> ${val('co-baseline') ? cur + Number(val('co-baseline')).toLocaleString() : '—'} &nbsp; <strong>Method:</strong> ${escapeHtml(val('co-method')) || '—'}</p>
+      <p><strong>Contingency reserve:</strong> ${val('co-contingency') ? val('co-contingency') + '%' : '—'} &nbsp; <strong>Management reserve:</strong> ${val('co-mgmt-reserve') ? val('co-mgmt-reserve') + '%' : '—'}</p>
+      ${costLines.length ? `<table><tr><th>Line item</th><th>Amount</th></tr>${costLines.map(c => `<tr><td>${escapeHtml(c[0]||'')}</td><td>${c[1] ? cur + Number(c[1]).toLocaleString() : '—'}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No line items entered yet.</p>'}
+
+      <h2>7. Quality Management</h2>
+      <p><strong>Standards:</strong> ${escapeHtml(val('q-standards')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+      ${metricRows.length ? `<table><tr><th>Metric</th><th>Target</th></tr>${metricRows.map(m => `<tr><td>${escapeHtml(m[0]||'')}</td><td>${escapeHtml(m[1]||'—')}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No metrics entered yet.</p>'}
+      <p><strong>Assurance approach:</strong> ${escapeHtml(val('q-assurance')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Control checkpoints:</strong> ${escapeHtml(val('q-control')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+
+      <h2>8. Resource Management</h2>
+      ${roleRows.length ? `<table><tr><th>Role</th><th>Responsibility</th><th>FTE / count</th></tr>${roleRows.map(r => `<tr><td>${escapeHtml(r[0]||'')}</td><td>${escapeHtml(r[1]||'—')}</td><td>${escapeHtml(r[2]||'—')}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No roles entered yet.</p>'}
+      <p><strong>Acquisition:</strong> ${escapeHtml(val('re-acquisition')) || '—'}</p>
+      <p><strong>Training needs:</strong> ${escapeHtml(val('re-training')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Ground rules:</strong> ${escapeHtml(val('re-groundrules')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+
+      <h2>9. Communications Management</h2>
+      ${commRows.length ? `<table><tr><th>Audience</th><th>Info needed</th><th>Frequency</th><th>Channel</th></tr>${commRows.map(c => `<tr><td>${escapeHtml(c[0]||'')}</td><td>${escapeHtml(c[1]||'—')}</td><td>${escapeHtml(c[2]||'—')}</td><td>${escapeHtml(c[3]||'—')}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No communication rows entered yet.</p>'}
+      <p><strong>Reporting cadence:</strong> ${escapeHtml(val('cm-cadence')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Escalation path:</strong> ${escapeHtml(val('cm-escalation')) || '<span class="ppa-empty">Not entered yet.</span>'}</p>
+
+      <h2>10. Procurement Management</h2>
+      <p><strong>Contract type:</strong> ${escapeHtml(val('pr-contract-type')) || '—'}</p>
+      ${makebuyRows.length ? `<table><tr><th>Item</th><th>Make/Buy</th><th>Rationale</th></tr>${makebuyRows.map(m => `<tr><td>${escapeHtml(m[0])}</td><td>${m[1]}</td><td>${escapeHtml(m[2])}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No make-or-buy items entered yet.</p>'}
+      ${vendorRows.length ? `<table><tr><th>Vendor</th><th>Provides</th></tr>${vendorRows.map(v => `<tr><td>${escapeHtml(v[0]||'')}</td><td>${escapeHtml(v[1]||'—')}</td></tr>`).join('')}</table>` : '<p class="ppa-empty">No vendors entered yet.</p>'}
     `;
   }
 
