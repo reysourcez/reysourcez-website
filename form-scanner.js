@@ -1,7 +1,7 @@
 /* ============================================================
    Form Scanner Frontend Engine
    Filename: form-scanner.js
-   Version: v4.6.1 (Bugfix for undefined orientation & preview)
+   Version: v4.7.0
    ============================================================ */
 
 const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
