@@ -1,7 +1,7 @@
 /* ============================================================
    Form Scanner Frontend Engine
    Filename: form-scanner.js
-   Version: v4.6
+   Version: v4.6.1 (Bugfix for undefined orientation & preview)
    ============================================================ */
 
 const PROXY_ENDPOINT = 'https://form-scanner-proxy.reysourcez-ent.workers.dev';
@@ -13,7 +13,6 @@ let currentOriginalSize = 'A4';
 let currentOriginalOrientation = 'portrait';
 let lastResult = null;
 
-// Exact Dimensions in Points (72 pt/inch)
 const PAPER_SIZES = {
   'A3': [841.89, 1190.55],
   'A4': [595.28, 841.89],
@@ -78,6 +77,9 @@ async function handleFileSelect(e) {
 
   setStatus('Processing file...');
   try {
+    const img = document.getElementById('fs-preview-img');
+    const pdfPreview = document.getElementById('fs-pdf-preview');
+
     if (isPdf) {
       const base64Data = await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -107,13 +109,11 @@ async function handleFileSelect(e) {
         else if (maxEdge > 500) currentOriginalSize = 'A5';
         else currentOriginalSize = 'A6';
       } catch (err) {
-        currentOriginalSize = 'A4';
-        currentOriginalOrientation = 'portrait';
+        currentOriginalSize = 'A5';
+        currentOriginalOrientation = 'landscape';
       }
 
-      const img = document.getElementById('fs-preview-img');
-      if (img) img.hidden = true;
-      const pdfPreview = document.getElementById('fs-pdf-preview');
+      if (img) img.style.display = 'none';
       if (pdfPreview) {
         pdfPreview.style.display = 'block';
         document.getElementById('fs-pdf-filename').textContent = file.name;
@@ -126,11 +126,8 @@ async function handleFileSelect(e) {
       currentOriginalSize = 'A5';
       currentOriginalOrientation = isLandscape ? 'landscape' : 'portrait';
 
-      const pdfPreview = document.getElementById('fs-pdf-preview');
       if (pdfPreview) pdfPreview.style.display = 'none';
-
-      const img = document.getElementById('fs-preview-img');
-      if (img) { img.src = previewUrl; img.hidden = false; }
+      if (img) { img.src = previewUrl; img.style.display = 'block'; }
     }
 
     const dropdown = document.getElementById('fs-paper-size');
@@ -172,11 +169,12 @@ async function runScan() {
     if (!data.recognized) throw new Error('Unrecognized form structure.');
 
     lastResult = data;
-    if (selectedSize) lastResult.page_size = selectedSize;
+    lastResult.page_size = selectedSize || data.page_size || currentOriginalSize || 'A4';
+    lastResult.orientation = data.orientation || currentOriginalOrientation || 'portrait';
 
     document.getElementById('fs-preview-title').textContent = data.title || 'Scanned Form';
     document.getElementById('fs-preview-ref').textContent = `[${lastResult.page_size} ${lastResult.orientation.toUpperCase()}]`;
-    document.getElementById('fs-results-section').hidden = false;
+    document.getElementById('fs-results-section').style.display = 'block';
     
     setStatus('Document structure mapped successfully!');
   } catch (err) {
@@ -195,7 +193,7 @@ async function buildFillablePdf(result) {
   const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const form = pdfDoc.getForm();
 
-  const isLandscape = (result.orientation || '').toLowerCase() === 'landscape';
+  const isLandscape = (result.orientation || 'portrait').toLowerCase() === 'landscape';
   const sizeKey = (result.page_size || 'A4').toUpperCase();
   let [PAGE_W, PAGE_H] = PAPER_SIZES[sizeKey] || PAPER_SIZES['A4'];
   if (isLandscape && PAGE_H > PAGE_W) [PAGE_W, PAGE_H] = [PAGE_H, PAGE_W];
