@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Market Radar page v1.5.0 (2026-09-20) — pairs with market-radar.js v1.5.0 and market-radar-proxy-worker.js v1.5.0 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -57,9 +58,25 @@
       font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text);
     }
     .mr-controls-row select:focus-visible, .mr-controls-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    #mr-custom-tag-row { display: none; gap: 8px; }
+    /* v1.5.0 — business-type checkbox group (replaces the old dropdown) */
+    .mr-category-fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 12px; margin: 0 0 16px; background: var(--surface); min-width: 0; }
+    .mr-category-fieldset legend { font-size: 0.85rem; font-weight: 600; color: var(--text); padding: 0 6px; }
+    .mr-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px; margin-top: 4px; }
+    .mr-cat-option { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 0.9rem; cursor: pointer; }
+    .mr-cat-option:hover { border-color: var(--accent); }
+    .mr-cat-option.is-checked { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+    .mr-cat-option.is-disabled { opacity: 0.45; cursor: not-allowed; }
+    .mr-cat-option:focus-within { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .mr-cat-option input { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
+    .mr-category-count { margin: 8px 2px 0; font-size: 0.82rem; color: var(--muted); }
+    #mr-custom-tag-row { display: none; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 10px; }
     #mr-custom-tag-row.is-visible { display: flex; }
-    #mr-custom-tag-row input { width: 120px; }
+    #mr-custom-tag-row > div { display: flex; flex-direction: column; gap: 6px; }
+    #mr-custom-tag-row label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+    #mr-custom-tag-row input { width: 140px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text); }
+    #mr-custom-tag-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .mr-inline-notice { margin: 10px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-soft); font-size: 0.85rem; color: var(--text); }
+    .mr-trend-line { display: block; font-size: 1rem; line-height: 1.4; }
 
     /* Provenance tags — every stat on the page carries one of these so
        an "Official" district figure never reads with the same
@@ -175,21 +192,24 @@
 
         <p class="structure-note">Scouting <strong id="mr-town-label">Miri</strong>. Click anywhere on the map below to move the pin to an exact spot — a specific shoplot, not just the town centre.</p>
 
-        <div class="mr-controls-row no-print">
-          <div>
-            <label for="mr-category-select">What are you thinking of opening?</label>
-            <select id="mr-category-select"><!-- populated by JS from CATEGORY_TAGS --></select>
-          </div>
+        <fieldset class="mr-category-fieldset no-print" id="mr-category-group">
+          <legend>What are you thinking of opening? <span class="toggle-hint">— tick the types you're weighing (a food business can span several)</span></legend>
+          <div class="mr-category-grid" id="mr-category-options"><!-- populated by JS from CATEGORY_TAGS --></div>
+          <p class="mr-category-count" id="mr-category-count" aria-live="polite"></p>
           <div id="mr-custom-tag-row">
             <div>
               <label for="mr-custom-key">OSM key</label>
-              <input type="text" id="mr-custom-key" placeholder="e.g. shop">
+              <input type="text" id="mr-custom-key" placeholder="e.g. shop" maxlength="40" autocomplete="off">
             </div>
             <div>
               <label for="mr-custom-value">OSM value</label>
-              <input type="text" id="mr-custom-value" placeholder="e.g. bicycle">
+              <input type="text" id="mr-custom-value" placeholder="e.g. bicycle" maxlength="40" autocomplete="off">
             </div>
+            <span class="toggle-hint">letters, numbers, _ : - only</span>
           </div>
+        </fieldset>
+
+        <div class="mr-controls-row no-print">
           <div>
             <label for="mr-catchment-select">Catchment</label>
             <select id="mr-catchment-select"><!-- populated by JS from CATCHMENT_MODES --></select>
@@ -223,8 +243,9 @@
 
         <div class="ica-results" id="mr-result-cards" hidden>
           <div class="result-card">
-            <span class="result-label">Competitors in catchment<span class="tooltip-icon" data-tooltip="Same category you picked above, inside the real catchment shape (or the radius fallback), not just a raw radius search.">?</span></span>
+            <span class="result-label">Competitors in catchment<span class="tooltip-icon" data-tooltip="Every business type you ticked above, added together, inside the real catchment shape (or the radius fallback), not just a raw radius search. With more than one type ticked, the line underneath splits the total by type, and the score treats 12 competitors PER TYPE as fully saturated.">?</span></span>
             <span class="result-value" id="mr-competitor-count">—</span>
+            <span class="mr-provenance" id="mr-competitor-breakdown"></span>
             <span class="mr-provenance">Estimated — OpenStreetMap</span>
           </div>
           <div class="result-card">
@@ -243,7 +264,7 @@
             <span class="mr-provenance">Official — DOSM</span>
           </div>
           <div class="result-card">
-            <span class="result-label">Competitor strength<span class="tooltip-icon" data-tooltip="Rating and review count, for whichever competitors above could be matched to a Google Maps listing within about 75m. A quiet 3-competitor spot and a 3-competitor spot with a beloved, packed incumbent aren't the same opportunity — this doesn't affect the score above unless you raise its weight below, off (0) by default.">?</span></span>
+            <span class="result-label">Competitor strength<span class="tooltip-icon" data-tooltip="How strong the competition looks. Your own on-site read (the dropdown just below these cards) wins when set; otherwise this uses Google rating + review count for competitors matched to a Google Maps listing within about 75m, which needs the optional Google Places key (a paid service). Picking an on-site read automatically counts it in the score at 10%, taken from Low competition — change it in the weights panel.">?</span></span>
             <span class="result-value" id="mr-popularity-value">—</span>
             <span class="mr-provenance" id="mr-popularity-provenance">Estimated — Google Places (optional)</span>
           </div>
@@ -269,7 +290,8 @@
             <option value="4">Busy</option>
             <option value="5">Packed — queue out the door</option>
           </select>
-          <p class="structure-note">Only changes the score if you also raise "Competitor strength" above 0 in the weights below, and beats the Google-ratings card above when both are present — a fresh look in person outranks an aggregate rating. Nothing here is saved; it resets when you close this tab.</p>
+          <p class="mr-inline-notice" id="mr-observed-notice" role="status" hidden></p>
+          <p class="structure-note">The moment you pick a read, it counts in the score at 10% (taken from "Low competition" — change it or switch it off under Opportunity score weights). It beats the Google-ratings card when both are present — a fresh look in person outranks an aggregate rating. Nothing here is saved; it resets when you close this tab.</p>
         </div>
 
         <div class="mr-field-note" id="mr-vacancy-panel" hidden>
@@ -299,7 +321,7 @@
               <tr><td>Household income band</td><td><input type="number" id="mr-weight-income" min="0" max="1" step="0.05" value="0.15"></td></tr>
               <tr><td>Category diversity nearby</td><td><input type="number" id="mr-weight-diversity" min="0" max="1" step="0.05" value="0.15"></td></tr>
               <tr><td>Momentum <span class="toggle-hint">(neutral until snapshot history exists)</span></td><td><input type="number" id="mr-weight-momentum" min="0" max="1" step="0.05" value="0.10"></td></tr>
-              <tr><td>Competitor strength <span class="toggle-hint">(Google ratings, or your on-site read above — off by default)</span></td><td><input type="number" id="mr-weight-competitorStrength" min="0" max="1" step="0.05" value="0"></td></tr>
+              <tr><td>Competitor strength <span class="toggle-hint">(your on-site read above, or Google ratings if configured — set to 10% automatically when you pick an on-site read)</span></td><td><input type="number" id="mr-weight-competitorStrength" min="0" max="1" step="0.05" value="0"></td></tr>
             </tbody>
           </table>
           <p class="structure-note">Weights should add up to 1.00 — current total: <span id="mr-weight-total">1.00</span></p>
@@ -325,6 +347,6 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="market-radar.js?v=2" defer></script>
+  <script src="market-radar.js?v=20260920a" defer></script>
 </body>
 </html>

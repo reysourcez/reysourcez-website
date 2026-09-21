@@ -1,3 +1,4 @@
+// Market Radar client logic — v1.5.0 (2026-09-20). What changed: MARKET_RADAR_SETUP_AND_GLOSSARY.md. How it fits together: MARKET_RADAR_HANDOFF.md.
 /* ============================================================
    Market Radar
    Two deliberate exceptions to this site's usual zero-dependency
@@ -69,18 +70,6 @@
        than made here, since it touches files this session didn't own.
 
    ------------------------------------------------------------
-   ADDED / FIXED, 2026-09-20 (package v1.4.0): the page now SHOWS where
-   the competitor list came from — "OSM via Overpass (<mirror>)", or
-   "OSM via Geoapify backstop" when every Overpass mirror failed — plus
-   whether it was served from the 24h cache and which Worker version is
-   deployed (see describePoiSource / describeWorker at the bottom of
-   this file). Before this, there was no way to tell whether the Geoapify
-   backstop had ever run. Also fixed: the "Nearby institutions" card said
-   "None found" whenever competitor data was unavailable or came from the
-   backstop — but institutions simply weren't checked in those cases, and
-   "0 found" vs "not checked" must never look the same on screen (same
-   principle as poisAvailable below).
-
    FIXED, 2026-09-16: "Drink stall / bubble tea" was invisible for
    real bubble tea shops. Root cause was in CATEGORY_TAGS below plus
    categorize() in market-radar-proxy-worker.js — see the comment on
@@ -91,11 +80,8 @@
    tag added here.
    ============================================================ */
 
-// Bumped 2026-09-20 with package v1.4.0. Check this line in the browser
-// console (F12) to confirm which copy of this file the visitor is really
-// running — the page can be cached separately from the Worker.
-const CLIENT_VERSION = '1.4.0';
-console.info('[Market Radar] script build: 2026-09-20-v6 (package v' + CLIENT_VERSION + ')');
+const MR_CLIENT_VERSION = '1.5.0';
+console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' \u2014 build 2026-09-20');
 
 /* ================= CONFIG =================
    Everything below is meant to be changed. See the Settings
@@ -107,7 +93,7 @@ console.info('[Market Radar] script build: 2026-09-20-v6 (package v' + CLIENT_VE
 // analyzing. "district" must exactly match one of DOSM's 160 official
 // district names (case doesn't matter — the Worker's ifilter= query
 // is case-insensitive) — confirm any new town's spelling against
-// data.gov.my/data-catalogue/population_district before adding it
+// open.dosm.gov.my/data-catalogue/population_district before adding it
 // here. (An earlier version of this comment pointed at a Worker-side
 // DISTRICT_ALIASES lookup table for this — that table was never
 // actually built; corrected here rather than left pointing at
@@ -230,9 +216,12 @@ const ANCHOR_TAGS = {
 // over-fetch, since the real isochrone shape is rarely a perfect
 // circle and the extra margin gets trimmed off client-side anyway
 // (see pointInPolygon).
+// v1.5.0: added walk5 / drive5 \u2014 same pace ratios as the 10-minute rows (walk 80 m per minute, drive ~500 m per minute).
 const CATCHMENT_MODES = {
+  walk5: { label: '5-minute walk', profile: 'foot-walking', seconds: 300, fallbackRadiusM: 400 },
   walk10: { label: '10-minute walk', profile: 'foot-walking', seconds: 600, fallbackRadiusM: 800 },
   walk15: { label: '15-minute walk', profile: 'foot-walking', seconds: 900, fallbackRadiusM: 1200 },
+  drive5: { label: '5-minute drive', profile: 'driving-car', seconds: 300, fallbackRadiusM: 2500 },
   drive10: { label: '10-minute drive', profile: 'driving-car', seconds: 600, fallbackRadiusM: 5000 },
   drive15: { label: '15-minute drive', profile: 'driving-car', seconds: 900, fallbackRadiusM: 8000 },
 };
@@ -244,12 +233,17 @@ const CATCHMENT_MODES = {
 // the actual formula behind each sub-score.
 const SCORE_WEIGHTS_DEFAULT = { lowCompetition: 0.35, population: 0.25, income: 0.15, diversity: 0.15, momentum: 0.10, competitorStrength: 0 };
 
-// How many competitors inside the catchment counts as "fully
-// saturated" for whichever category is selected — a café-dense town
-// centre and a hardware-store count don't saturate at the same
-// number, so this is one visible, adjustable number rather than a
-// per-category guess this file would otherwise have to invent.
+// Competitors that count as "fully saturated" PER BUSINESS TYPE ticked. With several types
+// ticked the real threshold is this number x how many are ticked (see computeOpportunityScore),
+// so ticking four food types isn't punished four times over. One visible, adjustable number
+// rather than a per-category guess this file would otherwise have to invent.
 const SATURATION_COUNT = 12;
+
+// v1.5.0 \u2014 business-type picker (checkboxes instead of a dropdown).
+const MAX_CATEGORIES = 4;                 // most types that can be ticked at once
+const DEFAULT_CATEGORIES = ['cafe'];      // ticked when the page opens
+const ON_SITE_AUTO_WEIGHT = 0.10;         // weight "Competitor strength" gets the moment an on-site read is picked
+const CUSTOM_TAG_PATTERN = /^[A-Za-z0-9_:\-]{1,40}$/;  // same rule the Worker enforces on custom OSM tags
 
 // District population/income are shown as district-level context
 // (that's the finest grain DOSM's open data actually publishes —
@@ -347,6 +341,40 @@ function editAnswers() {
   document.getElementById('wizard').hidden = false;
   wizardStepIndex = 0;
   renderWizardStep();
+}
+
+/* ================= BUSINESS-TYPE PICKER (v1.5.0 \u2014 tick up to MAX_CATEGORIES) ================= */
+
+function escapeAttr(str) { return escapeHTML(String(str)).replace(/"/g, '&quot;'); }
+
+function renderCategoryOptions() {
+  const box = document.getElementById('mr-category-options');
+  box.innerHTML = Object.entries(CATEGORY_TAGS).map(([key, c]) => {
+    const tip = c.msic ? 'MSIC ' + c.msic.code + ' \u2014 ' + c.msic.name : 'Type your own OpenStreetMap key and value';
+    const checked = DEFAULT_CATEGORIES.includes(key) ? ' checked' : '';
+    return `<label class="mr-cat-option" title="${escapeAttr(tip)}"><input type="checkbox" name="mr-category" value="${escapeAttr(key)}"${checked}><span>${escapeHTML(c.label)}</span></label>`;
+  }).join('');
+  box.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', syncCategoryUI));
+  syncCategoryUI();
+}
+
+function getSelectedCategories() {
+  return Array.from(document.querySelectorAll('#mr-category-options input[type="checkbox"]:checked')).map((cb) => cb.value);
+}
+
+// At the cap every UNticked box is disabled; ticked ones stay clickable so the person can swap.
+function syncCategoryUI() {
+  const selected = getSelectedCategories();
+  const atMax = selected.length >= MAX_CATEGORIES;
+  document.querySelectorAll('#mr-category-options .mr-cat-option').forEach((label) => {
+    const cb = label.querySelector('input');
+    cb.disabled = atMax && !cb.checked;
+    label.classList.toggle('is-checked', cb.checked);
+    label.classList.toggle('is-disabled', cb.disabled);
+  });
+  document.getElementById('mr-category-count').textContent = selected.length + ' of ' + MAX_CATEGORIES + ' selected'
+    + (atMax ? ' \u2014 untick one to swap' : (selected.length === 0 ? ' \u2014 tick at least one' : ''));
+  document.getElementById('mr-custom-tag-row').classList.toggle('is-visible', selected.includes('custom'));
 }
 
 /* ================= MAP ================= */
@@ -459,7 +487,9 @@ function ringAreaKm2(ring, centerLat) {
 // score, the same "clamp, don't crash" instinct as everywhere else
 // on this site.
 function computeOpportunityScore(inputs, weights) {
-  const lowCompetition = clamp01(1 - inputs.competitorCount / SATURATION_COUNT);
+  // v1.5.0: saturation scales with how many business types are ticked (SATURATION_COUNT per type)
+  const saturation = SATURATION_COUNT * Math.max(1, inputs.categoryCount || 1);
+  const lowCompetition = clamp01(1 - inputs.competitorCount / saturation);
   const population = clamp01(inputs.districtPopulation / POPULATION_NORMALIZER);
   const income = clamp01(inputs.districtIncome / INCOME_NORMALIZER);
   const diversity = clamp01(inputs.diversityIndex);
@@ -663,20 +693,126 @@ function renderScore() {
     : scoreVerdict(result.total) + ' \u2014 based on partial data, competitor count unavailable';
 }
 
+/* ---- v1.5.0: the on-site read now visibly feeds the score ----
+   Picking a busyness read used to change nothing unless "Competitor strength" had already been
+   raised above 0 in the weights panel (its default is 0), which read as broken. Now the FIRST
+   read picked sets that weight to ON_SITE_AUTO_WEIGHT, taken out of "Low competition" so the
+   total stays 1.00, and says so on screen. Clearing the read restores both weights; editing any
+   weight by hand switches this automation off. */
+let strengthAutoApplied = false;
+let strengthAutoMoved = 0;
+
+function setWeightInput(key, value) {
+  document.getElementById('mr-weight-' + key).value = (Math.round(value * 100) / 100).toFixed(2);
+}
+
+function onObservedChange() {
+  const notice = document.getElementById('mr-observed-notice');
+  const read = getObservedBusyness();
+  const cs = parseFloat(document.getElementById('mr-weight-competitorStrength').value) || 0;
+  const lc = parseFloat(document.getElementById('mr-weight-lowCompetition').value) || 0;
+  if (read != null && !strengthAutoApplied && cs === 0) {
+    strengthAutoMoved = Math.min(ON_SITE_AUTO_WEIGHT, lc);
+    setWeightInput('lowCompetition', lc - strengthAutoMoved);
+    setWeightInput('competitorStrength', ON_SITE_AUTO_WEIGHT);
+    strengthAutoApplied = true;
+    notice.textContent = 'Counted in the score at ' + Math.round(ON_SITE_AUTO_WEIGHT * 100)
+      + '% (taken from \u201cLow competition\u201d). Change or turn it off under Opportunity score weights.';
+    notice.hidden = false;
+  } else if (read == null && strengthAutoApplied) {
+    setWeightInput('lowCompetition', lc + strengthAutoMoved);
+    setWeightInput('competitorStrength', 0);
+    strengthAutoApplied = false;
+    strengthAutoMoved = 0;
+    notice.hidden = true;
+  }
+  updateWeightTotalDisplay();
+  renderScore();
+  renderStrengthCard();
+}
+
+function onWeightEditedByHand() {
+  if (strengthAutoApplied) {
+    strengthAutoApplied = false;
+    strengthAutoMoved = 0;
+    document.getElementById('mr-observed-notice').hidden = true;
+  }
+  updateWeightTotalDisplay();
+  renderScore();
+}
+
+// The "Competitor strength" card: the person's own on-site read wins, then Google ratings, then "none".
+function renderStrengthCard() {
+  if (!lastAnalysis) return;
+  const valueEl = document.getElementById('mr-popularity-value');
+  const provEl = document.getElementById('mr-popularity-provenance');
+  const read = getObservedBusyness();
+  if (read != null) {
+    const sel = document.getElementById('mr-observed-busyness');
+    valueEl.textContent = sel.options[sel.selectedIndex].text.split(' \u2014 ')[0];
+    provEl.textContent = 'Observed \u2014 your own on-site read (overrides Google ratings)';
+    return;
+  }
+  const sample = lastAnalysis.competitorRatingSample || [];
+  if (sample.length) {
+    const avg = sample.reduce((s, c) => s + c.rating, 0) / sample.length;
+    valueEl.textContent = sample.length + ' of ' + lastAnalysis.competitorCount + ' matched, avg ' + avg.toFixed(1) + '\u2605';
+    provEl.textContent = 'Estimated \u2014 Google Places';
+  } else {
+    valueEl.textContent = 'No Google match';
+    provEl.textContent = 'Not available \u2014 GOOGLE_PLACES_API_KEY unset, or no nearby Google listing matched. Pick an on-site read below to use this signal for free.';
+  }
+}
+
+// DOSM trend card \u2014 one line per ticked type that the index actually tracks (4 of the 11).
+function renderTrendCard(trends, selected, labelFor, town) {
+  const valueEl = document.getElementById('mr-trend-value');
+  const provEl = document.getElementById('mr-trend-provenance');
+  const tracked = selected.filter((k) => trends[k]);
+  const untracked = selected.filter((k) => !trends[k]);
+  if (!tracked.length) {
+    valueEl.textContent = 'Not tracked';
+    provEl.textContent = (selected.length > 1 ? 'None of these types are' : labelFor(selected[0]) + ' isn\u2019t')
+      + ' part of DOSM\u2019s wholesale & retail trade index (it only covers 4 of the 11 categories here \u2014 see the tooltip)';
+    return;
+  }
+  const fmt = (t) => (t.growthYoy > 0 ? '+' : '') + t.growthYoy.toFixed(1) + '% YoY';
+  valueEl.innerHTML = tracked.length === 1
+    ? escapeHTML(fmt(trends[tracked[0]]))
+    : tracked.map((k) => `<span class="mr-trend-line">${escapeHTML(labelFor(k))}: ${escapeHTML(fmt(trends[k]))}</span>`).join('');
+  const asOf = Array.from(new Set(tracked.map((k) => trends[k].asOf))).join(', ');
+  provEl.textContent = 'Official \u2014 DOSM, as of ' + asOf + ' \u00b7 Malaysia-wide, not ' + town.label + '-specific'
+    + (untracked.length ? ' \u00b7 Not tracked: ' + untracked.map(labelFor).join(', ') : '');
+}
+
 async function analyzeSpot() {
   const town = TOWNS[wizardAnswers.town];
   const catchmentModeKey = document.getElementById('mr-catchment-select').value;
   const catchmentMode = CATCHMENT_MODES[catchmentModeKey];
-  const categoryKey = document.getElementById('mr-category-select').value;
+  const selected = getSelectedCategories();
   const pin = pinMarker.getLatLng();
 
-  let categoriesForRequest = CATEGORY_TAGS;
-  if (categoryKey === 'custom') {
+  if (!selected.length) { setStatus('Tick at least one business type first.', true); return; }
+  if (selected.length > MAX_CATEGORIES) { setStatus('Pick at most ' + MAX_CATEGORIES + ' business types.', true); return; }
+
+  // Every standard type is always sent (so "category mix nearby" stays meaningful whichever ones
+  // are ticked); a custom OSM tag joins them as its own type when ticked.
+  const categoriesForRequest = {};
+  Object.entries(CATEGORY_TAGS).forEach(([key, c]) => { if (key !== 'custom') categoriesForRequest[key] = { label: c.label, tags: c.tags }; });
+  let customLabel = '';
+  if (selected.includes('custom')) {
     const key = document.getElementById('mr-custom-key').value.trim();
     const value = document.getElementById('mr-custom-value').value.trim();
-    if (!key || !value) { setStatus('Type both an OSM key and value for a custom category first.', true); return; }
-    categoriesForRequest = { custom: { label: `${key}=${value}`, tags: [[key, value]] } };
+    if (!key || !value) { setStatus('Type both an OSM key and value for the custom type first.', true); return; }
+    if (!CUSTOM_TAG_PATTERN.test(key) || !CUSTOM_TAG_PATTERN.test(value)) {
+      setStatus('Custom OSM tags can only use letters, numbers, _ : and - (up to 40 characters).', true);
+      return;
+    }
+    customLabel = `${key}=${value}`;
+    categoriesForRequest.custom = { label: customLabel, tags: [[key, value]] };
   }
+  const labelFor = (k) => (k === 'custom' ? customLabel : CATEGORY_TAGS[k].label);
+
   if (!WORKER_ENDPOINT || WORKER_ENDPOINT.indexOf('PASTE_YOUR') === 0) {
     setStatus('This tool needs its proxy URL set \u2014 see WORKER_ENDPOINT near the top of market-radar.js.', true);
     return;
@@ -696,50 +832,36 @@ async function analyzeSpot() {
       lat: pin.lat, lng: pin.lng,
       radiusM: Math.round(catchmentMode.fallbackRadiusM * 1.3),
       categories: categoriesForRequest,
-      selectedCategory: categoryKey,
+      selectedCategories: selected,
       anchors: ANCHOR_TAGS,
       isochrone: { profile: catchmentMode.profile, seconds: catchmentMode.seconds },
       district: town.district,
     });
     recordUsage();
-    const sourceLabel = describePoiSource(data);
 
     const catchment = drawCatchment(data.isochrone, pin.lat, pin.lng, catchmentModeKey);
 
     const pois = applyNameHints(data.pois || []);
     const withinCatchment = pois.filter((p) => catchment.containsPoint(p.lat, p.lng));
-    const competitors = withinCatchment.filter((p) => p.category === categoryKey || categoryKey === 'custom');
+    const selectedSet = new Set(selected);
+    const competitors = withinCatchment.filter((p) => selectedSet.has(p.category));
     const categoryCounts = {};
     withinCatchment.forEach((p) => { categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1; });
-    // Only populated when GOOGLE_PLACES_API_KEY is set on the Worker
-    // — see attachGooglePopularity() in market-radar-proxy-worker.js.
-    // Every competitor still counts toward competitorCount above
-    // whether or not it has a rating; this is a separate, optional
-    // refinement, not a filter.
+    // Biggest first, so the card reads "12 Restaurant \u00b7 8 Cafe \u00b7 4 Bakery".
+    const competitorBreakdown = selected
+      .map((k) => ({ key: k, label: labelFor(k), count: competitors.filter((p) => p.category === k).length }))
+      .sort((a, b) => b.count - a.count);
+    // Only populated when GOOGLE_PLACES_API_KEY is set on the Worker \u2014 see attachGooglePopularity()
+    // in market-radar-proxy-worker.js. Every competitor still counts toward competitorCount above
+    // whether or not it has a rating; this is a separate, optional refinement, not a filter.
     const competitorRatingSample = competitors.filter((p) => p.rating != null).map((p) => ({ rating: p.rating, reviewCount: p.reviewCount || 0 }));
 
-    poiMarkers = competitors.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#C0392B', fillColor: '#C0392B', fillOpacity: 0.7, weight: 1 }).bindTooltip(escapeHTML(p.name || 'Unnamed')).addTo(map));
+    poiMarkers = competitors.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#C0392B', fillColor: '#C0392B', fillOpacity: 0.7, weight: 1 })
+      .bindTooltip(escapeHTML(p.name || 'Unnamed') + (selected.length > 1 ? ' \u2014 ' + escapeHTML(labelFor(p.category)) : '')).addTo(map));
     if (competitors.length > 0 && typeof L.heatLayer === 'function') {
-      // CORRECTED, 2026-09-18: this always looked flat blue, and it
-      // wasn't a rendering fluke — Leaflet.heat's DEFAULT max is 1.0,
-      // and every point here was weighted only 0.6, so even a single,
-      // fully isolated competitor could never cross about the "cyan"
-      // mark on the default gradient (which only starts leaving blue
-      // around 0.4 and doesn't reach red until 1.0) — let alone red.
-      // With typically single-digit-to-a-few-dozen competitors per
-      // search, that default is calibrated for a completely different
-      // scale of data (crime incidents across a city, thousands of
-      // points) than this tool ever has. Recalibrated so the scale
-      // means something concrete: max=3 treats "3 competitors of the
-      // SAME category overlapping in one spot" as fully saturated —
-      // a meaningful, genuinely-worth-flagging micro-cluster at this
-      // tool's scale, not an arbitrary number. One isolated competitor
-      // now correctly shows as a clear, visible warm color rather than
-      // barely-there blue; it's only actual overlapping density that
-      // pushes further toward red. This also means: a spot with only
-      // 1-2 well-spaced competitors SHOULD look mild, not dramatic —
-      // that's the heat map correctly reporting "not much clustering
-      // here", not a sign it's still broken.
+      // max=3 treats "3 competitors overlapping in one spot" as fully saturated \u2014 calibrated for this
+      // tool's scale (single digits to a few dozen points), not the thousands Leaflet.heat's default
+      // assumes. See the 2026-09-18 note in MARKET_RADAR_SETUP_AND_GLOSSARY.md.
       heatLayer = L.heatLayer(competitors.map((p) => [p.lat, p.lng, 1]), {
         radius: 35,
         blur: 25,
@@ -749,10 +871,7 @@ async function analyzeSpot() {
       if (document.getElementById('mr-heat-toggle').checked) heatLayer.addTo(map);
     }
 
-    // Anchors are informational only — never counted as competitors,
-    // never touch the opportunity score. Distinct blue square icon
-    // (via a plain divIcon, no extra image asset to load) so they're
-    // visually unmistakable from the red competitor dots at a glance.
+    // Anchors are informational only \u2014 never counted as competitors, never touch the opportunity score.
     const anchorList = data.anchors || [];
     anchorMarkers = anchorList.map((a) => L.marker([a.lat, a.lng], {
       icon: L.divIcon({ className: 'mr-anchor-icon', html: '\u25a0', iconSize: [14, 14] }),
@@ -760,69 +879,66 @@ async function analyzeSpot() {
 
     if (catchment.layer) map.fitBounds(catchment.layer.getBounds(), { padding: [20, 20] });
 
+    // Older Workers sent one trend for one category; newer ones send an object keyed by category.
+    const trends = data.wholesaleRetailTrends || (data.wholesaleRetailTrend ? { [selected[0]]: data.wholesaleRetailTrend } : {});
+    const demo = data.demographics || {};
+
     lastAnalysis = {
       competitorCount: competitors.length,
+      competitorBreakdown,
+      categoryCount: selected.length,
+      selectedCategories: selected.slice(),
       diversityIndex: computeDiversityIndex(categoryCounts),
-      districtPopulation: data.demographics ? data.demographics.population : 0,
-      districtIncome: data.demographics ? data.demographics.medianIncome : 0,
+      districtPopulation: demo.population || 0,
+      districtIncome: demo.medianIncome || 0,
+      demographicsNotes: demo.notes || [],
       catchmentAreaKm2: catchment.areaKm2,
       catchmentIsReal: catchment.isReal,
       districtLabel: town.district,
-      categoryLabel: categoryKey === 'custom' ? categoriesForRequest.custom.label : CATEGORY_TAGS[categoryKey].label,
+      categoryLabel: selected.map(labelFor).join(' + '),
       competitorRatingSample,
       anchorCount: anchorList.length,
-      wholesaleRetailTrend: data.wholesaleRetailTrend || null,
-      // False when the Worker's Overpass call failed entirely (see
-      // market-radar-proxy-worker.js's poisError). "0 competitors"
-      // and "we couldn't check" must never look the same on screen —
-      // the first is a real, useful finding; the second is a data
-      // outage that would otherwise read as a suspiciously perfect
-      // opportunity score.
+      trends,
+      // False when the Worker's Overpass call failed entirely (see poisError in the Worker).
+      // "0 competitors" and "we couldn't check" must never look the same on screen \u2014 the first
+      // is a real, useful finding; the second is a data outage that would otherwise read as a
+      // suspiciously perfect opportunity score.
       poisAvailable: !data.poisError,
     };
 
+    const countEl = document.getElementById('mr-competitor-count');
+    const breakdownEl = document.getElementById('mr-competitor-breakdown');
     if (lastAnalysis.poisAvailable) {
-      document.getElementById('mr-competitor-count').innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML((catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback) + ' \u00b7 ' + sourceLabel)}`;
+      const meta = data.meta || {};
+      const sourceParts = [catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback];
+      if (meta.poiSource) sourceParts.push('OSM via ' + meta.poiSource);
+      if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
+      countEl.innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(sourceParts.join(' \u00b7 '))}`;
+      breakdownEl.textContent = selected.length > 1 ? competitorBreakdown.map((b) => `${b.count} ${b.label}`).join(' \u00b7 ') : '';
       document.getElementById('mr-diversity-value').textContent = Math.round(lastAnalysis.diversityIndex * 100) + '% mixed';
     } else {
-      document.getElementById('mr-competitor-count').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below \u00b7 ' + describeWorker(data))}`;
+      countEl.innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
+      breakdownEl.textContent = '';
       document.getElementById('mr-diversity-value').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
     }
-    document.getElementById('mr-population-value').textContent = lastAnalysis.districtPopulation ? lastAnalysis.districtPopulation.toLocaleString() : 'Not available';
-    document.getElementById('mr-income-value').textContent = lastAnalysis.districtIncome ? ('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString() + '/mo') : 'Not available';
-    if (competitorRatingSample.length) {
-      const avgRating = competitorRatingSample.reduce((s, c) => s + c.rating, 0) / competitorRatingSample.length;
-      document.getElementById('mr-popularity-value').textContent = `${competitorRatingSample.length} of ${competitors.length} matched, avg ${avgRating.toFixed(1)}\u2605`;
-      document.getElementById('mr-popularity-provenance').textContent = 'Estimated \u2014 Google Places';
-    } else {
-      document.getElementById('mr-popularity-value').textContent = 'No Google match';
-      document.getElementById('mr-popularity-provenance').textContent = 'Not available \u2014 GOOGLE_PLACES_API_KEY unset, or no nearby Google listing matched';
-    }
+    // When a DOSM figure is missing, the Worker says exactly why (HTTP status, empty result, rate limit) \u2014 show it.
+    const demoNote = (prefix) => lastAnalysis.demographicsNotes.filter((n) => n.indexOf(prefix) === 0).join('; ');
+    document.getElementById('mr-population-value').innerHTML = lastAnalysis.districtPopulation
+      ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString())
+      : 'Not available' + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '');
+    document.getElementById('mr-income-value').innerHTML = lastAnalysis.districtIncome
+      ? escapeHTML('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString() + '/mo')
+      : 'Not available' + (demoNote('Income') ? provenanceHTML(demoNote('Income')) : '');
+
+    renderStrengthCard();
 
     const anchorCounts = {};
     anchorList.forEach((a) => { anchorCounts[a.anchorType] = (anchorCounts[a.anchorType] || 0) + 1; });
     const anchorSummary = Object.entries(anchorCounts).map(([k, n]) => `${n} ${(ANCHOR_TAGS[k] || {}).label || k}`).join(', ');
-    if (data.poisSource === 'geoapify') {
-      // The backstop only maps competitor categories, so institutions were never looked up.
-      document.getElementById('mr-anchor-value').textContent = 'Not checked';
-      document.getElementById('mr-anchor-provenance').textContent = 'Backstop source has no institution mapping \u2014 run again once Overpass recovers';
-    } else if (data.poisError) {
-      document.getElementById('mr-anchor-value').textContent = 'Not checked';
-      document.getElementById('mr-anchor-provenance').textContent = 'Overpass unavailable \u2014 see status message';
-    } else {
-      document.getElementById('mr-anchor-value').textContent = anchorList.length ? anchorList.length : 'None found';
-      document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official \u2014 OSM: ' + anchorSummary) : 'Official \u2014 OSM (none of the tracked types found nearby)';
-    }
+    document.getElementById('mr-anchor-value').textContent = anchorList.length ? anchorList.length : 'None found';
+    document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official \u2014 OSM: ' + anchorSummary) : 'Official \u2014 OSM (none of the tracked types found nearby)';
 
-    const trend = lastAnalysis.wholesaleRetailTrend;
-    if (trend) {
-      const sign = trend.growthYoy > 0 ? '+' : '';
-      document.getElementById('mr-trend-value').textContent = `${sign}${trend.growthYoy.toFixed(1)}% YoY`;
-      document.getElementById('mr-trend-provenance').textContent = `Official \u2014 DOSM, as of ${trend.asOf} \u00b7 Malaysia-wide, not ${town.label}-specific`;
-    } else {
-      document.getElementById('mr-trend-value').textContent = 'Not tracked';
-      document.getElementById('mr-trend-provenance').textContent = `${lastAnalysis.categoryLabel} isn't part of DOSM's wholesale & retail trade index (it only covers 4 of the 11 categories here \u2014 see the tooltip)`;
-    }
+    renderTrendCard(trends, selected, labelFor, town);
 
     document.getElementById('mr-result-cards').hidden = false;
     document.getElementById('mr-field-note-panel').hidden = false;
@@ -835,21 +951,19 @@ async function analyzeSpot() {
     document.getElementById('mr-ai-insight').classList.add('is-empty');
 
     if (data.poisError) {
-      // The Worker version is appended so "is the old Worker still live?" is answerable from the screen.
-      setStatus(data.poisError + ' [' + describeWorker(data) + ']', true);
-    } else if (data.poisSource === 'geoapify') {
-      setStatus(`Found ${lastAnalysis.competitorCount} matching ${lastAnalysis.categoryLabel} competitor${lastAnalysis.competitorCount === 1 ? '' : 's'} in this catchment. Overpass was unavailable, so this came from the Geoapify backstop instead \u2014 nearby institutions weren't checked in this mode.` + (data.poisTruncated ? ' The backstop hit its 500-place cap (nearest places are kept first), so this count may be an undercount \u2014 try a shorter catchment.' : ''));
+      setStatus(data.poisError, true);
     } else {
-      setStatus(`Found ${lastAnalysis.competitorCount} matching ${lastAnalysis.categoryLabel} competitor${lastAnalysis.competitorCount === 1 ? '' : 's'} in this catchment.`);
+      const n = lastAnalysis.competitorCount;
+      setStatus(selected.length > 1
+        ? `Found ${n} competitor${n === 1 ? '' : 's'} across ${selected.length} business types (${competitorBreakdown.map((b) => `${b.count} ${b.label}`).join(', ')}) in this catchment.`
+        : `Found ${n} matching ${lastAnalysis.categoryLabel} competitor${n === 1 ? '' : 's'} in this catchment.`);
     }
 
-    // Broadcasts if costing-sync.js is loaded and a listener exists —
-    // see this file's own KIV note: Interactive Costing Analysis and
-    // Margin Analysis don't read a 'market-radar' source yet, so this
-    // currently reaches no one, but the shape is ready the moment
-    // that small receiving-side edit is made.
+    // Broadcasts if costing-sync.js is loaded and a listener exists \u2014 Interactive Costing Analysis and
+    // Margin Analysis don't read a 'market-radar' source yet (see the KIV list), so this currently
+    // reaches no one, but the shape is ready. `category` stays a single joined string for that reason.
     if (typeof rzBroadcast === 'function') {
-      rzBroadcast({ source: 'market-radar', category: lastAnalysis.categoryLabel, district: lastAnalysis.districtLabel, competitorCount: lastAnalysis.competitorCount, opportunityScore: computeOpportunityScore(scoreInputs(), currentWeights()).total });
+      rzBroadcast({ source: 'market-radar', category: lastAnalysis.categoryLabel, categories: selected.slice(), district: lastAnalysis.districtLabel, competitorCount: lastAnalysis.competitorCount, opportunityScore: computeOpportunityScore(scoreInputs(), currentWeights()).total });
     }
   } catch (err) {
     setStatus(err.message || 'Something went wrong. Try again.', true);
@@ -860,32 +974,12 @@ async function analyzeSpot() {
 }
 function provenanceHTML(text) { return `<span class="mr-provenance">${escapeHTML(text)}</span>`; }
 
-// Which Worker answered, e.g. "Worker v1.4.0". A Worker older than v1.4.0
-// sends no version at all — say so plainly, because "the old file is
-// still deployed" is the most common reason a fix appears not to work.
-function describeWorker(data) {
-  return data && data.workerVersion ? ('Worker v' + data.workerVersion) : 'Worker version unknown \u2014 older than v1.4.0, redeploy it';
-}
-
-// Where the competitor list actually came from, in plain words. Pure
-// function on purpose: no DOM, easy to check on its own.
-function describePoiSource(data) {
-  const src = (data && data.poisSource) || '';
-  let label;
-  if (src === 'geoapify') label = 'OSM via Geoapify backstop (Overpass was unavailable)';
-  else if (src.indexOf('overpass:') === 0) label = 'OSM via Overpass (' + src.slice('overpass:'.length) + ')';
-  else if (src === 'overpass') label = 'OSM via Overpass';
-  else label = 'OpenStreetMap';
-  if (data && data.poisCached) label += ', cached up to 24h';
-  return label + ' \u00b7 ' + describeWorker(data);
-}
-
-/* ================= GEMINI INSIGHT (narration only \u2014 see this file's own header) ================= */
+/* ================= PLAIN-ENGLISH READ (narration only \u2014 Gemini first, Workers AI backstop on the Worker side) ================= */
 
 async function getInsight() {
   if (!lastAnalysis) return;
   const box = document.getElementById('mr-ai-insight');
-  box.textContent = 'Asking Gemini for a plain-English read\u2026';
+  box.textContent = 'Writing a plain-English read\u2026';
   box.classList.remove('is-empty');
   try {
     const score = computeOpportunityScore(scoreInputs(), currentWeights());
@@ -895,17 +989,20 @@ async function getInsight() {
         town: TOWNS[wizardAnswers.town].label,
         category: lastAnalysis.categoryLabel,
         competitorCount: lastAnalysis.competitorCount,
+        breakdown: lastAnalysis.competitorBreakdown.map((b) => ({ label: b.label, count: b.count })),
         diversityIndex: lastAnalysis.diversityIndex,
         districtPopulation: lastAnalysis.districtPopulation,
         districtIncome: lastAnalysis.districtIncome,
         opportunityScore: Math.round(score.total * 100),
         catchmentIsReal: lastAnalysis.catchmentIsReal,
+        observedBusyness: getObservedBusyness(),
       },
     });
-    box.textContent = data.text || 'Gemini didn\u2019t return anything usable that time \u2014 the numbers above are unaffected.';
+    box.textContent = (data.text || 'No usable text came back that time \u2014 the numbers above are unaffected.')
+      + (data.text && data.via && data.via !== 'Gemini' ? ' (Written by ' + data.via + ' \u2014 Gemini was unavailable.)' : '');
     box.classList.remove('is-empty');
   } catch (err) {
-    box.textContent = 'Couldn\u2019t reach Gemini right now (' + (err.message || 'unknown error') + '). The numbers above are unaffected.';
+    box.textContent = 'Couldn\u2019t get a written read right now (' + (err.message || 'unknown error') + '). The numbers above are unaffected.';
     box.classList.add('is-empty');
   }
 }
@@ -918,11 +1015,11 @@ function init() {
   if (rzInitialized) return;
   rzInitialized = true;
 
-  const categorySelect = document.getElementById('mr-category-select');
-  categorySelect.innerHTML = Object.entries(CATEGORY_TAGS).map(([value, c]) => `<option value="${value}">${escapeHTML(c.label)}</option>`).join('');
-  categorySelect.addEventListener('change', () => {
-    document.getElementById('mr-custom-tag-row').classList.toggle('is-visible', categorySelect.value === 'custom');
-  });
+  renderCategoryOptions();
+
+  // The six weight boxes are filled from SCORE_WEIGHTS_DEFAULT (the HTML value= attributes are only a fallback),
+  // so the constant documented in the settings sheet is the one place to change a starting weight.
+  Object.keys(SCORE_WEIGHTS_DEFAULT).forEach((key) => { if (document.getElementById('mr-weight-' + key)) setWeightInput(key, SCORE_WEIGHTS_DEFAULT[key]); });
 
   const catchmentSelect = document.getElementById('mr-catchment-select');
   catchmentSelect.innerHTML = Object.entries(CATCHMENT_MODES).map(([value, m]) => `<option value="${value}">${escapeHTML(m.label)}</option>`).join('');
@@ -935,11 +1032,11 @@ function init() {
   document.getElementById('mr-get-insight').addEventListener('click', getInsight);
 
   ['lowCompetition', 'population', 'income', 'diversity', 'momentum', 'competitorStrength'].forEach((key) => {
-    document.getElementById('mr-weight-' + key).addEventListener('input', () => { updateWeightTotalDisplay(); renderScore(); });
+    document.getElementById('mr-weight-' + key).addEventListener('input', onWeightEditedByHand);
   });
 
   const observedEl = document.getElementById('mr-observed-busyness');
-  if (observedEl) observedEl.addEventListener('change', renderScore);
+  if (observedEl) observedEl.addEventListener('change', onObservedChange);
 
   document.getElementById('mr-vacancy-add').addEventListener('click', () => {
     const detailEl = document.getElementById('mr-vacancy-detail');
