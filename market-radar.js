@@ -1,4 +1,4 @@
-// Market Radar client logic — v1.5.0 (2026-09-20). What changed: MARKET_RADAR_SETUP_AND_GLOSSARY.md. How it fits together: MARKET_RADAR_HANDOFF.md.
+// Market Radar client logic — v1.5.1 (2026-09-22). What changed: this file (one line in analyzeSpot() — the population note now shows even when a number is present, not just on "Not available"; see MARKET_RADAR_SETUP_AND_GLOSSARY.md). How it fits together: MARKET_RADAR_HANDOFF.md.
 /* ============================================================
    Market Radar
    Two deliberate exceptions to this site's usual zero-dependency
@@ -80,8 +80,8 @@
    tag added here.
    ============================================================ */
 
-const MR_CLIENT_VERSION = '1.5.0';
-console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' \u2014 build 2026-09-20');
+const MR_CLIENT_VERSION = '1.5.1';
+console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' — build 2026-09-22');
 
 /* ================= CONFIG =================
    Everything below is meant to be changed. See the Settings
@@ -97,7 +97,10 @@ console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' \u2014 build 2026
 // here. (An earlier version of this comment pointed at a Worker-side
 // DISTRICT_ALIASES lookup table for this — that table was never
 // actually built; corrected here rather than left pointing at
-// something that doesn't exist.)
+// something that doesn't exist.) NOTE (v1.5.1): if a town is ever
+// added here, market-radar-proxy-worker.js's DISTRICT_POPULATION_
+// FALLBACK_2023 needs that district added too, by hand — it's a
+// pinned table, not a live lookup, and only covers today's four towns.
 const TOWNS = {
   miri: { label: 'Miri', lat: 4.4148, lng: 113.9917, district: 'Miri' },
   kuching: { label: 'Kuching', lat: 1.5535, lng: 110.3593, district: 'Kuching' },
@@ -161,7 +164,7 @@ const CATEGORY_TAGS = {
   laundry: { label: 'Laundry', tags: [['shop', 'laundry']], msic: { code: '96011', name: 'Laundering and dry-cleaning of textile and fur products' } },
   salon: { label: 'Salon / barber', tags: [['shop', 'hairdresser'], ['shop', 'beauty']], msic: { code: '96020', name: 'Hairdressing and other beauty treatment' } },
   printing: { label: 'Printing / copy shop', tags: [['shop', 'copyshop'], ['shop', 'printing']], msic: { code: '82190', name: 'Photocopying, document preparation and other specialised office support activities' } },
-  custom: { label: 'Custom \u2014 type your own OSM tag', tags: [], msic: null },
+  custom: { label: 'Custom — type your own OSM tag', tags: [], msic: null },
 };
 
 // Second half of the 2026-09-16 bubble tea fix (see CATEGORY_TAGS.drinks
@@ -179,7 +182,7 @@ const CATEGORY_TAGS = {
 const NAME_HINTS = {
   drinks: [
     'bubble tea', 'boba', 'pearl milk tea',
-    'chatime', 'tealive', 'gong cha', 'koi th\u00e9', 'koi the',
+    'chatime', 'tealive', 'gong cha', 'koi thé', 'koi the',
     'xing fu tang', 'tiger sugar', 'sharetea', 'share tea',
     'comebuy', 'come buy', 'daboba', 'the alley', 'liho', 'yifang',
     'each a cup',
@@ -216,7 +219,7 @@ const ANCHOR_TAGS = {
 // over-fetch, since the real isochrone shape is rarely a perfect
 // circle and the extra margin gets trimmed off client-side anyway
 // (see pointInPolygon).
-// v1.5.0: added walk5 / drive5 \u2014 same pace ratios as the 10-minute rows (walk 80 m per minute, drive ~500 m per minute).
+// v1.5.0: added walk5 / drive5 — same pace ratios as the 10-minute rows (walk 80 m per minute, drive ~500 m per minute).
 const CATCHMENT_MODES = {
   walk5: { label: '5-minute walk', profile: 'foot-walking', seconds: 300, fallbackRadiusM: 400 },
   walk10: { label: '10-minute walk', profile: 'foot-walking', seconds: 600, fallbackRadiusM: 800 },
@@ -239,7 +242,7 @@ const SCORE_WEIGHTS_DEFAULT = { lowCompetition: 0.35, population: 0.25, income: 
 // rather than a per-category guess this file would otherwise have to invent.
 const SATURATION_COUNT = 12;
 
-// v1.5.0 \u2014 business-type picker (checkboxes instead of a dropdown).
+// v1.5.0 — business-type picker (checkboxes instead of a dropdown).
 const MAX_CATEGORIES = 4;                 // most types that can be ticked at once
 const DEFAULT_CATEGORIES = ['cafe'];      // ticked when the page opens
 const ON_SITE_AUTO_WEIGHT = 0.10;         // weight "Competitor strength" gets the moment an on-site read is picked
@@ -261,11 +264,11 @@ const USAGE_STORAGE_KEY = 'mr-usage';
 const WORKER_ENDPOINT = 'https://market-radar-proxy.reysourcez-ent.workers.dev/';
 
 const PROVENANCE = {
-  population: 'Official \u2014 DOSM (district-level)',
-  income: 'Official \u2014 DOSM (district-level)',
-  competitor: 'Estimated \u2014 OpenStreetMap',
-  isochroneReal: 'Estimated \u2014 OpenRouteService travel-time shape',
-  isochroneFallback: 'Estimated \u2014 radius fallback, not a real travel-time shape',
+  population: 'Official — DOSM (district-level)',
+  income: 'Official — DOSM (district-level)',
+  competitor: 'Estimated — OpenStreetMap',
+  isochroneReal: 'Estimated — OpenRouteService travel-time shape',
+  isochroneFallback: 'Estimated — radius fallback, not a real travel-time shape',
 };
 
 /* ================= SHARED UTILITIES ================= */
@@ -343,14 +346,14 @@ function editAnswers() {
   renderWizardStep();
 }
 
-/* ================= BUSINESS-TYPE PICKER (v1.5.0 \u2014 tick up to MAX_CATEGORIES) ================= */
+/* ================= BUSINESS-TYPE PICKER (v1.5.0 — tick up to MAX_CATEGORIES) ================= */
 
 function escapeAttr(str) { return escapeHTML(String(str)).replace(/"/g, '&quot;'); }
 
 function renderCategoryOptions() {
   const box = document.getElementById('mr-category-options');
   box.innerHTML = Object.entries(CATEGORY_TAGS).map(([key, c]) => {
-    const tip = c.msic ? 'MSIC ' + c.msic.code + ' \u2014 ' + c.msic.name : 'Type your own OpenStreetMap key and value';
+    const tip = c.msic ? 'MSIC ' + c.msic.code + ' — ' + c.msic.name : 'Type your own OpenStreetMap key and value';
     const checked = DEFAULT_CATEGORIES.includes(key) ? ' checked' : '';
     return `<label class="mr-cat-option" title="${escapeAttr(tip)}"><input type="checkbox" name="mr-category" value="${escapeAttr(key)}"${checked}><span>${escapeHTML(c.label)}</span></label>`;
   }).join('');
@@ -373,7 +376,7 @@ function syncCategoryUI() {
     label.classList.toggle('is-disabled', cb.disabled);
   });
   document.getElementById('mr-category-count').textContent = selected.length + ' of ' + MAX_CATEGORIES + ' selected'
-    + (atMax ? ' \u2014 untick one to swap' : (selected.length === 0 ? ' \u2014 tick at least one' : ''));
+    + (atMax ? ' — untick one to swap' : (selected.length === 0 ? ' — tick at least one' : ''));
   document.getElementById('mr-custom-tag-row').classList.toggle('is-visible', selected.includes('custom'));
 }
 
@@ -464,8 +467,8 @@ function haversineMeters(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
-// Shoelace-formula polygon area, converted from degrees to km\u00b2
-// using a flat-earth approximation local to one small area \u2014
+// Shoelace-formula polygon area, converted from degrees to km²
+// using a flat-earth approximation local to one small area —
 // genuinely wrong at continent scale, entirely fine for a
 // 10-minute catchment inside one town.
 function ringAreaKm2(ring, centerLat) {
@@ -482,7 +485,7 @@ function ringAreaKm2(ring, centerLat) {
 /* ================= OPPORTUNITY SCORE (pure functions, no DOM) ================= */
 
 // Every sub-score is clamped 0-1 so the weighted sum always lands
-// 0-1 no matter how extreme the inputs get \u2014 a spot with zero
+// 0-1 no matter how extreme the inputs get — a spot with zero
 // competitors gets a full 1.0 on that one component, not an infinite
 // score, the same "clamp, don't crash" instinct as everywhere else
 // on this site.
@@ -493,7 +496,7 @@ function computeOpportunityScore(inputs, weights) {
   const population = clamp01(inputs.districtPopulation / POPULATION_NORMALIZER);
   const income = clamp01(inputs.districtIncome / INCOME_NORMALIZER);
   const diversity = clamp01(inputs.diversityIndex);
-  const momentum = 0.5; // neutral placeholder \u2014 see the KIV note at the top of this file
+  const momentum = 0.5; // neutral placeholder — see the KIV note at the top of this file
   const competitorStrength = computeCompetitorStrengthFactor(inputs);
 
   const weightSum = weights.lowCompetition + weights.population + weights.income + weights.diversity + weights.momentum + weights.competitorStrength || 1;
@@ -502,7 +505,7 @@ function computeOpportunityScore(inputs, weights) {
     + weights.competitorStrength * competitorStrength) / weightSum;
   // Dividing by weightSum means an off-target total (weights not
   // summing to exactly 1.00) still produces a sane 0-1 score instead
-  // of silently over- or under-counting \u2014 the on-page warning
+  // of silently over- or under-counting — the on-page warning
   // when weights don't sum to 1.00 is about transparency, not about
   // preventing a broken calculation.
   return { total: clamp01(total), parts: { lowCompetition, population, income, diversity, momentum, competitorStrength } };
@@ -511,10 +514,10 @@ function computeOpportunityScore(inputs, weights) {
 // Per-competitor "how proven a threat is this, really" read from
 // Google's rating + review count, 0 (unproven/thin) to 1 (an
 // established, well-loved incumbent). Needs BOTH a strong rating AND
-// a meaningful review count \u2014 a 5.0 with 2 reviews isn't a real
+// a meaningful review count — a 5.0 with 2 reviews isn't a real
 // signal yet; log10 keeps one enormously-reviewed chain from
 // dominating the average on its own. This exact formula is a
-// judgement call, not a fact \u2014 reasonable people could weight
+// judgement call, not a fact — reasonable people could weight
 // rating vs. volume differently; it's isolated here specifically so
 // it's easy to find and change.
 function competitorPoiStrength(rating, reviewCount) {
@@ -523,13 +526,13 @@ function competitorPoiStrength(rating, reviewCount) {
   return clamp01(ratingPart * volumePart);
 }
 
-// FEATURE, 2026-09-16: the "competitor strength" signal \u2014 off
+// FEATURE, 2026-09-16: the "competitor strength" signal — off
 // (weight 0) by default in SCORE_WEIGHTS_DEFAULT, so this has zero
 // effect on anyone who doesn't deliberately raise the weight in the
 // panel below. When it IS turned on, priority order: a fresh,
 // in-person "observed" read (mr-observed-busyness on the page) beats
 // an aggregate Google rating, which beats the neutral 0.5 used when
-// neither is available \u2014 same "unused signal changes nothing"
+// neither is available — same "unused signal changes nothing"
 // pattern as the momentum placeholder above. Deliberately a
 // SEPARATE weight from lowCompetition rather than folded into it:
 // "3 quiet competitors" and "3 competitors with a queue out the
@@ -563,7 +566,7 @@ function scoreVerdict(score) {
   if (score >= 0.75) return 'Strong opportunity';
   if (score >= 0.55) return 'Worth a closer look';
   if (score >= 0.35) return 'Competitive, proceed carefully';
-  return 'Crowded \u2014 hard to stand out here';
+  return 'Crowded — hard to stand out here';
 }
 
 /* ================= WORKER CALL ================= */
@@ -577,7 +580,7 @@ async function fetchAnalysis(payload) {
       body: JSON.stringify(payload),
     });
   } catch (e) {
-    throw new Error('Could not reach the analysis service \u2014 check WORKER_ENDPOINT is correct and this page\u2019s URL is in the Worker\u2019s ALLOWED_ORIGINS.');
+    throw new Error('Could not reach the analysis service — check WORKER_ENDPOINT is correct and this page’s URL is in the Worker’s ALLOWED_ORIGINS.');
   }
   let data;
   try { data = await response.json(); }
@@ -613,7 +616,7 @@ let vacantUnits = [];
 function renderVacancyList() {
   const list = document.getElementById('mr-vacancy-list');
   list.innerHTML = vacantUnits.map((v, i) =>
-    `<li><span>${escapeHTML(v.floor)} \u2014 ${escapeHTML(v.detail)}</span><button type="button" data-idx="${i}" aria-label="Remove">\u2715</button></li>`
+    `<li><span>${escapeHTML(v.floor)} — ${escapeHTML(v.detail)}</span><button type="button" data-idx="${i}" aria-label="Remove">✕</button></li>`
   ).join('');
   list.querySelectorAll('button[data-idx]').forEach((btn) => {
     btn.addEventListener('click', () => { vacantUnits.splice(Number(btn.dataset.idx), 1); renderVacancyList(); });
@@ -625,17 +628,17 @@ function renderVacancyList() {
 // EXTERNAL_CALL_TIMEOUT_MS in market-radar-proxy-worker.js), a worst-
 // case analysis can genuinely take up to about 40 seconds if every
 // single data source is having a bad day. Before this, the status
-// line just said "Fetching\u2026" the entire time, which is exactly what
+// line just said "Fetching…" the entire time, which is exactly what
 // "taking a long time and doesn't appear to complete" looks like from
-// the outside \u2014 there was no way to tell a slow-but-working request
+// the outside — there was no way to tell a slow-but-working request
 // apart from a genuinely stuck one. This cycles through a couple of
 // honest, reassuring messages instead of one static line, and gets
 // stopped in analyzeSpot's own finally block the moment a real
 // answer (success or failure) comes back.
 const PROGRESS_MESSAGES = [
-  'Fetching competitors, catchment shape, and district data\u2026',
-  'Still working \u2014 the first data source is slow to answer, trying another\u2026',
-  'Still working \u2014 some of these are free, shared services and occasionally slow. Worst case this takes under a minute.',
+  'Fetching competitors, catchment shape, and district data…',
+  'Still working — the first data source is slow to answer, trying another…',
+  'Still working — some of these are free, shared services and occasionally slow. Worst case this takes under a minute.',
 ];
 function startProgressMessages() {
   let i = 0;
@@ -667,11 +670,11 @@ function updateWeightTotalDisplay() {
 }
 
 // mr-observed-busyness is deliberately read fresh here rather than
-// baked into lastAnalysis once at analyze-time \u2014 same reason the
+// baked into lastAnalysis once at analyze-time — same reason the
 // weight inputs are read fresh in currentWeights(): the person should
 // be able to add or change their on-site read after the fact and see
 // the score respond immediately, exactly like nudging a weight slider.
-// Nothing here is saved anywhere \u2014 it resets when the tab closes,
+// Nothing here is saved anywhere — it resets when the tab closes,
 // same as every other input on this page.
 function getObservedBusyness() {
   const el = document.getElementById('mr-observed-busyness');
@@ -690,7 +693,7 @@ function renderScore() {
   document.getElementById('mr-score-number').textContent = Math.round(result.total * 100);
   document.getElementById('mr-score-verdict').textContent = lastAnalysis.poisAvailable
     ? scoreVerdict(result.total)
-    : scoreVerdict(result.total) + ' \u2014 based on partial data, competitor count unavailable';
+    : scoreVerdict(result.total) + ' — based on partial data, competitor count unavailable';
 }
 
 /* ---- v1.5.0: the on-site read now visibly feeds the score ----
@@ -717,7 +720,7 @@ function onObservedChange() {
     setWeightInput('competitorStrength', ON_SITE_AUTO_WEIGHT);
     strengthAutoApplied = true;
     notice.textContent = 'Counted in the score at ' + Math.round(ON_SITE_AUTO_WEIGHT * 100)
-      + '% (taken from \u201cLow competition\u201d). Change or turn it off under Opportunity score weights.';
+      + '% (taken from “Low competition”). Change or turn it off under Opportunity score weights.';
     notice.hidden = false;
   } else if (read == null && strengthAutoApplied) {
     setWeightInput('lowCompetition', lc + strengthAutoMoved);
@@ -749,22 +752,22 @@ function renderStrengthCard() {
   const read = getObservedBusyness();
   if (read != null) {
     const sel = document.getElementById('mr-observed-busyness');
-    valueEl.textContent = sel.options[sel.selectedIndex].text.split(' \u2014 ')[0];
-    provEl.textContent = 'Observed \u2014 your own on-site read (overrides Google ratings)';
+    valueEl.textContent = sel.options[sel.selectedIndex].text.split(' — ')[0];
+    provEl.textContent = 'Observed — your own on-site read (overrides Google ratings)';
     return;
   }
   const sample = lastAnalysis.competitorRatingSample || [];
   if (sample.length) {
     const avg = sample.reduce((s, c) => s + c.rating, 0) / sample.length;
-    valueEl.textContent = sample.length + ' of ' + lastAnalysis.competitorCount + ' matched, avg ' + avg.toFixed(1) + '\u2605';
-    provEl.textContent = 'Estimated \u2014 Google Places';
+    valueEl.textContent = sample.length + ' of ' + lastAnalysis.competitorCount + ' matched, avg ' + avg.toFixed(1) + '★';
+    provEl.textContent = 'Estimated — Google Places';
   } else {
     valueEl.textContent = 'No Google match';
-    provEl.textContent = 'Not available \u2014 GOOGLE_PLACES_API_KEY unset, or no nearby Google listing matched. Pick an on-site read below to use this signal for free.';
+    provEl.textContent = 'Not available — GOOGLE_PLACES_API_KEY unset, or no nearby Google listing matched. Pick an on-site read below to use this signal for free.';
   }
 }
 
-// DOSM trend card \u2014 one line per ticked type that the index actually tracks (4 of the 11).
+// DOSM trend card — one line per ticked type that the index actually tracks (4 of the 11).
 function renderTrendCard(trends, selected, labelFor, town) {
   const valueEl = document.getElementById('mr-trend-value');
   const provEl = document.getElementById('mr-trend-provenance');
@@ -772,8 +775,8 @@ function renderTrendCard(trends, selected, labelFor, town) {
   const untracked = selected.filter((k) => !trends[k]);
   if (!tracked.length) {
     valueEl.textContent = 'Not tracked';
-    provEl.textContent = (selected.length > 1 ? 'None of these types are' : labelFor(selected[0]) + ' isn\u2019t')
-      + ' part of DOSM\u2019s wholesale & retail trade index (it only covers 4 of the 11 categories here \u2014 see the tooltip)';
+    provEl.textContent = (selected.length > 1 ? 'None of these types are' : labelFor(selected[0]) + ' isn’t')
+      + ' part of DOSM’s wholesale & retail trade index (it only covers 4 of the 11 categories here — see the tooltip)';
     return;
   }
   const fmt = (t) => (t.growthYoy > 0 ? '+' : '') + t.growthYoy.toFixed(1) + '% YoY';
@@ -781,8 +784,8 @@ function renderTrendCard(trends, selected, labelFor, town) {
     ? escapeHTML(fmt(trends[tracked[0]]))
     : tracked.map((k) => `<span class="mr-trend-line">${escapeHTML(labelFor(k))}: ${escapeHTML(fmt(trends[k]))}</span>`).join('');
   const asOf = Array.from(new Set(tracked.map((k) => trends[k].asOf))).join(', ');
-  provEl.textContent = 'Official \u2014 DOSM, as of ' + asOf + ' \u00b7 Malaysia-wide, not ' + town.label + '-specific'
-    + (untracked.length ? ' \u00b7 Not tracked: ' + untracked.map(labelFor).join(', ') : '');
+  provEl.textContent = 'Official — DOSM, as of ' + asOf + ' · Malaysia-wide, not ' + town.label + '-specific'
+    + (untracked.length ? ' · Not tracked: ' + untracked.map(labelFor).join(', ') : '');
 }
 
 async function analyzeSpot() {
@@ -814,11 +817,11 @@ async function analyzeSpot() {
   const labelFor = (k) => (k === 'custom' ? customLabel : CATEGORY_TAGS[k].label);
 
   if (!WORKER_ENDPOINT || WORKER_ENDPOINT.indexOf('PASTE_YOUR') === 0) {
-    setStatus('This tool needs its proxy URL set \u2014 see WORKER_ENDPOINT near the top of market-radar.js.', true);
+    setStatus('This tool needs its proxy URL set — see WORKER_ENDPOINT near the top of market-radar.js.', true);
     return;
   }
   if (getUsageToday() + 1 > MAX_ANALYSES_PER_DAY) {
-    setStatus('This browser has hit today\u2019s analysis limit. Try again tomorrow.', true);
+    setStatus('This browser has hit today’s analysis limit. Try again tomorrow.', true);
     return;
   }
 
@@ -847,19 +850,19 @@ async function analyzeSpot() {
     const competitors = withinCatchment.filter((p) => selectedSet.has(p.category));
     const categoryCounts = {};
     withinCatchment.forEach((p) => { categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1; });
-    // Biggest first, so the card reads "12 Restaurant \u00b7 8 Cafe \u00b7 4 Bakery".
+    // Biggest first, so the card reads "12 Restaurant · 8 Cafe · 4 Bakery".
     const competitorBreakdown = selected
       .map((k) => ({ key: k, label: labelFor(k), count: competitors.filter((p) => p.category === k).length }))
       .sort((a, b) => b.count - a.count);
-    // Only populated when GOOGLE_PLACES_API_KEY is set on the Worker \u2014 see attachGooglePopularity()
+    // Only populated when GOOGLE_PLACES_API_KEY is set on the Worker — see attachGooglePopularity()
     // in market-radar-proxy-worker.js. Every competitor still counts toward competitorCount above
     // whether or not it has a rating; this is a separate, optional refinement, not a filter.
     const competitorRatingSample = competitors.filter((p) => p.rating != null).map((p) => ({ rating: p.rating, reviewCount: p.reviewCount || 0 }));
 
     poiMarkers = competitors.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#C0392B', fillColor: '#C0392B', fillOpacity: 0.7, weight: 1 })
-      .bindTooltip(escapeHTML(p.name || 'Unnamed') + (selected.length > 1 ? ' \u2014 ' + escapeHTML(labelFor(p.category)) : '')).addTo(map));
+      .bindTooltip(escapeHTML(p.name || 'Unnamed') + (selected.length > 1 ? ' — ' + escapeHTML(labelFor(p.category)) : '')).addTo(map));
     if (competitors.length > 0 && typeof L.heatLayer === 'function') {
-      // max=3 treats "3 competitors overlapping in one spot" as fully saturated \u2014 calibrated for this
+      // max=3 treats "3 competitors overlapping in one spot" as fully saturated — calibrated for this
       // tool's scale (single digits to a few dozen points), not the thousands Leaflet.heat's default
       // assumes. See the 2026-09-18 note in MARKET_RADAR_SETUP_AND_GLOSSARY.md.
       heatLayer = L.heatLayer(competitors.map((p) => [p.lat, p.lng, 1]), {
@@ -871,11 +874,11 @@ async function analyzeSpot() {
       if (document.getElementById('mr-heat-toggle').checked) heatLayer.addTo(map);
     }
 
-    // Anchors are informational only \u2014 never counted as competitors, never touch the opportunity score.
+    // Anchors are informational only — never counted as competitors, never touch the opportunity score.
     const anchorList = data.anchors || [];
     anchorMarkers = anchorList.map((a) => L.marker([a.lat, a.lng], {
-      icon: L.divIcon({ className: 'mr-anchor-icon', html: '\u25a0', iconSize: [14, 14] }),
-    }).bindTooltip(escapeHTML(a.name || 'Unnamed') + ' \u2014 ' + escapeHTML((ANCHOR_TAGS[a.anchorType] || {}).label || a.anchorType)).addTo(map));
+      icon: L.divIcon({ className: 'mr-anchor-icon', html: '■', iconSize: [14, 14] }),
+    }).bindTooltip(escapeHTML(a.name || 'Unnamed') + ' — ' + escapeHTML((ANCHOR_TAGS[a.anchorType] || {}).label || a.anchorType)).addTo(map));
 
     if (catchment.layer) map.fitBounds(catchment.layer.getBounds(), { padding: [20, 20] });
 
@@ -900,7 +903,7 @@ async function analyzeSpot() {
       anchorCount: anchorList.length,
       trends,
       // False when the Worker's Overpass call failed entirely (see poisError in the Worker).
-      // "0 competitors" and "we couldn't check" must never look the same on screen \u2014 the first
+      // "0 competitors" and "we couldn't check" must never look the same on screen — the first
       // is a real, useful finding; the second is a data outage that would otherwise read as a
       // suspiciously perfect opportunity score.
       poisAvailable: !data.poisError,
@@ -913,18 +916,23 @@ async function analyzeSpot() {
       const sourceParts = [catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback];
       if (meta.poiSource) sourceParts.push('OSM via ' + meta.poiSource);
       if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
-      countEl.innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(sourceParts.join(' \u00b7 '))}`;
-      breakdownEl.textContent = selected.length > 1 ? competitorBreakdown.map((b) => `${b.count} ${b.label}`).join(' \u00b7 ') : '';
+      countEl.innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(sourceParts.join(' · '))}`;
+      breakdownEl.textContent = selected.length > 1 ? competitorBreakdown.map((b) => `${b.count} ${b.label}`).join(' · ') : '';
       document.getElementById('mr-diversity-value').textContent = Math.round(lastAnalysis.diversityIndex * 100) + '% mixed';
     } else {
-      countEl.innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
+      countEl.innerHTML = `Unavailable${provenanceHTML('Overpass error — see status message below')}`;
       breakdownEl.textContent = '';
-      document.getElementById('mr-diversity-value').innerHTML = `Unavailable${provenanceHTML('Overpass error \u2014 see status message below')}`;
+      document.getElementById('mr-diversity-value').innerHTML = `Unavailable${provenanceHTML('Overpass error — see status message below')}`;
     }
-    // When a DOSM figure is missing, the Worker says exactly why (HTTP status, empty result, rate limit) \u2014 show it.
+    // When a DOSM figure is missing, the Worker says exactly why (HTTP status, empty result, rate limit) — show it.
     const demoNote = (prefix) => lastAnalysis.demographicsNotes.filter((n) => n.indexOf(prefix) === 0).join('; ');
+    // v1.5.1: the note now shows even when a number IS present, not just on "Not available" — needed
+    // because a non-zero population can now come from the Worker's pinned fallback table (see
+    // DISTRICT_POPULATION_FALLBACK_2023 in market-radar-proxy-worker.js) rather than a live query, and
+    // that's exactly the kind of thing this page's own provenance-tag principle says should be shown,
+    // not silently hidden behind a plain-looking number.
     document.getElementById('mr-population-value').innerHTML = lastAnalysis.districtPopulation
-      ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString())
+      ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString()) + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '')
       : 'Not available' + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '');
     document.getElementById('mr-income-value').innerHTML = lastAnalysis.districtIncome
       ? escapeHTML('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString() + '/mo')
@@ -936,7 +944,7 @@ async function analyzeSpot() {
     anchorList.forEach((a) => { anchorCounts[a.anchorType] = (anchorCounts[a.anchorType] || 0) + 1; });
     const anchorSummary = Object.entries(anchorCounts).map(([k, n]) => `${n} ${(ANCHOR_TAGS[k] || {}).label || k}`).join(', ');
     document.getElementById('mr-anchor-value').textContent = anchorList.length ? anchorList.length : 'None found';
-    document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official \u2014 OSM: ' + anchorSummary) : 'Official \u2014 OSM (none of the tracked types found nearby)';
+    document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official — OSM: ' + anchorSummary) : 'Official — OSM (none of the tracked types found nearby)';
 
     renderTrendCard(trends, selected, labelFor, town);
 
@@ -959,7 +967,7 @@ async function analyzeSpot() {
         : `Found ${n} matching ${lastAnalysis.categoryLabel} competitor${n === 1 ? '' : 's'} in this catchment.`);
     }
 
-    // Broadcasts if costing-sync.js is loaded and a listener exists \u2014 Interactive Costing Analysis and
+    // Broadcasts if costing-sync.js is loaded and a listener exists — Interactive Costing Analysis and
     // Margin Analysis don't read a 'market-radar' source yet (see the KIV list), so this currently
     // reaches no one, but the shape is ready. `category` stays a single joined string for that reason.
     if (typeof rzBroadcast === 'function') {
@@ -974,12 +982,12 @@ async function analyzeSpot() {
 }
 function provenanceHTML(text) { return `<span class="mr-provenance">${escapeHTML(text)}</span>`; }
 
-/* ================= PLAIN-ENGLISH READ (narration only \u2014 Gemini first, Workers AI backstop on the Worker side) ================= */
+/* ================= PLAIN-ENGLISH READ (narration only — Gemini first, Workers AI backstop on the Worker side) ================= */
 
 async function getInsight() {
   if (!lastAnalysis) return;
   const box = document.getElementById('mr-ai-insight');
-  box.textContent = 'Writing a plain-English read\u2026';
+  box.textContent = 'Writing a plain-English read…';
   box.classList.remove('is-empty');
   try {
     const score = computeOpportunityScore(scoreInputs(), currentWeights());
@@ -998,11 +1006,11 @@ async function getInsight() {
         observedBusyness: getObservedBusyness(),
       },
     });
-    box.textContent = (data.text || 'No usable text came back that time \u2014 the numbers above are unaffected.')
-      + (data.text && data.via && data.via !== 'Gemini' ? ' (Written by ' + data.via + ' \u2014 Gemini was unavailable.)' : '');
+    box.textContent = (data.text || 'No usable text came back that time — the numbers above are unaffected.')
+      + (data.text && data.via && data.via !== 'Gemini' ? ' (Written by ' + data.via + ' — Gemini was unavailable.)' : '');
     box.classList.remove('is-empty');
   } catch (err) {
-    box.textContent = 'Couldn\u2019t get a written read right now (' + (err.message || 'unknown error') + '). The numbers above are unaffected.';
+    box.textContent = 'Couldn’t get a written read right now (' + (err.message || 'unknown error') + '). The numbers above are unaffected.';
     box.classList.add('is-empty');
   }
 }
