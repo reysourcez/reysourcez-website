@@ -1441,6 +1441,35 @@ ul.summary-value li.is-warning { color: #C0392B; font-weight: 600; }
   white-space: nowrap;
 }
 
+/* Measured-wastage suggestion pill (2026-09-22) — appears next to a
+   Wastage % input on Menu Calculator's Ingredient Costing table and
+   Printing Calculator's Material Costing table, whenever Cost
+   Structure Checker has a matching ingredient/material name. Same
+   accent-soft pill look as .synced-badge just above, since it's the
+   same idea (a value that came from another tool, not typed by
+   hand) applied to a table cell instead of a label. See
+   WASTAGE_SYNC_STANDARD.md. Printing Calculator currently also
+   carries a page-local copy of this rule from before this was added
+   here — same "define it locally until the shared file has it"
+   pattern this file's own .sr-only comment already documents; safe
+   to remove that local copy next time that page is touched, not
+   urgent since the two rules are identical.  */
+.wastage-suggest {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent-dark);
+  background: var(--accent-soft);
+  border: none;
+  padding: 2px 7px;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wastage-suggest:hover { background: var(--accent); color: #fff; }
+.wastage-suggest:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+
 /* Dropdown that appears once Menu Calculator has synced more than
    one menu item, letting this page price any one of them at a time
    (bottom-up) — the full side-by-side comparison across all of them

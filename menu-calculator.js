@@ -157,6 +157,7 @@ function updateIngredientRow(tr) {
   tr.dataset.trueCost = trueCost;
   tr.dataset.baseUnit = unit.base;
 
+  applyWastageSuggestion(tr);
   refreshAllMenuBlocks();
 }
 
@@ -967,13 +968,69 @@ function exportMenuData() {
   });
 }
 
+/* ================= WASTAGE SYNC =================
+   Receives the wastageRows payload broadcast by Cost Structure
+   Checker (see WASTAGE_SYNC_STANDARD.md) and offers a "measured"
+   Wastage % next to any ingredient row whose Item name matches,
+   instead of leaving Wastage % a typed-in guess. Suggestion only —
+   clicking it fills the field, typing over it afterward works
+   exactly as before, same "starting value, not a lock" rule every
+   other synced field on this site follows. Nothing here changes
+   anything if the payload never arrives; this block just sits idle
+   until it does. */
+
+const wastageSuggestions = new Map(); // ingredient name (trim+lowercase) -> row from the payload
+
+function handleWastageSync(data) {
+  if (data.source !== 'cost-structure-checker' || !Array.isArray(data.wastageRows)) return;
+  wastageSuggestions.clear();
+  data.wastageRows.forEach((row) => {
+    if (row && row.ingredientName && typeof row.wastagePct === 'number') {
+      wastageSuggestions.set(row.ingredientName.trim().toLowerCase(), row);
+    }
+  });
+  document.querySelectorAll('#rows > tr').forEach((tr) => applyWastageSuggestion(tr));
+}
+
+// Adds or removes the small "\u22488.2%" pill in a row's Wastage % cell,
+// based on whether its current Item text matches something Cost
+// Structure Checker has measured. Re-run on every input to this row
+// (see updateIngredientRow), so renaming the item picks up or drops
+// the suggestion live, the same way every other calc column already
+// does.
+function applyWastageSuggestion(tr) {
+  const wastageCell = tr.querySelector('.f-wastage').parentElement;
+  const existing = wastageCell.querySelector('.wastage-suggest');
+  if (existing) existing.remove();
+
+  const name = tr.querySelector('.f-item').value.trim().toLowerCase();
+  const match = name && wastageSuggestions.get(name);
+  if (!match) return;
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'wastage-suggest';
+  btn.title = 'Measured wastage from Cost Structure Checker \u2014 click to use';
+  btn.textContent = '\u2248' + match.wastagePct.toFixed(1) + '%';
+  btn.addEventListener('click', () => {
+    tr.querySelector('.f-wastage').value = match.wastagePct.toFixed(1);
+    updateIngredientRow(tr);
+  });
+  wastageCell.appendChild(btn);
+}
+
+function initWastageSync() {
+  if (typeof rzListen !== 'function') return;
+  rzListen(handleWastageSync);
+}
+
 /* ================= INIT ================= */
 
 // Bump this string whenever this file changes — if something looks
 // broken, checking this in the browser console (F12) instantly
 // confirms whether the deployed JS actually matches the deployed
 // HTML, rather than guessing from symptoms.
-console.info('[Menu Calculator] script build: 2026-09-16-cost-buffer');
+console.info('[Menu Calculator] script build: 2026-09-22-wastage-sync');
 
 let rzInitialized = false;
 
@@ -995,6 +1052,7 @@ function init() {
 
   createIngredientRow();
   createMenuBlock();
+  initWastageSync();
 }
 
 document.addEventListener('DOMContentLoaded', init);

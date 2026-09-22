@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 
-  <link rel="stylesheet" href="styles.css?v=15">
+  <link rel="stylesheet" href="styles.css?v=20">
   <style>
     /* styles.css references .sr-only on every calculator page (table
        captions, "remove row" labels) but never actually defines it —
@@ -32,6 +32,27 @@
       white-space: nowrap;
       border: 0;
     }
+    /* Measured-wastage suggestion pill, added next to a material row's
+       Wastage % input when Cost Structure Checker has a matching
+       ingredient name — see the WASTAGE SYNC block in the script below.
+       Same accent-soft pill look as .synced-badge elsewhere on this
+       site, kept local to this page since it's the only place this
+       page needs it. */
+    .wastage-suggest {
+      display: inline-block;
+      margin-left: 6px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--accent-dark);
+      background: var(--accent-soft);
+      border: none;
+      padding: 2px 7px;
+      border-radius: 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .wastage-suggest:hover { background: var(--accent); color: #fff; }
+    .wastage-suggest:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   </style>
 </head>
 <body>
@@ -221,7 +242,7 @@
      rule already exists and is shared with the rest of the site.
      ============================================================ */
 
-  console.info('[Printing Calculator] script build: 2026-09-03-job-tabs');
+  console.info('[Printing Calculator] script build: 2026-09-21-wastage-sync');
 
   /* ================= EDITABLE SETTINGS =================
      Change a number on the right of any line below — nothing else
@@ -382,6 +403,7 @@
     tr.dataset.trueCost = trueCost;
     tr.dataset.baseUnit = unit.base;
 
+    applyWastageSuggestion(tr);
     refreshAllJobBlocks();
   }
 
@@ -804,6 +826,61 @@
     });
   }
 
+  /* ================= WASTAGE SYNC =================
+     Receives the wastageRows payload broadcast by Cost Structure
+     Checker (see WASTAGE_SYNC_STANDARD.md) and offers a "measured"
+     Wastage % next to any material row whose Item name matches,
+     instead of leaving Wastage % a typed-in guess. Suggestion only —
+     clicking it fills the field, typing over it afterward works
+     exactly as before, same "starting value, not a lock" rule every
+     other synced field on this site follows. Nothing here changes
+     anything if the payload never arrives; this block just sits idle
+     until it does. */
+
+  const wastageSuggestions = new Map(); // ingredient name (trim+lowercase) -> row from the payload
+
+  function handleWastageSync(data) {
+    if (data.source !== 'cost-structure-checker' || !Array.isArray(data.wastageRows)) return;
+    wastageSuggestions.clear();
+    data.wastageRows.forEach((row) => {
+      if (row && row.ingredientName && typeof row.wastagePct === 'number') {
+        wastageSuggestions.set(row.ingredientName.trim().toLowerCase(), row);
+      }
+    });
+    document.querySelectorAll('#rows > tr').forEach((tr) => applyWastageSuggestion(tr));
+  }
+
+  // Adds or removes the small "\u22488.2%" pill in a row's Wastage % cell,
+  // based on whether its current Item text matches something Cost
+  // Structure Checker has measured. Re-run on every input to this row
+  // (see updateMaterialRow), so renaming the item picks up or drops the
+  // suggestion live, the same way every other calc column already does.
+  function applyWastageSuggestion(tr) {
+    const wastageCell = tr.querySelector('.f-wastage').parentElement;
+    const existing = wastageCell.querySelector('.wastage-suggest');
+    if (existing) existing.remove();
+
+    const name = tr.querySelector('.f-item').value.trim().toLowerCase();
+    const match = name && wastageSuggestions.get(name);
+    if (!match) return;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'wastage-suggest';
+    btn.title = 'Measured wastage from Cost Structure Checker \u2014 click to use';
+    btn.textContent = '\u2248' + match.wastagePct.toFixed(1) + '%';
+    btn.addEventListener('click', () => {
+      tr.querySelector('.f-wastage').value = match.wastagePct.toFixed(1);
+      updateMaterialRow(tr);
+    });
+    wastageCell.appendChild(btn);
+  }
+
+  function initWastageSync() {
+    if (typeof rzListen !== 'function') return;
+    rzListen(handleWastageSync);
+  }
+
   /* ================= INIT ================= */
 
   let rzInitialized = false;
@@ -825,6 +902,7 @@
 
     createMaterialRow();
     createJobBlock();
+    initWastageSync();
   }
 
   document.addEventListener('DOMContentLoaded', init);
