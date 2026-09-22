@@ -2,6 +2,65 @@
    Rental Calculator
    Vanilla JS, no dependencies, nothing saved anywhere.
    ------------------------------------------------------------
+   2026-09-20 REVISION -- cost-accuracy audit + tab UX + more ad
+   themes. Six changes, three of them affect the actual numbers on
+   screen:
+
+   1. MARGIN FORMULA WAS DIVIDING BY THE WRONG BASE. marginAt() computed
+      (net revenue - true cost) / GROSS price. That answers a
+      different question than the price-setting formula asks (target
+      margin on what you actually keep after revenue-share/SST, not
+      on the sticker price) -- so "margin achieved" was silently
+      reading target% * (1 - combined share), always LOWER than what
+      you typed. At this file's own defaults (25% target, 30% combined
+      partner share) the card read 17.5% even though the price was
+      correctly hitting 25%. Fixed by dividing by NET revenue instead
+      -- verified by hand against the algebra, not just eyeballed.
+
+   2. FUEL WAS BEING INFLATED BY THE "UNSCHEDULED REPAIR" BUFFER.
+      bufferedFuelPerHour multiplied fuel/hour by (1 + repair buffer%)
+      -- fuel consumption has nothing to do with unscheduled-repair
+      risk, so this was quietly overstating wet operating cost. At
+      this file's defaults (10% buffer) that's ~RM20/day of true cost
+      and ~RM38/day of quoted standard price on a single machine, for
+      no real-world reason. Decoupled: the buffer now only touches
+      maintenance & wear, matching its own label.
+
+   3. MARGIN IS NOW SHOWN PER TIER, NOT JUST DAILY. Hourly's premium
+      and Monthly's extra discount are layered on AFTER the daily
+      price already hits target margin -- so their real achieved
+      margin was never actually equal to your target, and was
+      invisible. New table in Results shows all three. At defaults,
+      after fix #1: Hourly ~40% (the premium pushes it up), Daily
+      exactly 25% (by construction), Monthly ~14.8% (the extra
+      discount eats into margin faster than the better mobilization
+      spread saves it).
+
+   4. RENTAL CALCULATION TABS NOW TOGGLE CLOSED ON A REPEAT CLICK.
+      Previously exactly one of the four tabs was always open and
+      clicking the already-active one did nothing. Now clicking the
+      open tab closes it (all four hidden) -- genuine click-to-open /
+      click-to-close, not just mutually-exclusive. Equipment's own
+      machine-switcher tabs are unchanged on purpose (always exactly
+      one visible -- Results needs an active machine to show).
+
+   5. MARKET_RATE_HOURS_PER_DAY REMOVED -- confirmed dead code. Once
+      tier-aware market matching shipped (2026-09-12) it started
+      comparing hourly rates to hourly rates directly and never
+      actually read this constant again. Settings-reference workbook
+      updated to match.
+
+   6. THREE MORE AD THEMES: Safety Orange, Forest Green, Site Crimson
+      -- same zero-dependency canvas approach as the existing three,
+      picked to echo common heavy-equipment safety/brand colours
+      rather than invented arbitrarily.
+
+   Flagged but NOT changed this pass: "Save as PDF" currently prints
+   the full internal cost and margin breakdown, not just
+   customer-facing pricing -- a real risk if that exact PDF goes to a
+   client. That needs a decision on intended behaviour first, not a
+   guess -- see RENTAL_CALCULATOR_NOTES.md.
+   ------------------------------------------------------------
    2026-09-12 REVISION -- real feedback from testing this against an
    actual quote round-trip. Five real problems fixed, not just
    polish:
@@ -56,12 +115,13 @@
    this tool specifically.
    ============================================================ */
 
-console.info('[Rental Calculator] script build: 2026-09-12-v2-tiered-pricing');
+console.info('[Rental Calculator] script build: 2026-09-22-v5-photo-print-summary');
 
 /* ================= CONFIG ================= */
 
-const MARKET_RATE_HOURS_PER_DAY = 8; // fixed reference for normalizing an hourly market rate to a daily one
 const MARKET_RATE_DAYS_PER_MONTH = 26; // Malaysia's own standard working-day convention
+// (MARKET_RATE_HOURS_PER_DAY removed 2026-09-20 -- confirmed unused. Tier-aware
+// market matching already compares hourly-to-hourly directly; nothing ever read it.)
 
 // Rough, editable rule-of-thumb cost structure per equipment category --
 // comparison only, never feeds the actual price. "ingredients" here means
@@ -220,6 +280,7 @@ function createEquipmentPanel() {
 
   panel.querySelector('.rc-remove-eq').addEventListener('click', () => {
     const wasActive = !panel.hidden;
+    adPhotoByEqId.delete(panel.dataset.eqId); // no orphaned photo left behind for a deleted machine
     panel.remove();
     if (wasActive) {
       const remaining = document.querySelector('.rc-equipment-panel');
@@ -239,6 +300,7 @@ function createEquipmentPanel() {
 function switchToEquipment(eqId) {
   document.querySelectorAll('.rc-equipment-panel').forEach((p) => { p.hidden = (p.dataset.eqId !== eqId); });
   renderEquipmentTabs();
+  updateAdPhotoStatus();
   recalculateAll();
 }
 
@@ -409,9 +471,12 @@ function computeEquipment(fields, sharedCtx) {
   const wearTearPerHour = fields.wearTearIntervalHours > 0 ? fields.wearTearCost / fields.wearTearIntervalHours : 0;
   const nonFuelPerHourRaw = maintPerHour + wearTearPerHour;
   const bufferedNonFuelPerHour = nonFuelPerHourRaw * (1 + fields.repairBufferPct / 100);
-  const bufferedFuelPerHour = fields.fuelPerHour * (1 + fields.repairBufferPct / 100);
   const maintWearPerDay = bufferedNonFuelPerHour * fields.hoursPerDay;
-  const fuelPerDay = bufferedFuelPerHour * fields.hoursPerDay;
+  // 2026-09-20 fix: fuel is no longer run through the "unscheduled repair"
+  // buffer -- fuel use doesn't carry repair risk, so buffering it here was
+  // quietly overstating wet operating cost for no real-world reason. The
+  // buffer still applies to maintenance & wear above, which is what it's for.
+  const fuelPerDay = fields.fuelPerHour * fields.hoursPerDay;
 
   const operatorPerDay = (fields.wetHire && fields.expectedDays > 0) ? sharedCtx.operatorPerMachine / fields.expectedDays : 0;
 
@@ -456,13 +521,36 @@ function computeEquipment(fields, sharedCtx) {
   const hourlyDry = toHourly(dailyDry);
   const hourlyWet = toHourly(dailyWet);
 
+  // 2026-09-20 fix: margin is now (net - trueCost) / NET, not / gross price.
+  // The price-setting formula above targets a margin on what you actually
+  // keep after revenue-share/SST come out -- dividing by the gross quoted
+  // price instead was answering a different question, and made "margin
+  // achieved" silently read targetMargin% * (1 - combinedShare): always
+  // lower than what you typed, with no real cost or pricing change behind
+  // the drop. At target=25%/share=30% that showed 17.5% instead of 25.0%.
   const marginAt = (price, trueCost) => {
     if (!isFinite(price) || price <= 0) return 0;
     const net = price * (1 - sharedCtx.combinedShare);
-    return ((net - trueCost) / price) * 100;
+    if (!(net > 0)) return 0;
+    return ((net - trueCost) / net) * 100;
   };
   const marginStandard = marginAt(dailyWet.standard, trueCostDailyWet);
   const marginNonMember = marginAt(dailyWet.nonMember, trueCostDailyWet);
+
+  // Margin by tier (2026-09-20, new): Daily's margin is tautological -- it's
+  // exactly how the price was built, so it will always equal targetMarginPct.
+  // Hourly and Monthly are NOT independently target-margin-priced -- Hourly
+  // takes the daily price and layers a premium on top; Monthly takes it and
+  // layers an extra discount on top -- so their real achieved margin can (and
+  // typically does) drift away from target in opposite directions. Using the
+  // matching per-tier true-cost basis (daily true cost / hours for Hourly,
+  // since that's how the Hourly PRICE itself was derived) keeps price and
+  // cost on the same footing for each tier.
+  const hourlyCostBasisWet = fields.hoursPerDay > 0 ? trueCostDailyWet / fields.hoursPerDay : 0;
+  const marginHourlyStandard = marginAt(hourlyWet.standard, hourlyCostBasisWet);
+  const marginHourlyNonMember = marginAt(hourlyWet.nonMember, hourlyCostBasisWet);
+  const marginMonthlyStandard = marginAt(monthlyWet.standard, trueCostMonthlyWet);
+  const marginMonthlyNonMember = marginAt(monthlyWet.nonMember, trueCostMonthlyWet);
 
   const fixedMonthlyCost = ownershipMonthlyOnly + sharedCtx.overheadPerMachine + (fields.wetHire ? sharedCtx.operatorPerMachine : 0);
   const contributionMarginPerDay = isFinite(dailyWet.standard) ? dailyWet.standard - maintWearPerDay - fuelPerDay - mobShortPerDay : -Infinity;
@@ -476,6 +564,7 @@ function computeEquipment(fields, sharedCtx) {
     trueCostDailyDry, trueCostDailyWet,
     hourlyDry, hourlyWet, dailyDry, dailyWet, monthlyDry, monthlyWet,
     marginStandard, marginNonMember, breakevenDays, monthlyRevenueAtExpected,
+    marginHourlyStandard, marginHourlyNonMember, marginMonthlyStandard, marginMonthlyNonMember,
     expectedDays: fields.expectedDays, availableDays: fields.availableDays,
     targetMarginPct: fields.targetMarginPct, marketRates: fields.marketRates,
     maintPerHour, wearTearPerHour, fuelPerHour: fields.fuelPerHour, wetHire: fields.wetHire,
@@ -626,6 +715,16 @@ function renderDetail(eq) {
     <tr><td>Wet -- Standard</td><td>${priceCell(eq.hourlyWet.standard)}</td><td>${priceCell(eq.dailyWet.standard)}</td><td>${priceCell(eq.monthlyWet.standard)}</td></tr>
     <tr><td>Wet -- Non-member</td><td>${priceCell(eq.hourlyWet.nonMember)}</td><td>${priceCell(eq.dailyWet.nonMember)}</td><td>${priceCell(eq.monthlyWet.nonMember)}</td></tr>
   `;
+  // Margin by tier (2026-09-20, new): Daily's margin is always exactly the
+  // target you typed, by construction -- Hourly and Monthly aren't, because
+  // the premium/discount are layered on afterward. Showing all three is the
+  // point; hiding Hourly/Monthly drift was the actual accuracy gap.
+  const marginCell = (pct) => `<td${pct < 0 ? ' class="is-loss"' : ''}>${isFinite(pct) ? pct.toFixed(1) + '%' : '\u2014'}</td>`;
+  document.getElementById('rc-margin-tier-rows').innerHTML = `
+    <tr><td>Standard (member)</td>${marginCell(eq.marginHourlyStandard)}${marginCell(eq.marginStandard)}${marginCell(eq.marginMonthlyStandard)}</tr>
+    <tr><td>Non-member</td>${marginCell(eq.marginHourlyNonMember)}${marginCell(eq.marginNonMember)}${marginCell(eq.marginMonthlyNonMember)}</tr>
+  `;
+
   // Package total uses the ACTIVE panel's own monthly-job-days input
   // directly, rather than re-deriving it from eq (which only carries
   // per-day figures) -- simplest single source for the one extra
@@ -795,6 +894,10 @@ function renderInsights(eq, computed) {
     insights.push({ level: 'warn', text: `${eq.name} is wet hire but the shared manpower pool is RM0 -- operator cost isn't being counted yet. Set it in the "Shared Overhead & Manpower" tab.` });
   }
 
+  if (isFinite(eq.marginMonthlyStandard) && eq.marginMonthlyStandard < eq.targetMarginPct - 5) {
+    insights.push({ level: 'warn', text: `${eq.name}'s Monthly tier is running at ${eq.marginMonthlyStandard.toFixed(1)}% margin, ${(eq.targetMarginPct - eq.marginMonthlyStandard).toFixed(1)} points under its ${eq.targetMarginPct}% target -- the extra monthly discount is eating into margin faster than the longer mobilization spread is saving it. See "Margin achieved by tier" above.` });
+  }
+
   const lossCount = computed.filter((c) => c.eq.marginStandard < 0).length;
   if (computed.length > 1 && lossCount > 0) {
     insights.push({ level: 'alert', text: `${lossCount} of ${computed.length} machines are priced below true cost at their standard rate.` });
@@ -816,6 +919,12 @@ function renderInsights(eq, computed) {
    whichever other one was open. Nothing typed into a closed tab is
    lost; hidden is a display toggle only, same as before. */
 
+// showCalcTabOnly FORCES a specific tab open -- used by init, Reset all, and
+// the cross-tool sync handler, none of which should ever accidentally close
+// everything. toggleCalcTab (2026-09-20, new) is what the tab BUTTONS
+// themselves call: clicking the tab that's already open now closes it (all
+// four hidden), matching genuine click-to-open/click-to-close rather than
+// "always exactly one open, and clicking the open one does nothing."
 function showCalcTabOnly(key) {
   document.querySelectorAll('.rc-calc-tab[data-calc-tab]').forEach((btn) => {
     const isTarget = btn.dataset.calcTab === key;
@@ -825,6 +934,21 @@ function showCalcTabOnly(key) {
   document.querySelectorAll('.rc-calc-panel[data-calc-panel]').forEach((panel) => {
     panel.hidden = panel.dataset.calcPanel !== key;
   });
+}
+
+function closeAllCalcTabs() {
+  document.querySelectorAll('.rc-calc-tab[data-calc-tab]').forEach((btn) => {
+    btn.classList.remove('is-active');
+    btn.setAttribute('aria-expanded', 'false');
+  });
+  document.querySelectorAll('.rc-calc-panel[data-calc-panel]').forEach((panel) => { panel.hidden = true; });
+}
+
+function toggleCalcTab(key) {
+  const btn = document.querySelector(`.rc-calc-tab[data-calc-tab="${key}"]`);
+  const isCurrentlyOpen = !!(btn && btn.classList.contains('is-active'));
+  if (isCurrentlyOpen) closeAllCalcTabs();
+  else showCalcTabOnly(key);
 }
 
 function resetAllCalculationData() {
@@ -983,6 +1107,12 @@ const AD_THEMES = {
   teal:     { bg: '#16261F', accent: '#1F6F5C', accentSoft: '#DCEAE4', chipBg: '#F3F3F0', text: '#16261F', muted: '#5C6D64' },
   amber:    { bg: '#1A1410', accent: '#C77F13', accentSoft: '#FBF0DC', chipBg: '#F6F1E8', text: '#1A1410', muted: '#8A7454' },
   graphite: { bg: '#12181F', accent: '#2E5FA3', accentSoft: '#E1EAF5', chipBg: '#F0F3F7', text: '#12181F', muted: '#5C6B7A' },
+  // Added 2026-09-20 -- same dark-bg / bright-accent shape as the three
+  // above, picked to echo common heavy-equipment safety and brand colours
+  // rather than being invented arbitrarily.
+  orange:   { bg: '#1F1712', accent: '#D8571F', accentSoft: '#FCE4D6', chipBg: '#F7F1EA', text: '#1F1712', muted: '#8A6B54' },
+  green:    { bg: '#101B12', accent: '#3F7D32', accentSoft: '#DCEEDC', chipBg: '#F1F3EE', text: '#101B12', muted: '#5E7259' },
+  crimson:  { bg: '#1D1013', accent: '#A83246', accentSoft: '#F6DCE1', chipBg: '#F7EFF1', text: '#1D1013', muted: '#8A5C64' },
 };
 const CATEGORY_AD_LABEL = {
   mini_excavator: 'MINI EXCAVATOR', excavator: 'EXCAVATOR', backhoe: 'BACKHOE LOADER',
@@ -1017,6 +1147,62 @@ function fitFontSize(ctx, text, maxWidth, startSize, minSize, fontSpec) {
 
 function adPriceText(v) {
   return isFinite(v) ? 'RM' + Math.round(v).toLocaleString() : 'N/A';
+}
+
+// Machine photo, per equipment (2026-09-22, new). Keyed by eqId so switching
+// between machine tabs keeps each one's own photo, exactly like every other
+// per-equipment field on this page -- and like everything else here, it's
+// in-memory only for this session, never uploaded or saved anywhere.
+const adPhotoByEqId = new Map();
+
+function updateAdPhotoStatus() {
+  const statusEl = document.getElementById('rc-ad-photo-status');
+  const removeBtn = document.getElementById('rc-ad-photo-remove');
+  const fileInput = document.getElementById('rc-ad-photo-input');
+  if (!statusEl) return;
+  const activePanel = getActiveEquipmentPanel();
+  const eqId = activePanel ? activePanel.dataset.eqId : null;
+  const photo = eqId ? adPhotoByEqId.get(eqId) : null;
+  if (photo) {
+    statusEl.classList.remove('is-empty');
+    statusEl.innerHTML = `Photo loaded: <strong>${escapeHTML(photo.rcFileName || 'image')}</strong> -- shown for this machine only.`;
+    if (removeBtn) removeBtn.hidden = false;
+  } else {
+    statusEl.classList.add('is-empty');
+    statusEl.textContent = 'No photo for this machine yet -- using the text-only layout.';
+    if (removeBtn) removeBtn.hidden = true;
+  }
+  if (fileInput) fileInput.value = ''; // always let the same file be re-picked, and never shows a stale filename for a different machine
+}
+
+function handleAdPhotoFile(file) {
+  const activePanel = getActiveEquipmentPanel();
+  const eqId = activePanel ? activePanel.dataset.eqId : null;
+  if (!file || !eqId) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      img.rcFileName = file.name;
+      adPhotoByEqId.set(eqId, img);
+      updateAdPhotoStatus();
+      recalculateAll();
+    };
+    img.onerror = () => {
+      const statusEl = document.getElementById('rc-ad-photo-status');
+      if (statusEl) { statusEl.classList.add('is-empty'); statusEl.textContent = 'Couldn\u2019t read that image -- try a PNG, JPG, or WEBP file.'; }
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeAdPhotoForActiveEquipment() {
+  const activePanel = getActiveEquipmentPanel();
+  const eqId = activePanel ? activePanel.dataset.eqId : null;
+  if (eqId) adPhotoByEqId.delete(eqId);
+  updateAdPhotoStatus();
+  recalculateAll();
 }
 
 function drawAdCanvas(eq) {
@@ -1067,18 +1253,45 @@ function drawAdCanvas(eq) {
   ctx.font = '400 25px "IBM Plex Sans", sans-serif';
   ctx.fillText(tagline, 60, 120);
 
-  const headlineFont = (size) => `900 ${size}px Fraunces, Georgia, serif`;
-  const headlineMaxWidth = memberDiscountPct > 0 ? W - 360 : W - 120;
-  const headlineSize = fitFontSize(ctx, categoryLabel, headlineMaxWidth, 108, 46, headlineFont);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = headlineFont(headlineSize);
-  ctx.fillText(categoryLabel, 58, 250);
-
+  const activePanelForPhoto = getActiveEquipmentPanel();
+  const activeEqId = activePanelForPhoto ? activePanelForPhoto.dataset.eqId : null;
+  const photoImg = activeEqId ? adPhotoByEqId.get(activeEqId) : null;
+  const hasPhoto = !!(photoImg && photoImg.complete && photoImg.naturalWidth > 0);
   const eqNameTrim = (eq.name || '').trim();
-  if (eqNameTrim && eqNameTrim.toLowerCase() !== categoryLabel.toLowerCase()) {
-    ctx.font = '600 32px "IBM Plex Sans", sans-serif';
+
+  if (hasPhoto) {
+    // Photo-led header (2026-09-22, new): business name/tagline stay exactly
+    // where they were -- the big typography-only headline is replaced by the
+    // photo itself (contain-fit, never cropped or stretched), with a small
+    // caption strip reserved below it so the machine's name/category is
+    // still readable. This is why the box height is fixed at HEADER_H - 55 -
+    // photoBoxY rather than however tall the photo happens to be: a portrait
+    // photo and a landscape one both still fit inside the same header zone.
+    const photoBoxX = 50, photoBoxY = 135, photoBoxW = W - 100, photoBoxH = (HEADER_H - 55) - photoBoxY;
+    const scale = Math.min(photoBoxW / photoImg.naturalWidth, photoBoxH / photoImg.naturalHeight);
+    const drawW = photoImg.naturalWidth * scale, drawH = photoImg.naturalHeight * scale;
+    const drawX = photoBoxX + (photoBoxW - drawW) / 2, drawY = photoBoxY + (photoBoxH - drawH) / 2;
+    ctx.drawImage(photoImg, drawX, drawY, drawW, drawH);
+
+    const captionParts = [categoryLabel, (eqNameTrim && eqNameTrim.toLowerCase() !== categoryLabel.toLowerCase()) ? eqNameTrim : null].filter(Boolean);
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.fillText(eqNameTrim, 60, 300);
+    const captionFont = (size) => `700 ${size}px "IBM Plex Sans", sans-serif`;
+    const captionSize = fitFontSize(ctx, captionParts.join(' \u00b7 '), W - 120, 30, 18, captionFont);
+    ctx.font = captionFont(captionSize);
+    ctx.fillText(captionParts.join(' \u00b7 '), 58, HEADER_H - 22);
+  } else {
+    const headlineFont = (size) => `900 ${size}px Fraunces, Georgia, serif`;
+    const headlineMaxWidth = memberDiscountPct > 0 ? W - 360 : W - 120;
+    const headlineSize = fitFontSize(ctx, categoryLabel, headlineMaxWidth, 108, 46, headlineFont);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = headlineFont(headlineSize);
+    ctx.fillText(categoryLabel, 58, 250);
+
+    if (eqNameTrim && eqNameTrim.toLowerCase() !== categoryLabel.toLowerCase()) {
+      ctx.font = '600 32px "IBM Plex Sans", sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.88)';
+      ctx.fillText(eqNameTrim, 60, 300);
+    }
   }
 
   if (memberDiscountPct > 0) {
@@ -1198,6 +1411,61 @@ function downloadAdImage() {
   link.click();
 }
 
+/* ================= PRINT SUMMARY (2026-09-22, new) =================
+   A second, separate export path alongside the existing "Save as PDF"
+   button, which this deliberately does not touch or change in any way.
+   "Save as PDF" always prints the full page exactly as it already did.
+   This one prints only the Results sections the person checks in a
+   short list -- meant for handing a customer a clean price sheet
+   without also handing them your own true-cost and margin breakdown.
+
+   Mechanism: temporarily add the existing .no-print class (already
+   used everywhere else on this page for print-only hiding) to whatever
+   is unchecked, call window.print(), then remove it again once the
+   print dialog closes. Nothing about the on-screen page changes at
+   any point -- .no-print only takes effect inside @media print. */
+
+const RC_PRINT_ALWAYS_EXCLUDE = ['#rc-ad-creator-box'];
+
+function togglePrintSummaryPanel(show) {
+  const panel = document.getElementById('rc-print-summary-panel');
+  if (panel) panel.hidden = !show;
+}
+
+function runPrintSummary() {
+  const checks = document.querySelectorAll('.rc-print-check');
+  const addedNoPrint = [];
+  checks.forEach((cb) => {
+    if (cb.checked) return;
+    document.querySelectorAll(`[data-print-section="${cb.dataset.section}"]`).forEach((el) => {
+      if (!el.classList.contains('no-print')) { el.classList.add('no-print'); addedNoPrint.push(el); }
+    });
+  });
+  RC_PRINT_ALWAYS_EXCLUDE.forEach((sel) => {
+    document.querySelectorAll(sel).forEach((el) => {
+      if (!el.classList.contains('no-print')) { el.classList.add('no-print'); addedNoPrint.push(el); }
+    });
+  });
+
+  const cleanup = () => {
+    addedNoPrint.forEach((el) => el.classList.remove('no-print'));
+    window.removeEventListener('afterprint', cleanup);
+  };
+  window.addEventListener('afterprint', cleanup);
+  // Safari doesn't reliably fire afterprint from a print-preview cancel --
+  // this fallback guarantees the temporary classes never outlive the dialog.
+  setTimeout(cleanup, 4000);
+
+  togglePrintSummaryPanel(false);
+  window.print();
+}
+
+function initPrintSummary() {
+  document.getElementById('rc-print-summary-btn').addEventListener('click', () => togglePrintSummaryPanel(true));
+  document.getElementById('rc-print-summary-cancel').addEventListener('click', () => togglePrintSummaryPanel(false));
+  document.getElementById('rc-print-summary-go').addEventListener('click', runPrintSummary);
+}
+
 /* ================= CONTROLLER ================= */
 
 function recalculateAll() {
@@ -1277,7 +1545,7 @@ function init() {
   document.getElementById('rc-guide-category-select').addEventListener('change', recalculateAll);
 
   document.querySelectorAll('.rc-calc-tab[data-calc-tab]').forEach((btn) => {
-    btn.addEventListener('click', () => showCalcTabOnly(btn.dataset.calcTab));
+    btn.addEventListener('click', () => toggleCalcTab(btn.dataset.calcTab));
   });
   document.getElementById('rc-reset-all').addEventListener('click', resetAllCalculationData);
   showCalcTabOnly('equipment');
@@ -1288,6 +1556,7 @@ function init() {
   document.getElementById('tool-dock-close').addEventListener('click', () => setDockVisible(false));
 
   document.getElementById('rc-save-pdf').addEventListener('click', () => window.print());
+  initPrintSummary();
 
   const quickNav = document.getElementById('rc-quick-nav');
   document.querySelectorAll('.rc-quick-nav-btn[data-target]').forEach((btn) => {
@@ -1313,6 +1582,11 @@ function init() {
   document.getElementById('rc-ad-theme').addEventListener('change', recalculateAll);
   document.getElementById('rc-ad-show-nonmember').addEventListener('change', recalculateAll);
   document.getElementById('rc-ad-download').addEventListener('click', downloadAdImage);
+  document.getElementById('rc-ad-photo-input').addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) handleAdPhotoFile(e.target.files[0]);
+  });
+  document.getElementById('rc-ad-photo-remove').addEventListener('click', removeAdPhotoForActiveEquipment);
+  updateAdPhotoStatus();
 
   initSync();
   recalculateAll();

@@ -191,7 +191,33 @@
       <div class="wrap">
         <div class="analysis-top-bar no-print">
           <span></span>
-          <button type="button" id="rc-save-pdf" class="btn btn-secondary">Save as PDF</button>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button type="button" id="rc-print-summary-btn" class="btn btn-secondary">Print summary…</button>
+            <button type="button" id="rc-save-pdf" class="btn btn-secondary">Save as PDF</button>
+          </div>
+        </div>
+
+        <div class="rc-box no-print" id="rc-print-summary-panel" hidden>
+          <h3 style="margin-top:0;">Choose what goes in this printed summary</h3>
+          <p class="structure-note">This is separate from "Save as PDF" above, which is unchanged and always prints everything. Unchecking a box here only leaves it out of THIS summary — nothing on screen changes.</p>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 18px;">
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="pricing" checked> Pricing (hourly / daily / monthly)</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="deposits" checked> Suggested deposits</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="compare"> All-equipment comparison table</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="truecost"> True cost breakdown (dry / wet)</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="margintier"> Margin achieved by tier</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="payouts"> Partner payouts</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="marginresults"> Margin / break-even / monthly revenue</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="structure"> Cost-structure chart</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="market"> Local market comparison</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="insights"> What stands out (insights)</label>
+            <label class="rc-toggle-row" style="margin-bottom:0;"><input type="checkbox" class="rc-print-check" data-section="inputs"> Rental Calculation inputs</label>
+          </div>
+          <p class="structure-note" style="margin:10px 0 0;">The rental ad, quick-nav buttons, formulas, and glossary are never included here — they're not summary material.</p>
+          <div class="calc-actions no-print">
+            <button type="button" id="rc-print-summary-go" class="btn btn-primary">Print this summary</button>
+            <button type="button" id="rc-print-summary-cancel" class="btn btn-secondary">Cancel</button>
+          </div>
         </div>
 
         <div class="rc-section-intro">
@@ -200,7 +226,7 @@
           <p class="structure-note">Everything below updates automatically from what you enter in <strong>Rental Calculation</strong>, further down this page. <strong>Dry</strong> = machine only. <strong>Wet</strong> = with fuel and operator included.</p>
         </div>
 
-        <div class="rc-box">
+        <div class="rc-box" data-print-section="compare">
           <h2>All equipment at a glance <span class="toggle-hint">(wet, daily, standard price)</span></h2>
           <div class="table-scroll">
             <table class="rc-compare-table">
@@ -214,9 +240,9 @@
         <div class="rc-box">
           <h2>Detail — <span id="rc-detail-name">Equipment 1</span></h2>
 
-          <h3 style="font-size:1rem;">True cost — dry vs. wet</h3>
-          <p class="structure-note">Dry and wet share ownership, maintenance, wear &amp; tear, and overhead — wet adds fuel and operator. Mobilization here uses your <em>short-job</em> spread; the monthly tier below uses a longer one, which is the main reason monthly comes out cheaper per day.</p>
-          <div class="rc-per-portion-cards">
+          <h3 style="font-size:1rem;" data-print-section="truecost">True cost — dry vs. wet</h3>
+          <p class="structure-note" data-print-section="truecost">Dry and wet share ownership, maintenance, wear &amp; tear, and overhead — wet adds fuel and operator. Mobilization here uses your <em>short-job</em> spread; the monthly tier below uses a longer one, which is the main reason monthly comes out cheaper per day.</p>
+          <div class="rc-per-portion-cards" data-print-section="truecost">
             <div class="result-card"><span class="result-label">Ownership / day<span class="tooltip-icon" data-tooltip="Depreciation + financing interest + insurance + registration, spread over your expected rental days">?</span></span><span class="result-value" id="rc-tc-ownership">RM0.00</span></div>
             <div class="result-card"><span class="result-label">Maintenance &amp; wear / day<span class="tooltip-icon" data-tooltip="Scheduled service + wear and tear reserve, buffered for unscheduled repairs. Excludes fuel.">?</span></span><span class="result-value" id="rc-tc-maint">RM0.00</span></div>
             <div class="result-card"><span class="result-label">Overhead share / day</span><span class="result-value" id="rc-tc-overhead">RM0.00</span></div>
@@ -226,21 +252,31 @@
             <div class="result-card" style="background:var(--accent-soft);"><span class="result-label">= Wet true cost / day</span><span class="result-value" id="rc-tc-wet">RM0.00</span></div>
           </div>
 
-          <h3 style="font-size:1rem;">Pricing — hourly, daily, monthly</h3>
-          <div class="table-scroll">
+          <h3 style="font-size:1rem;" data-print-section="pricing">Pricing — hourly, daily, monthly</h3>
+          <div class="table-scroll" data-print-section="pricing">
             <table class="rc-pricing-table">
               <caption class="sr-only">Standard and non-member prices, dry and wet, across hourly, daily, and monthly tiers</caption>
               <thead><tr><th scope="col"></th><th scope="col">Hourly</th><th scope="col">Daily</th><th scope="col">Monthly <span class="toggle-hint">(per day)</span></th></tr></thead>
               <tbody id="rc-pricing-rows"></tbody>
             </table>
           </div>
-          <p class="structure-note" id="rc-monthly-package-note" style="margin-top:10px;"></p>
+          <p class="structure-note" id="rc-monthly-package-note" data-print-section="pricing" style="margin-top:10px;"></p>
 
-          <h3 style="font-size:1rem;">Where the money goes — partner payouts <span class="toggle-hint">(wet)</span></h3>
-          <p class="structure-note">Each partner's cut in Ringgit at each tier's price, so it's clear what they actually receive per rental, not just their percentage. Dry pricing splits the same percentages, just off a smaller base, so it isn't repeated below.</p>
+          <h3 style="font-size:1rem;" data-print-section="margintier">Margin achieved by tier <span class="toggle-hint">(wet)</span></h3>
+          <p class="structure-note" data-print-section="margintier">Daily's margin is exactly your target — that's how the price is built. Hourly's premium and Monthly's extra discount are both layered on <em>after</em> that, so their real margin can land above or below target. Worth checking, not just assuming.</p>
+          <div class="table-scroll" data-print-section="margintier">
+            <table class="rc-pricing-table">
+              <caption class="sr-only">Margin achieved, standard and non-member, across hourly, daily, and monthly tiers</caption>
+              <thead><tr><th scope="col"></th><th scope="col">Hourly</th><th scope="col">Daily</th><th scope="col">Monthly</th></tr></thead>
+              <tbody id="rc-margin-tier-rows"></tbody>
+            </table>
+          </div>
 
-          <p style="font-weight:600; font-size:0.88rem; margin-bottom:6px;">At the standard (member) price</p>
-          <div class="table-scroll">
+          <h3 style="font-size:1rem;" data-print-section="payouts">Where the money goes — partner payouts <span class="toggle-hint">(wet)</span></h3>
+          <p class="structure-note" data-print-section="payouts">Each partner's cut in Ringgit at each tier's price, so it's clear what they actually receive per rental, not just their percentage. Dry pricing splits the same percentages, just off a smaller base, so it isn't repeated below.</p>
+
+          <p style="font-weight:600; font-size:0.88rem; margin-bottom:6px;" data-print-section="payouts">At the standard (member) price</p>
+          <div class="table-scroll" data-print-section="payouts">
             <table class="rc-pricing-table">
               <caption class="sr-only">Partner and SST payouts in Ringgit, and what you keep, across hourly, daily, and monthly tiers, at the standard price</caption>
               <thead><tr><th scope="col"></th><th scope="col">Hourly</th><th scope="col">Daily</th><th scope="col">Monthly <span class="toggle-hint">(per day)</span></th></tr></thead>
@@ -248,8 +284,8 @@
             </table>
           </div>
 
-          <p style="font-weight:600; font-size:0.88rem; margin:18px 0 6px;">At the non-member price</p>
-          <div class="table-scroll">
+          <p style="font-weight:600; font-size:0.88rem; margin:18px 0 6px;" data-print-section="payouts">At the non-member price</p>
+          <div class="table-scroll" data-print-section="payouts">
             <table class="rc-pricing-table">
               <caption class="sr-only">Partner and SST payouts in Ringgit, and what you keep, across hourly, daily, and monthly tiers, at the non-member price</caption>
               <thead><tr><th scope="col"></th><th scope="col">Hourly</th><th scope="col">Daily</th><th scope="col">Monthly <span class="toggle-hint">(per day)</span></th></tr></thead>
@@ -257,21 +293,21 @@
             </table>
           </div>
 
-          <div class="ica-results" style="margin:20px 0;">
+          <div class="ica-results" data-print-section="marginresults" style="margin:20px 0;">
             <div class="result-card"><span class="result-label">Margin achieved (standard, wet, daily)</span><span class="result-value" id="rc-res-margin-standard">0%</span></div>
             <div class="result-card"><span class="result-label">Margin achieved (non-member, wet, daily)</span><span class="result-value" id="rc-res-margin-nonmember">0%</span></div>
             <div class="result-card"><span class="result-label">Break-even rental days / month<span class="tooltip-icon" data-tooltip="Fixed monthly costs divided by contribution margin per day, at the wet daily standard price">?</span></span><span class="result-value" id="rc-res-breakeven">0 days</span></div>
             <div class="result-card"><span class="result-label">Monthly revenue at expected utilization</span><span class="result-value" id="rc-res-monthly-revenue">RM0.00</span></div>
           </div>
-          <p class="structure-note" id="rc-utilization-insight"></p>
+          <p class="structure-note" id="rc-utilization-insight" data-print-section="marginresults"></p>
 
-          <div class="rc-deposit-cards">
+          <div class="rc-deposit-cards" data-print-section="deposits">
             <div class="result-card"><span class="result-label">Suggested deposit — member</span><span class="result-value" id="rc-res-deposit-member">RM0.00</span></div>
             <div class="result-card"><span class="result-label">Suggested deposit — non-member</span><span class="result-value" id="rc-res-deposit-nonmember">RM0.00</span></div>
           </div>
         </div>
 
-        <div class="rc-box">
+        <div class="rc-box" data-print-section="structure">
           <h2>Cost structure: this machine vs. a guide</h2>
           <div class="structure-layout">
             <div class="structure-info">
@@ -305,7 +341,7 @@
           </div>
         </div>
 
-        <div class="rc-box">
+        <div class="rc-box" data-print-section="market">
           <h2>Local market comparison</h2>
           <p class="menu-builder-intro">Add rates under this machine's tab in Rental Calculation, tagging each one's period and whether it includes driver &amp; fuel — comparison below matches each one against your own price for that exact tier and service level, not a flattened average.</p>
           <div class="table-scroll">
@@ -318,14 +354,14 @@
           <p class="structure-note" id="rc-market-empty-note">Add a market rate below to compare.</p>
         </div>
 
-        <div class="rc-box">
+        <div class="rc-box" data-print-section="insights">
           <h2>What stands out</h2>
           <div class="rc-insight-list" id="rc-insights"></div>
         </div>
 
-        <div class="rc-box">
+        <div class="rc-box" id="rc-ad-creator-box">
           <h2>Create a rental ad</h2>
-          <p class="menu-builder-intro">Generates a shareable image straight from this machine's own numbers above — change a price or the theme and it redraws automatically. Bold, high-contrast, typography-led design rather than a stock photo of someone else's machine — that's the direction most flyer/poster design has actually moved toward for 2026, not just a workaround.</p>
+          <p class="menu-builder-intro">Generates a shareable image straight from this machine's own numbers above — change a price or the theme and it redraws automatically. Add a photo of the actual machine below, or leave it off for the bold, typography-led layout this started as.</p>
 
           <div class="rc-field-grid" style="margin-bottom:16px;">
             <label>Business name <input type="text" id="rc-ad-business" value="Reysourcez Enterprise"></label>
@@ -337,10 +373,23 @@
                 <option value="teal" selected>Site Teal</option>
                 <option value="amber">Construction Amber</option>
                 <option value="graphite">Steel Graphite</option>
+                <option value="orange">Safety Orange</option>
+                <option value="green">Forest Green</option>
+                <option value="crimson">Site Crimson</option>
               </select>
             </label>
           </div>
           <label class="rc-toggle-row"><input type="checkbox" id="rc-ad-show-nonmember" checked> Show non-member price alongside member price</label>
+
+          <div class="rc-eq-subsection" style="margin-top:18px;">
+            <h4>Machine photo <span style="font-weight:400; color:var(--muted); font-size:0.78rem;">optional -- kept per machine, not saved anywhere</span></h4>
+            <p class="structure-note" style="margin-bottom:10px;">A PNG with the background already removed drops in cleanly. A plain photo works too, just with its own background showing.</p>
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <input type="file" id="rc-ad-photo-input" accept="image/png,image/jpeg,image/webp" class="no-print">
+              <button type="button" id="rc-ad-photo-remove" class="btn btn-secondary no-print" hidden>Remove photo</button>
+            </div>
+            <p class="rc-live-note is-empty" id="rc-ad-photo-status" style="margin-top:10px;">No photo for this machine yet -- using the text-only layout.</p>
+          </div>
 
           <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; margin-top:16px;">
             <canvas id="rc-ad-canvas" width="1080" height="1350" style="width:100%; max-width:300px; border-radius:10px; box-shadow:0 4px 20px rgba(0,0,0,0.15); background:#fff;"></canvas>
@@ -359,7 +408,7 @@
          open) rather than an independent accordion -- see
          showCalcTabOnly in the JS.
          ============================================================ -->
-    <section class="ica-panel rc-calc-section" id="rc-calculation">
+    <section class="ica-panel rc-calc-section" id="rc-calculation" data-print-section="inputs">
       <div class="wrap">
         <div class="rc-section-intro">
           <span class="eyebrow">Rental Calculation</span>
@@ -501,7 +550,7 @@ overhead share / day = (shared overhead / number of equipment tabs) / expected r
 wear &amp; tear / hour = wear &amp; tear cost / wear &amp; tear interval hours
 
 maintenance &amp; wear / day (buffered) = (maintenance/hour + wear&amp;tear/hour) * (1 + repair buffer % / 100) * hours per rental day
-fuel / day (buffered) = fuel/hour * (1 + repair buffer % / 100) * hours per rental day   [wet only]</div>
+fuel / day = fuel/hour * hours per rental day   [wet only -- NOT run through the repair buffer; fuel use doesn't carry repair risk]</div>
             </div>
 
             <div class="rc-formula-group">
@@ -533,7 +582,13 @@ ELSE:
   non-member = target price / (1 - combined share)
   standard   = non-member * (1 - member discount % / 100)
 
-margin achieved % = ((price * (1 - combined share)) - true cost) / price * 100</div>
+net revenue = price * (1 - combined share)
+margin achieved % = (net revenue - true cost) / net revenue * 100   [divided by NET revenue, not the gross price -- this is what makes it match "target margin %" above]
+
+By tier: Daily's margin achieved will always equal your target margin % exactly -- that's how the Daily price is built.
+Hourly and Monthly are priced by adjusting the Daily price (premium / discount), not by re-running this formula on their own
+true cost -- so their margin achieved is genuinely informative and can land above or below target. See "Margin achieved by
+tier" in Results.</div>
             </div>
 
             <div class="rc-formula-group">
@@ -577,6 +632,7 @@ Other / general : 50% equipment / 17% overhead / 13% operator / 20% margin</div>
                 <tr><th scope="row">Monthly-job days</th><td>How many days a typical monthly booking runs (usually ~26) — used to spread mobilization much more thinly for the Monthly tier.</td></tr>
                 <tr><th scope="row">Utilization</th><td>Share of available days a machine is actually rented out — the single biggest lever on cost per day.</td></tr>
                 <tr><th scope="row">Break-even rental days</th><td>Days/month needed at your standard price before fixed costs are covered. Days beyond that are largely pure profit.</td></tr>
+                <tr><th scope="row">Margin achieved (by tier)</th><td>Real profit margin at a given price, after revenue-share/SST, as a % of what you actually keep (not the sticker price). Daily always matches your target exactly, by construction. Hourly and Monthly don't — their premium/discount is layered on afterward, so their real margin can run above or below target.</td></tr>
                 <tr><th scope="row">Revenue-share partner</th><td>Anyone owed a % of a job's revenue. Charged on the price you quote, not deducted from your own target.</td></tr>
                 <tr><th scope="row">Gross-up</th><td>Dividing by (1 - rate) instead of multiplying by rate, so a cut comes out of the price without eating your own target.</td></tr>
                 <tr><th scope="row">Shared manpower pool</th><td>Your total staff cost from Overhead &amp; Manpower Calculator, split across every wet-hire machine here. Precise EPF/SOCSO/EIS math lives entirely in that tool, not duplicated here.</td></tr>
@@ -605,6 +661,6 @@ Other / general : 50% equipment / 17% overhead / 13% operator / 20% margin</div>
 
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="rental-calculator.js?v=3" defer></script>
+  <script src="rental-calculator.js?v=5" defer></script>
 </body>
 </html>
