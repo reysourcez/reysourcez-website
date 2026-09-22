@@ -106,11 +106,33 @@ const CAUSE_LIBRARY = {
         label: 'High wastage / spoilage',
         looksLike: "Trim, spoilage, or produce that gets thrown out regularly — often the single biggest leak in food cost, and the easiest one to miss, since it never shows up as a line on any invoice.",
         actions: [
-          'Log opening stock, purchases, and closing stock for your top ingredients over a set period — the Wastage & Par-Level Tracker below does this and computes wastage % automatically.',
+          'Log every wastage event as it happens, with what, how much, and why — the Daily Wastage Log below is built for exactly this, using the same reason codes a real kitchen SOP uses.',
           'Rank by wastage in RM, not quantity — a kilo of wasted prawns matters far more than a kilo of wasted rice, even if the rice bag looks fuller in the bin.',
           'Fix your worst 2-3 offenders first (better storage, smaller batch prep, tighter portioning) rather than trying to fix everything on the menu at once.',
         ],
-        tool: { anchor: 'csc-wastage-tracker', label: 'Open the Wastage & Par-Level Tracker' },
+        tool: { anchor: 'csc-wastage-log', label: 'Open the Daily Wastage Log' },
+      },
+      {
+        id: 'ing-execution-errors',
+        label: 'Burnt, overcooked, or spoiled in cooking',
+        looksLike: "Food gets binned during active cooking \u2014 burnt, overcooked, or otherwise ruined before it ever reaches a plate. Different from a bad ingredient or a bad recipe: the food and the process were both fine, the execution on that attempt wasn't.",
+        actions: [
+          'Log every kitchen-execution loss as it happens \u2014 what, roughly when, and why (rushed, distracted, equipment) \u2014 the Daily Wastage Log below is built for exactly this.',
+          'Look for a pattern before blaming an individual: the same dish burning repeatedly usually points at equipment (an oven running hot, a warped pan) or timing (a station overloaded at that point in service), not carelessness.',
+          'Retrain on the specific failure point once you know it \u2014 "don\u2019t burn things" isn\u2019t actionable; "pull it off heat during the 90-second plating window" is.',
+        ],
+        tool: { anchor: 'csc-wastage-log', label: 'Open the Daily Wastage Log' },
+      },
+      {
+        id: 'ing-spillage',
+        label: 'Spillage, drops, and handling accidents',
+        looksLike: "Product is lost to a physical accident \u2014 dropped, spilled, knocked over \u2014 rather than a cooking or storage failure. Easy to wave off as bad luck, but a station that loses stock this way repeatedly usually has a real, fixable cause behind it.",
+        actions: [
+          "Log it when it happens, with roughly what and how much \u2014 the Daily Wastage Log below is built for exactly this, and a pattern only becomes visible once it's written down a few times.",
+          'Check the physical setup at the station where it keeps happening \u2014 cramped counter space, a shelf that\u2019s too high, a walkway doubling as a prep path \u2014 before assuming it\u2019s just carelessness.',
+          'If it clusters around one especially busy point in service, that\u2019s a staffing/pacing problem wearing a spillage costume \u2014 worth checking against Manpower\u2019s overstaffed/overtime causes too.',
+        ],
+        tool: { anchor: 'csc-wastage-log', label: 'Open the Daily Wastage Log' },
       },
       {
         id: 'ing-fifo',
@@ -185,13 +207,25 @@ const CAUSE_LIBRARY = {
       },
       {
         id: 'ing-comps',
-        label: 'Comps, voids, and staff meals not tracked',
-        looksLike: "Free staff meals, sent-back plates, and manager comps are real ingredient cost — but nobody's logging them, so they just show up as 'unexplained' food cost at month end.",
+        label: 'Comps, voids, staff meals, and unrecorded tasting',
+        looksLike: "Free staff meals, sent-back plates, manager comps, and tasting/quality-checking while cooking are all real ingredient cost — but nobody's logging them, so they just show up as 'unexplained' food cost at month end.",
         actions: [
-          'Log every comp, void, and staff meal against the dish it came from, even briefly — a notebook row is enough to start with.',
+          'Log every comp, void, staff meal, and taste-test against the dish it came from, even briefly — the Daily Wastage Log below has a reason code built for exactly the tasting/sampling case.',
           'Set a policy for staff meals (what\u2019s allowed, roughly how much per shift) so it\u2019s a planned, bounded cost rather than an open-ended one.',
           'Review the comp/void total monthly as its own line — a creeping trend there is worth investigating on its own.',
         ],
+        tool: { anchor: 'csc-wastage-log', label: 'Open the Daily Wastage Log' },
+      },
+      {
+        id: 'ing-customer-returns',
+        label: 'Customer complaints and returns not tracked or analyzed',
+        looksLike: "A dish comes back, or a customer complains and it gets remade or refunded \u2014 the food cost is real, but if nobody's writing down which dish, how often, and why, there's no way to tell an unlucky one-off from a genuine recipe or execution problem.",
+        actions: [
+          'Log every return/complaint against the specific dish and a reason, even briefly \u2014 the Daily Wastage Log below has a reason code built for exactly this.',
+          'Watch for the same dish coming back more than once or twice in a short window \u2014 that\u2019s worth investigating (a recipe drifted from its SOP, one station\u2019s execution, an ingredient batch) rather than treating it as one-off bad luck.',
+          'Distinguish a genuine kitchen fault from a mismatched expectation (the customer wanted something the dish was never meant to be) \u2014 the fix is completely different for each.',
+        ],
+        tool: { anchor: 'csc-wastage-log', label: 'Open the Daily Wastage Log' },
       },
       {
         id: 'ing-receiving',
@@ -531,6 +565,33 @@ const CAUSE_LIBRARY = {
     ],
   },
 };
+
+/* ================= DAILY WASTAGE LOG =================
+   Straight from a real operational SOP a user shared directly
+   (document code SOP-KIT-WS01, "Borang Kawalan Kebocoran &
+   Pembaziran Dapur Harian" \u2014 Daily Kitchen Leakage & Wastage
+   Control Form): six reason codes, used verbatim rather than
+   inventing a different set, since a business already running
+   that SOP may have staff already trained on exactly these
+   letters. Genuinely complementary to the Wastage & Par-Level
+   Tracker below rather than a duplicate of it \u2014 this is an
+   event log (what happened, right when it happened, and why);
+   the tracker is a period reconciliation (how much moved off the
+   shelf in total, worked out from stock counts). A kitchen using
+   only one of the two has a real blind spot the other one covers. */
+const REASON_CODES = [
+  { code: 'A', label: 'Expired / spoiled in storage' },
+  { code: 'B', label: 'Burnt / overcooked' },
+  { code: 'C', label: 'Spilled / dropped / mishandled' },
+  { code: 'D', label: 'Customer return (complaint)' },
+  { code: 'E', label: 'Wrong cut / over-portioned' },
+  { code: 'F', label: 'Taste test / unrecorded sampling' },
+];
+
+// Not from the source form (it left this column's values undefined) —
+// a reasonable general F&B default set. Free-text "Other" always
+// covers anything that doesn't fit.
+const WASTAGE_LOG_CATEGORIES = ['Protein', 'Vegetable', 'Dairy', 'Dry goods', 'Beverage', 'Prepared dish', 'Other'];
 
 /* ================= JARGON INDEX ================= */
 const JARGON = [

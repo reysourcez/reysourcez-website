@@ -48,7 +48,7 @@
    construction rather than by luck.
    ============================================================ */
 
-console.info('[Cost Structure Checker] script build: 2026-09-20-v1.2');
+console.info('[Cost Structure Checker] script build: 2026-09-21-v1.3');
 
 /* ================= CONFIG =================
    Everything a layperson might want to retune without reading
@@ -717,78 +717,160 @@ function renderJargon() {
   `).join('');
 }
 
-/* ================= INIT ================= */
+/* ================= WASTAGE TOOLS: tabs + scoped print =================
+   Daily Wastage Log and Wastage & Par-Level Tracker share one collapsible
+   box and switch via two tab buttons (2026-09-21) \u2014 see the HTML comment
+   above #csc-wastage-tools for why. Switching tabs only ever toggles the
+   `hidden` attribute on a .csc-wastage-panel; neither panel's rows or
+   typed values are ever destroyed by switching tabs, collapsing the box,
+   or printing \u2014 only each panel's own Reset button clears its data. */
+
+function setWastageTab(tab) {
+  document.getElementById('csc-wastage-log').hidden = tab !== 'log';
+  document.getElementById('csc-wastage-tracker').hidden = tab !== 'tracker';
+  document.querySelectorAll('.csc-wastage-tabs .menu-tab-btn').forEach((btn) => {
+    const active = btn.dataset.wastageTab === tab;
+    btn.classList.toggle('is-active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+}
+
+// Shared by the quick-nav buttons AND any in-page <a href="#..."> tool link
+// (the cause checklist's own "Open the Daily Wastage Log \u2193" /
+// "Open the Wastage & Par-Level Tracker \u2193"): makes sure whatever's being
+// jumped to is actually visible before the jump lands \u2014 opens any closed
+// <details> ancestor or descendant, and switches to the right wastage tab
+// if the target is one of its two panels. Returns the target (or null) so
+// callers that need to scrollIntoView themselves still can.
+function revealSection(id) {
+  const target = document.getElementById(id);
+  if (!target) return null;
+  if (id === 'csc-wastage-log' || id === 'csc-wastage-tracker') setWastageTab(id === 'csc-wastage-log' ? 'log' : 'tracker');
+  const ancestorDetails = target.closest('details:not([open])');
+  if (ancestorDetails) ancestorDetails.open = true;
+  target.querySelectorAll('details:not([open])').forEach((d) => { d.open = true; });
+  return target;
+}
+
+// "Save this log/tracker as PDF": adds a scope class to <body> so the print
+// CSS (see cost-structure-checker.html) hides everything except the one
+// panel being saved, prints, then removes the class right after so the
+// page-wide "Save as PDF" button up top isn't left stuck in a scoped state.
+function printSection(scopeClass) {
+  document.body.classList.add(scopeClass);
+  window.print();
+  document.body.classList.remove(scopeClass);
+}
+
+/* ================= INIT =================
+   Each section below is wrapped in safeInit() (2026-09-21). This is a
+   direct response to a real incident, not generic defensiveness: an
+   outdated content.js on a live deploy (missing REASON_CODES /
+   WASTAGE_LOG_CATEGORIES) threw inside renderReasonLegend(), which is
+   called partway through this function \u2014 and because the whole function
+   used to run as one block, that single uncaught error silently killed
+   every init step after it: no wastage rows, no quick-nav, no AI-plan
+   button, nothing, with zero indication why beyond "buttons don't work".
+   safeInit() catches and logs each section on its own, so a problem in
+   one (a missing global, a renamed id) can't take down unrelated
+   sections \u2014 and still shows up clearly in the console instead of
+   failing silently, exactly the trail that made this one diagnosable
+   at all. */
 
 let rzInitialized = false;
+
+function safeInit(label, fn) {
+  try { fn(); }
+  catch (e) { console.error('[Cost Structure Checker] init step failed: ' + label, e); }
+}
 
 function init() {
   if (rzInitialized) return;
   rzInitialized = true;
 
-  renderWizardStep();
-  document.getElementById('wizard-back').addEventListener('click', goBack);
-  document.getElementById('csc-edit-answers').addEventListener('click', editAnswers);
-  document.getElementById('csc-save-pdf').addEventListener('click', () => window.print());
+  safeInit('wizard', () => {
+    renderWizardStep();
+    document.getElementById('wizard-back').addEventListener('click', goBack);
+    document.getElementById('csc-edit-answers').addEventListener('click', editAnswers);
+    document.getElementById('csc-save-pdf').addEventListener('click', () => window.print());
+  });
 
-  ['ingredients', 'overhead', 'manpower', 'margin'].forEach((cat) => {
-    document.getElementById('csc-pct-' + cat).addEventListener('input', () => {
-      updatePctTotal();
-      renderCategoryCards();
-      renderStructureComparison();
-      renderActionPlan();
+  safeInit('% inputs', () => {
+    ['ingredients', 'overhead', 'manpower', 'margin'].forEach((cat) => {
+      document.getElementById('csc-pct-' + cat).addEventListener('input', () => {
+        updatePctTotal();
+        renderCategoryCards();
+        renderStructureComparison();
+        renderActionPlan();
+      });
+    });
+    document.getElementById('csc-guide-venue-select').addEventListener('change', renderStructureComparison);
+  });
+
+  safeInit('wastage tabs', () => {
+    document.querySelectorAll('.csc-wastage-tabs .menu-tab-btn').forEach((btn) => {
+      btn.addEventListener('click', () => setWastageTab(btn.dataset.wastageTab));
     });
   });
-  document.getElementById('csc-guide-venue-select').addEventListener('change', renderStructureComparison);
 
-  document.getElementById('csc-wl-add-row').addEventListener('click', () => { createLogRow(); recalcWastageLog(); });
-  document.getElementById('csc-wl-reset').addEventListener('click', resetWastageLog);
-  document.getElementById('csc-wl-date').addEventListener('input', updateFormRef);
-  updateFormRef(); // establish the WS— placeholder correctly on load, same "wire the listener, then render once" pattern as recalcWastageLog()/recalcWastageTracker() below
-  renderReasonLegend();
-  createLogRow();
-  createLogRow();
-  createLogRow();
-  recalcWastageLog();
-
-  document.getElementById('csc-add-wastage-row').addEventListener('click', () => { createWastageRow(); recalcWastageTracker(); });
-  document.getElementById('csc-reset-wastage').addEventListener('click', resetWastageTracker);
-  ['csc-wastage-period-days', 'csc-wastage-lead-time', 'csc-wastage-safety-buffer'].forEach((id) => {
-    document.getElementById(id).addEventListener('input', recalcWastageTracker);
+  safeInit('daily wastage log', () => {
+    document.getElementById('csc-wl-add-row').addEventListener('click', () => { createLogRow(); recalcWastageLog(); });
+    document.getElementById('csc-wl-reset').addEventListener('click', resetWastageLog);
+    document.getElementById('csc-wl-print').addEventListener('click', () => printSection('csc-print-scope-log'));
+    document.getElementById('csc-wl-date').addEventListener('input', updateFormRef);
+    updateFormRef(); // establish the WS— placeholder correctly on load, same "wire the listener, then render once" pattern as recalcWastageLog()/recalcWastageTracker() below
+    renderReasonLegend();
+    createLogRow();
+    createLogRow();
+    createLogRow();
+    recalcWastageLog();
   });
-  createWastageRow();
-  createWastageRow();
 
-  document.getElementById('csc-get-ai-plan').addEventListener('click', requestAiPlan);
-
-  renderJargon();
-  updatePctTotal();
-
-  // Floating quick-nav, same pattern as every other tool's on this
-  // site (fw-quick-nav / rc-quick-nav / cr-quick-nav).
-  const quickNav = document.getElementById('csc-quick-nav');
-  document.querySelectorAll('.csc-quick-nav-btn[data-target]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const target = document.getElementById(btn.dataset.target);
-      if (!target) return;
-      target.querySelectorAll('details:not([open])').forEach((d) => { d.open = true; });
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  safeInit('wastage & par-level tracker', () => {
+    document.getElementById('csc-add-wastage-row').addEventListener('click', () => { createWastageRow(); recalcWastageTracker(); });
+    document.getElementById('csc-reset-wastage').addEventListener('click', resetWastageTracker);
+    document.getElementById('csc-wt-print').addEventListener('click', () => printSection('csc-print-scope-tracker'));
+    ['csc-wastage-period-days', 'csc-wastage-lead-time', 'csc-wastage-safety-buffer'].forEach((id) => {
+      document.getElementById(id).addEventListener('input', recalcWastageTracker);
     });
+    createWastageRow();
+    createWastageRow();
   });
-  window.addEventListener('scroll', () => { quickNav.hidden = window.scrollY < window.innerHeight * 0.4; }, { passive: true });
-  document.getElementById('csc-back-to-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 
-  // Now that the Wastage & Par-Level Tracker is collapsible too (2026-09-20),
-  // a plain <a href="#csc-wastage-log">/<a href="#csc-wastage-tracker"> tool
-  // link from a ticked cause (see renderCauseSections()) does a native browser
-  // anchor-jump, NOT the quick-nav click handler above \u2014 so it wouldn't know
-  // to open a closed <details> on its own. Same one-liner as the quick-nav
-  // handler already uses, just generalized to any in-page hash link so this
-  // doesn't need revisiting if more collapsibles get anchor-linked later.
-  document.addEventListener('click', (e) => {
-    const a = e.target.closest('a[href^="#"]');
-    if (!a) return;
-    const target = document.getElementById(a.getAttribute('href').slice(1));
-    if (target) target.querySelectorAll('details:not([open])').forEach((d) => { d.open = true; });
+  safeInit('AI plan button', () => {
+    document.getElementById('csc-get-ai-plan').addEventListener('click', requestAiPlan);
+  });
+
+  safeInit('jargon + pct total', () => {
+    renderJargon();
+    updatePctTotal();
+  });
+
+  safeInit('quick-nav', () => {
+    // Floating quick-nav, same pattern as every other tool's on this
+    // site (fw-quick-nav / rc-quick-nav / cr-quick-nav).
+    const quickNav = document.getElementById('csc-quick-nav');
+    document.querySelectorAll('.csc-quick-nav-btn[data-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const target = revealSection(btn.dataset.target);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    window.addEventListener('scroll', () => { quickNav.hidden = window.scrollY < window.innerHeight * 0.4; }, { passive: true });
+    document.getElementById('csc-back-to-top').addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  });
+
+  safeInit('anchor-link details opener', () => {
+    // A plain <a href="#csc-wastage-log">/<a href="#csc-wastage-tracker">
+    // tool link from a ticked cause does a native browser anchor-jump, NOT
+    // the quick-nav click handler above \u2014 generalized to any in-page hash
+    // link via revealSection() so this doesn't need revisiting if more
+    // collapsibles or tabs get anchor-linked later.
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href^="#"]');
+      if (!a) return;
+      revealSection(a.getAttribute('href').slice(1));
+    });
   });
 }
 

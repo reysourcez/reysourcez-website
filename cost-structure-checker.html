@@ -63,6 +63,7 @@
        Rental Calculator's equipment tabs, etc. already style this
        fully), so the only page-scoped addition needed is spacing. */
     .csc-cause-tabs { margin-bottom: 16px; }
+    .csc-wastage-tabs { margin-bottom: 18px; }
     .csc-cause-category-block { border-left: 5px solid var(--line); }
     .csc-cause-category-block.seg-ingredients { border-left-color: var(--accent); }
     .csc-cause-category-block.seg-overhead { border-left-color: var(--seg-overhead); }
@@ -151,11 +152,35 @@
       /* Same trick every collapsible section on this site already uses:
          override the UA's "closed <details> hides its children" rule so
          a saved PDF always shows full detail regardless of what was
-         expanded on screen when Save as PDF was clicked. */
+         expanded on screen when Save as PDF was clicked. Wastage panels
+         get the same treatment: a page-wide "Save as PDF" should show
+         BOTH the log and the tracker, not just whichever tab was active
+         on screen \u2014 same "printing shows everything" principle. */
       .csc-collapsible-body, .csc-cause-body { display: block !important; }
+      .csc-wastage-panel { display: block !important; }
       .csc-collapsible-summary h2::after, .csc-collapsible-summary h3::after, .csc-cause-details summary::before { display: none; }
       .csc-cta-box { background: #fff; color: #000; border: 1px solid #ccc; }
       .csc-cta-box h2, .csc-cta-box p { color: #000; }
+
+      /* "Save this log/tracker as PDF" (csc-wl-print / csc-wt-print) add one
+         of these two classes to <body> right before calling print(), then
+         remove it right after \u2014 see printSection() in the JS. Placed after
+         the page-wide rules above so these correctly win: hide everything
+         except the Wastage tools box, then hide whichever of the two panels
+         isn't the one actually being saved. */
+      body.csc-print-scope-log .site-header,
+      body.csc-print-scope-log .site-footer,
+      body.csc-print-scope-log .calc-intro,
+      body.csc-print-scope-log #wizard,
+      body.csc-print-scope-log #csc-analysis > .wrap > :not(#csc-wastage-tools) { display: none !important; }
+      body.csc-print-scope-log #csc-wastage-tracker.csc-wastage-panel { display: none !important; }
+
+      body.csc-print-scope-tracker .site-header,
+      body.csc-print-scope-tracker .site-footer,
+      body.csc-print-scope-tracker .calc-intro,
+      body.csc-print-scope-tracker #wizard,
+      body.csc-print-scope-tracker #csc-analysis > .wrap > :not(#csc-wastage-tools) { display: none !important; }
+      body.csc-print-scope-tracker #csc-wastage-log.csc-wastage-panel { display: none !important; }
     }
 
     @media (max-width: 700px) {
@@ -288,105 +313,118 @@
 
         <div id="csc-cause-sections" style="margin-top:24px;"><!-- populated by JS --></div>
 
-        <!-- ============ DAILY WASTAGE LOG ============ -->
-        <div class="csc-box" id="csc-wastage-log">
-          <h2>Daily Wastage Log</h2>
-          <p class="structure-note">Modeled on a real kitchen SOP (document code SOP-KIT-WS01) — log every wastage event as it happens, with a reason code, so you know not just how much you're losing but why. Complements the Par-Level Tracker below rather than replacing it: log here as things happen; reconcile total stock movement down there every week or two. Nothing is saved — Save as PDF at the end of a shift for a record.</p>
-
-          <div class="csc-wastage-controls">
-            <label>Outlet / restaurant <input type="text" id="csc-wl-outlet" placeholder="e.g. Kedai Makan Aminah"></label>
-            <label>Date <input type="date" id="csc-wl-date"></label>
-            <label>Shift <select id="csc-wl-shift">
-              <option value="">Select shift</option>
-              <option value="morning">Morning</option>
-              <option value="afternoon">Afternoon</option>
-              <option value="night">Night</option>
-            </select></label>
-            <label>Form ref <span class="tooltip-icon" data-tooltip="Auto-fills from the date above, using the same WS-YYYYMMDD reference scheme the source SOP uses.">?</span> <output id="csc-wl-form-ref">WS—</output></label>
-          </div>
-          <div class="csc-wastage-controls">
-            <label>Head chef / kitchen manager <input type="text" id="csc-wl-head-chef" placeholder="Name"></label>
-            <label>Staff on duty <input type="text" id="csc-wl-staff" placeholder="Name"></label>
-          </div>
-
-          <p class="csc-wl-legend" id="csc-wl-legend" aria-label="Reason codes reference"></p>
-
-          <div class="table-scroll">
-            <table class="menu-table csc-wastage-table">
-              <caption class="sr-only">Daily wastage event log — one row per wastage event, with an estimated cost and a reason code</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Time</th>
-                  <th scope="col">Item</th>
-                  <th scope="col">Category</th>
-                  <th scope="col">Qty / weight</th>
-                  <th scope="col">Est. cost (RM)</th>
-                  <th scope="col">Reason</th>
-                  <th scope="col">Notes / corrective action</th>
-                  <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
-                </tr>
-              </thead>
-              <tbody id="csc-wl-rows"></tbody>
-            </table>
-          </div>
-          <div class="calc-actions no-print">
-            <button type="button" id="csc-wl-add-row" class="btn btn-primary">+ Add entry</button>
-            <button type="button" id="csc-wl-reset" class="btn btn-secondary">Reset log</button>
-          </div>
-
-          <div class="csc-wl-signoff">
-            <p><strong>Daily total: <span id="csc-wl-total">RM 0.00</span></strong></p>
-            <div class="csc-wastage-controls">
-              <label>Prepared by <input type="text" id="csc-wl-prepared-by" placeholder="Kitchen staff"></label>
-              <label>Confirmed by <input type="text" id="csc-wl-confirmed-by" placeholder="Head chef"></label>
-              <label>Reviewed by <input type="text" id="csc-wl-reviewed-by" placeholder="Outlet manager"></label>
-            </div>
-          </div>
-        </div>
-
-        <!-- ============ WASTAGE & PAR-LEVEL TRACKER ============ -->
-        <!-- Collapsible as of 2026-09-20 (previously always-expanded), same
-             details/summary mechanics as the Jargon index / How this works
-             below — defaults OPEN so the existing "Open the Wastage & Par-Level
-             Tracker ↓" cause links (ing-parlevel) land on a ready-to-use tool
-             exactly as before. id stays on the outer .csc-box, not the
-             <details>, so the quick-nav's existing querySelectorAll('details:not([open])')
-             call already finds and opens this on click with no JS change needed. -->
-        <div class="csc-box" id="csc-wastage-tracker">
-          <details class="csc-collapsible" open>
-            <summary class="csc-collapsible-summary"><h2 style="display:inline-flex;align-items:center;gap:8px;font-size:1.3rem;">Wastage &amp; Par-Level Tracker</h2></summary>
+        <!-- ============ WASTAGE TOOLS (Daily Wastage Log + Wastage & Par-Level Tracker) ============ -->
+        <!-- Merged into one collapsible + two-tab layout 2026-09-21 (previously
+             two always-expanded boxes stacked). Collapsible now defaults
+             CLOSED. Tab-switching only ever toggles the `hidden` attribute on
+             .csc-wastage-panel — neither panel's DOM (rows, typed values) is
+             ever destroyed or re-created by switching tabs or by collapsing
+             the box, so nothing entered is lost except via each panel's own
+             explicit Reset button. csc-wastage-log / csc-wastage-tracker keep
+             their exact ids from before (now on the tab PANELS, not on two
+             separate top-level boxes) specifically so every existing cause
+             link and quick-nav button that points at those ids keeps working
+             unchanged \u2014 see revealSection()/setWastageTab() in the JS, which
+             both open this details AND switch to the right tab before the
+             browser's own anchor-jump scroll happens. -->
+        <div class="csc-box" id="csc-wastage-tools">
+          <details class="csc-collapsible">
+            <summary class="csc-collapsible-summary"><h2 style="display:inline-flex;align-items:center;gap:8px;font-size:1.3rem;">Wastage tools</h2></summary>
             <div class="csc-collapsible-body">
-              <p class="structure-note">A periodic reconciliation, not an event log — log the Daily Wastage Log above shift to shift, then come back here every week or two: count opening stock, purchases, and closing stock for a set period and this works out how much you actually consumed, how much of that was wastage (if you also enter an expected usage), and a suggested par level so you can order to a number instead of a guess. Nothing here is saved either — close the tab and it's gone.</p>
-              <div class="csc-wastage-controls">
-                <label>Period length <span class="toggle-hint">days</span> <input type="number" id="csc-wastage-period-days" min="1" step="1" value="7"></label>
-                <label>Supplier lead time <span class="toggle-hint">days</span><span class="tooltip-icon" data-tooltip="How many days between placing an order with your supplier and it actually arriving. Feeds the suggested par level below, alongside your average daily usage.">?</span> <input type="number" id="csc-wastage-lead-time" min="0" step="1" value="2"></label>
-                <label>Safety buffer <span class="toggle-hint">days</span><span class="tooltip-icon" data-tooltip="Extra days of stock on top of lead time, in case a delivery runs late or a day sells more than usual. Bigger for ingredients you really can't run out of; smaller for anything with a longer shelf life.">?</span> <input type="number" id="csc-wastage-safety-buffer" min="0" step="1" value="1"></label>
+              <div class="menu-tabs csc-wastage-tabs no-print" role="tablist" aria-label="Wastage tools">
+                <button type="button" class="btn btn-secondary menu-tab-btn is-active" data-wastage-tab="log" role="tab" aria-selected="true">Daily Wastage Log</button>
+                <button type="button" class="btn btn-secondary menu-tab-btn" data-wastage-tab="tracker" role="tab" aria-selected="false">Wastage &amp; Par-Level Tracker</button>
               </div>
-              <div class="table-scroll">
-                <table class="menu-table csc-wastage-table">
-                  <caption class="sr-only">Wastage and par-level tracker — enter stock counts per ingredient to see consumption, wastage, and a suggested order quantity</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Ingredient</th>
-                      <th scope="col">Unit</th>
-                      <th scope="col">Opening stock</th>
-                      <th scope="col">Purchased</th>
-                      <th scope="col">Closing (counted)</th>
-                      <th scope="col">Expected usage <span class="toggle-hint">optional</span><span class="tooltip-icon" data-tooltip="What you'd expect to have used based on sales or the recipe, if you know it. Leave blank to just see how much was consumed, without a wastage figure attached.">?</span></th>
-                      <th scope="col" class="auto-col">Consumed<span class="tooltip-icon tooltip-below" data-tooltip="Opening stock + purchased − closing (counted). This includes everything that left the shelf — sold, wasted, comped, or stolen — not wastage on its own.">?</span></th>
-                      <th scope="col" class="auto-col">Wastage<span class="tooltip-icon tooltip-below" data-tooltip="Consumed minus your expected usage. Only shows once you've entered an expected usage for that row — otherwise there's nothing to compare consumption against.">?</span></th>
-                      <th scope="col" class="auto-col">Wastage %</th>
-                      <th scope="col" class="auto-col">Avg / day</th>
-                      <th scope="col" class="auto-col">Suggested par<span class="tooltip-icon tooltip-below" data-tooltip="Average daily usage × (lead time + safety buffer). A target stock-on-hand number — order up to this instead of guessing.">?</span></th>
-                      <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
-                    </tr>
-                  </thead>
-                  <tbody id="csc-wastage-rows"></tbody>
-                </table>
+
+              <div id="csc-wastage-log" class="csc-wastage-panel" role="tabpanel">
+                <p class="structure-note">Modeled on a real kitchen SOP (document code SOP-KIT-WS01) — log every wastage event as it happens, with a reason code, so you know not just how much you're losing but why. Complements the Par-Level Tracker (switch tabs above) rather than replacing it: log here as things happen; reconcile total stock movement there every week or two. Nothing is saved — use "Save this log as PDF" below, or the page's own Save as PDF at the top, for a record.</p>
+
+                <div class="csc-wastage-controls">
+                  <label>Outlet / restaurant <input type="text" id="csc-wl-outlet" placeholder="e.g. Kedai Makan Aminah"></label>
+                  <label>Date <input type="date" id="csc-wl-date"></label>
+                  <label>Shift <select id="csc-wl-shift">
+                    <option value="">Select shift</option>
+                    <option value="morning">Morning</option>
+                    <option value="afternoon">Afternoon</option>
+                    <option value="night">Night</option>
+                  </select></label>
+                  <label>Form ref <span class="tooltip-icon" data-tooltip="Auto-fills from the date above, using the same WS-YYYYMMDD reference scheme the source SOP uses.">?</span> <output id="csc-wl-form-ref">WS—</output></label>
+                </div>
+                <div class="csc-wastage-controls">
+                  <label>Head chef / kitchen manager <input type="text" id="csc-wl-head-chef" placeholder="Name"></label>
+                  <label>Staff on duty <input type="text" id="csc-wl-staff" placeholder="Name"></label>
+                </div>
+
+                <p class="csc-wl-legend" id="csc-wl-legend" aria-label="Reason codes reference"></p>
+
+                <div class="table-scroll">
+                  <table class="menu-table csc-wastage-table">
+                    <caption class="sr-only">Daily wastage event log — one row per wastage event, with an estimated cost and a reason code</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Time</th>
+                        <th scope="col">Item</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Qty / weight</th>
+                        <th scope="col">Est. cost (RM)</th>
+                        <th scope="col">Reason</th>
+                        <th scope="col">Notes / corrective action</th>
+                        <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+                      </tr>
+                    </thead>
+                    <tbody id="csc-wl-rows"></tbody>
+                  </table>
+                </div>
+                <div class="calc-actions no-print">
+                  <button type="button" id="csc-wl-add-row" class="btn btn-primary">+ Add entry</button>
+                  <button type="button" id="csc-wl-reset" class="btn btn-secondary">Reset log</button>
+                  <button type="button" id="csc-wl-print" class="btn btn-secondary">Save this log as PDF</button>
+                </div>
+
+                <div class="csc-wl-signoff">
+                  <p><strong>Daily total: <span id="csc-wl-total">RM 0.00</span></strong></p>
+                  <div class="csc-wastage-controls">
+                    <label>Prepared by <input type="text" id="csc-wl-prepared-by" placeholder="Kitchen staff"></label>
+                    <label>Confirmed by <input type="text" id="csc-wl-confirmed-by" placeholder="Head chef"></label>
+                    <label>Reviewed by <input type="text" id="csc-wl-reviewed-by" placeholder="Outlet manager"></label>
+                  </div>
+                </div>
               </div>
-              <div class="calc-actions no-print">
-                <button type="button" id="csc-add-wastage-row" class="btn btn-primary">+ Add ingredient</button>
-                <button type="button" id="csc-reset-wastage" class="btn btn-secondary">Reset tracker</button>
+
+              <div id="csc-wastage-tracker" class="csc-wastage-panel" role="tabpanel" hidden>
+                <p class="structure-note">A periodic reconciliation, not an event log — log the Daily Wastage Log (switch tabs above) shift to shift, then come back here every week or two: count opening stock, purchases, and closing stock for a set period and this works out how much you actually consumed, how much of that was wastage (if you also enter an expected usage), and a suggested par level so you can order to a number instead of a guess. Nothing here is saved either — use "Save this tracker as PDF" below for a record.</p>
+                <div class="csc-wastage-controls">
+                  <label>Period length <span class="toggle-hint">days</span> <input type="number" id="csc-wastage-period-days" min="1" step="1" value="7"></label>
+                  <label>Supplier lead time <span class="toggle-hint">days</span><span class="tooltip-icon" data-tooltip="How many days between placing an order with your supplier and it actually arriving. Feeds the suggested par level below, alongside your average daily usage.">?</span> <input type="number" id="csc-wastage-lead-time" min="0" step="1" value="2"></label>
+                  <label>Safety buffer <span class="toggle-hint">days</span><span class="tooltip-icon" data-tooltip="Extra days of stock on top of lead time, in case a delivery runs late or a day sells more than usual. Bigger for ingredients you really can't run out of; smaller for anything with a longer shelf life.">?</span> <input type="number" id="csc-wastage-safety-buffer" min="0" step="1" value="1"></label>
+                </div>
+                <div class="table-scroll">
+                  <table class="menu-table csc-wastage-table">
+                    <caption class="sr-only">Wastage and par-level tracker — enter stock counts per ingredient to see consumption, wastage, and a suggested order quantity</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Ingredient</th>
+                        <th scope="col">Unit</th>
+                        <th scope="col">Opening stock</th>
+                        <th scope="col">Purchased</th>
+                        <th scope="col">Closing (counted)</th>
+                        <th scope="col">Expected usage <span class="toggle-hint">optional</span><span class="tooltip-icon" data-tooltip="What you'd expect to have used based on sales or the recipe, if you know it. Leave blank to just see how much was consumed, without a wastage figure attached.">?</span></th>
+                        <th scope="col" class="auto-col">Consumed<span class="tooltip-icon tooltip-below" data-tooltip="Opening stock + purchased − closing (counted). This includes everything that left the shelf — sold, wasted, comped, or stolen — not wastage on its own.">?</span></th>
+                        <th scope="col" class="auto-col">Wastage<span class="tooltip-icon tooltip-below" data-tooltip="Consumed minus your expected usage. Only shows once you've entered an expected usage for that row — otherwise there's nothing to compare consumption against.">?</span></th>
+                        <th scope="col" class="auto-col">Wastage %</th>
+                        <th scope="col" class="auto-col">Avg / day</th>
+                        <th scope="col" class="auto-col">Suggested par<span class="tooltip-icon tooltip-below" data-tooltip="Average daily usage × (lead time + safety buffer). A target stock-on-hand number — order up to this instead of guessing.">?</span></th>
+                        <th scope="col" class="no-print"><span class="sr-only">Remove</span></th>
+                      </tr>
+                    </thead>
+                    <tbody id="csc-wastage-rows"></tbody>
+                  </table>
+                </div>
+                <div class="calc-actions no-print">
+                  <button type="button" id="csc-add-wastage-row" class="btn btn-primary">+ Add ingredient</button>
+                  <button type="button" id="csc-reset-wastage" class="btn btn-secondary">Reset tracker</button>
+                  <button type="button" id="csc-wt-print" class="btn btn-secondary">Save this tracker as PDF</button>
+                </div>
               </div>
             </div>
           </details>
@@ -458,7 +496,7 @@
        Analysis / Interactive Costing Analysis broadcast their own computed
        cost-structure mix, which neither currently does. -->
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="cost-structure-checker-content.js?v=1" defer></script>
-  <script src="cost-structure-checker.js?v=2" defer></script>
+  <script src="cost-structure-checker-content.js?v=2" defer></script>
+  <script src="cost-structure-checker.js?v=3" defer></script>
 </body>
 </html>
