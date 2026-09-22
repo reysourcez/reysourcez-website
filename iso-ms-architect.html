@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reysourcez Enterprise — ISO Management System Architect</title>
+<meta name="description" content="Answer a few questions per ISO management-system clause and get a structured management system summary you can print or save as PDF. Covers ISO 9001, 14001, 45001 and 27001 on ISO's shared Harmonized Structure. Nothing is saved automatically.">
+<link rel="icon" href="favicon.ico" sizes="32x32">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<!-- Real stylesheet — same situation as project-plan-architect.html: 404s in this
+     standalone preview (sandbox has no access to the live repo file), which is why
+     the fallback block below exists. Delete the fallback block once this file lives
+     in the repo. -->
+<link rel="stylesheet" href="styles.css?v=15">
+<!-- Per SITE_CONFIG_STANDARD.md: these two are the first script tags on any NEW
+     page, before this page's own script. site-config.js supplies isoStandards
+     (falls back to the literal object below if the tag is missing); nav-config.js
+     renders the .nav-dropdown-menu below, so it's left empty here rather than
+     hand-listed the way project-plan-architect.html still does (that page just
+     hasn't been retrofitted yet — this is a new page, so it gets the standard from
+     day one). -->
+<script src="site-config.js?v=1" defer></script>
+<script src="nav-config.js?v=1" defer></script>
+<style>
+/* ============================================================
+   Fallback tokens/components — identical to the block
+   project-plan-architect.html uses, for the same reason (preview
+   sandbox can't load the real styles.css). Delete this whole
+   block once this file is in the repo, EXCEPT the .isoa-* rules
+   further down — those are new and belong in this page's own
+   block (or promoted to styles.css centrally — see
+   ISO_MS_ARCHITECT_STANDARD.md's note on sharing with .ppa-*).
+   ============================================================ */
+:root {
+  --ink: #16261F; --text: #1C2B24; --muted: #5C6D64; --paper: #EEF0EA; --surface: #FFFFFF;
+  --accent: #1F6F5C; --accent-dark: #195A4A; --accent-soft: #DCEAE4; --line: #D8DCD3;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  --max-width: 1080px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--paper); color: var(--text); font-family: var(--font-body); font-size: 17px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+h1,h2,h3 { font-family: var(--font-display); color: var(--ink); line-height: 1.15; margin: 0 0 .5em; }
+p { margin: 0 0 1em; }
+a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.skip-link { position:absolute; left:-9999px; top:0; background:var(--ink); color:#fff; padding:12px 20px; z-index:100; text-decoration:none; }
+.skip-link:focus { left:12px; top:12px; }
+.wrap { max-width: var(--max-width); margin: 0 auto; padding: 0 24px; }
+.site-header { border-bottom: 1px solid var(--line); background: var(--paper); position: sticky; top: 0; z-index: 10; }
+.nav { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; padding:18px 24px; max-width:var(--max-width); margin:0 auto; }
+.brand { display:flex; align-items:center; gap:10px; font-family:var(--font-display); font-weight:700; font-size:1.25rem; color:var(--ink); text-decoration:none; }
+.nav-links { display:flex; gap:28px; list-style:none; margin:0; padding:0; flex-wrap:wrap; }
+.nav-links a { color:var(--ink); text-decoration:none; font-weight:500; font-size:.95rem; padding-bottom:4px; border-bottom:2px solid transparent; }
+.nav-links a:hover, .nav-links a[aria-current="page"] { border-bottom-color: var(--accent); }
+.nav-dropdown { position: relative; }
+.nav-dropdown-toggle { background:none; border:none; font-family:var(--font-body); color:var(--ink); font-weight:500; font-size:.95rem; padding:0 0 4px; border-bottom:2px solid transparent; cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+.nav-dropdown-toggle:hover, .nav-dropdown-toggle.active, .nav-dropdown.is-open .nav-dropdown-toggle { border-bottom-color: var(--accent); }
+.nav-dropdown-caret { width:6px; height:6px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(45deg); margin-top:-3px; transition:transform .15s ease; flex-shrink:0; }
+.nav-dropdown:hover .nav-dropdown-caret, .nav-dropdown.is-open .nav-dropdown-caret { transform:rotate(-135deg); margin-top:3px; }
+.nav-dropdown-menu { position:absolute; top:100%; left:0; margin:10px 0 0; padding:8px; min-width:210px; list-style:none; background:var(--surface); border:1px solid var(--line); border-radius:10px; box-shadow:0 10px 28px rgba(0,0,0,.14); display:none; z-index:20; }
+.nav-dropdown:hover .nav-dropdown-menu, .nav-dropdown.is-open .nav-dropdown-menu { display:block; }
+.nav-dropdown-menu li { margin:0; }
+.nav-dropdown-menu a { display:block; padding:9px 12px; border-radius:6px; color:var(--text); text-decoration:none; font-size:.9rem; font-weight:500; border-bottom:none; }
+.nav-dropdown-menu a:hover, .nav-dropdown-menu a[aria-current="page"] { background:var(--paper); color:var(--accent-dark); }
+@media (max-width: 800px) {
+  .nav { justify-content:center; text-align:center; }
+  .nav-links { justify-content:center; width:100%; }
+  .nav-dropdown { width:100%; }
+  .nav-dropdown-toggle { justify-content:center; width:100%; }
+  .nav-dropdown-menu { position:static; width:100%; margin-top:4px; box-shadow:none; border:none; }
+}
+.btn { display:inline-block; padding:13px 26px; border-radius:4px; text-decoration:none; font-weight:600; font-size:.95rem; border:2px solid transparent; transition:transform .15s ease, background .15s ease, color .15s ease; cursor: pointer; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+.btn-secondary { border-color: var(--ink); color: var(--ink); background:transparent; }
+.btn-secondary:hover { background: var(--ink); color: #fff; }
+.btn[disabled], .btn[disabled]:hover { opacity:.45; cursor:not-allowed; transform:none; background:transparent; color:var(--muted); border-color:var(--line); }
+.link-btn { background:none; border:none; color:var(--accent-dark); font-family:var(--font-body); font-size:.88rem; font-weight:600; cursor:pointer; padding:4px 0; }
+.calc-intro { padding: 2.25rem 0 1.5rem; }
+.eyebrow { display:inline-block; font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; color:var(--accent); font-weight:600; margin-bottom:14px; }
+.calc-intro h1 { font-size: clamp(1.8rem, 3.6vw, 2.6rem); max-width: 24ch; }
+.calc-intro .lead { font-size: 1.1rem; color: var(--muted); max-width: 65ch; margin: 0; }
+.tooltip-icon { display:inline-block; width:16px; height:16px; border-radius:50%; background:var(--muted); color:#fff; font-size:.65rem; font-weight:700; line-height:1; text-align:center; padding-top:2px; cursor:help; margin-left:4px; position:relative; }
+.tooltip-icon:hover::after { content:attr(data-tooltip); position:absolute; bottom:125%; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:8px 10px; border-radius:6px; font-size:.8rem; font-weight:400; white-space:normal; width:max-content; max-width:240px; text-align:left; line-height:1.4; z-index:1000; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+.tooltip-icon:hover::before { content:""; position:absolute; bottom:118%; left:50%; transform:translateX(-50%); border:5px solid transparent; border-top-color:var(--ink); z-index:1000; }
+@media (max-width: 600px) { .tooltip-icon { display:none; } }
+.site-footer { background: var(--ink); color: #C9D2CC; padding: 56px 0 32px; }
+.footer-bottom { padding: 24px 0; font-size: .85rem; color: #8B978F; text-align: center; }
+
+/* ============================================================
+   PAGE-SPECIFIC — prefixed isoa- (ISO [Management System]
+   Architect) so it can't collide with another tool's classes,
+   same reasoning ppa- and csc- already use elsewhere. This is
+   the SECOND near-identical tabbed-wizard-with-repeat-rows
+   pattern on the site (project-plan-architect.html's .ppa-* was
+   the first) — worth centralizing into one shared class family
+   in styles.css now that there are two instances, rather than
+   letting a third copy appear later. Flagged in
+   ISO_MS_ARCHITECT_STANDARD.md rather than done here, since
+   centralizing would mean also touching project-plan-architect.html
+   and that wasn't asked for in this pass.
+   ============================================================ */
+.isoa-panel{padding:2rem 0;}
+.isoa-progress{font-size:.85rem;color:var(--muted);margin-top:.35rem;}
+.isoa-savebar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;padding:.75rem 0;}
+.isoa-save-status{font-size:.8rem;color:var(--muted);}
+#isoa-resume-banner{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:.75rem 1rem;margin-top:1rem;}
+.isoa-ai-btn{font-size:.82rem;}
+.isoa-tabs{display:flex;flex-wrap:wrap;gap:.4rem;padding:1rem 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--paper);z-index:5;}
+.isoa-tab{font:inherit;font-size:.85rem;font-weight:600;padding:.5rem .85rem;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer;}
+.isoa-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.isoa-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:1.5rem;margin-top:1.25rem;}
+.isoa-field{display:block;margin-bottom:1rem;}
+.isoa-field .label-text{display:block;font-size:.85rem;font-weight:600;margin-bottom:.35rem;}
+.isoa-field input[type=text],.isoa-field input[type=date],.isoa-field select,.isoa-field textarea{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
+.isoa-field textarea{min-height:5rem;resize:vertical;}
+.isoa-std-tag{font-weight:400;color:var(--muted);font-size:.78rem;}
+fieldset.isoa-fieldset{border:none;padding:0;margin:.5rem 0 1rem;}
+fieldset.isoa-fieldset legend{font-size:.85rem;font-weight:600;margin-bottom:.35rem;padding:0;}
+.isoa-std-mode{display:flex;gap:1.25rem;flex-wrap:wrap;}
+.isoa-std-mode label{display:flex;align-items:center;gap:.4rem;font-weight:600;cursor:pointer;}
+.isoa-std-checks{display:flex;flex-wrap:wrap;gap:1rem;}
+.isoa-std-checks label{display:flex;align-items:center;gap:.4rem;font-weight:500;cursor:pointer;}
+.isoa-note{font-size:.85rem;color:var(--muted);background:var(--paper);border-left:3px solid var(--accent);border-radius:6px;padding:.6rem .8rem;margin:.75rem 0;}
+.isoa-repeat-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;border-top:1px dashed var(--line);padding-top:.85rem;margin-top:.85rem;}
+.isoa-repeat-row:first-of-type{border-top:none;padding-top:0;margin-top:0;}
+.isoa-repeat-row>div{flex:1 1 140px;}
+.isoa-repeat-row select{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
+.isoa-remove-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:.4rem .5rem;line-height:1;}
+.isoa-add-btn{margin-top:.75rem;}
+.isoa-soa-card{border:1px dashed var(--line);border-radius:10px;padding:1.1rem;margin-top:1rem;background:var(--paper);}
+.isoa-doc h2{font-size:1.15rem;border-bottom:2px solid var(--accent);padding-bottom:.3rem;margin-top:1.75rem;}
+.isoa-doc table{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.9rem;}
+.isoa-doc th,.isoa-doc td{border:1px solid var(--line);padding:.5rem;text-align:left;vertical-align:top;}
+.isoa-doc ul{margin:.4rem 0;padding-left:1.2rem;}
+.isoa-empty{color:var(--muted);font-style:italic;}
+@media print{
+  .no-print{display:none!important;}
+  body{background:#fff;}
+  .isoa-panel{padding:0;}
+}
+</style>
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+
+<header class="site-header">
+<nav class="nav" aria-label="Primary">
+<a href="index.html" class="brand">
+<svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+<text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+</svg>
+Reysourcez Enterprise
+</a>
+<ul class="nav-links">
+<li><a href="index.html">Home</a></li>
+<li><a href="about.html">About</a></li>
+<li><a href="services.html">Services</a></li>
+<li class="nav-dropdown">
+<button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+<ul class="nav-dropdown-menu"><!-- populated by nav-config.js --></ul>
+</li>
+<li><a href="contact.html">Contact</a></li>
+</ul>
+</nav>
+</header>
+
+<main id="main">
+<section class="calc-intro">
+<div class="wrap">
+<span class="eyebrow">Free tool · nothing saved automatically</span>
+<h1>ISO Management System Architect</h1>
+<p class="lead">Work through Context, Leadership, Planning, Support, Operation, Performance Evaluation and Improvement, and get a structured management system summary you can print or save as PDF. Built on ISO's Harmonized Structure — the shared clause framework behind 9001, 14001, 45001, 27001 and more — not a generic form.</p>
+<p class="isoa-progress" id="isoa-progress"></p>
+</div>
+</section>
+
+<section class="isoa-panel">
+<div class="wrap">
+
+<div id="isoa-resume-banner" class="no-print" hidden>
+<span id="isoa-resume-text"></span>
+<button type="button" class="btn btn-secondary" id="isoa-resume-btn">Resume</button>
+<button type="button" class="link-btn" id="isoa-discard-btn">Discard</button>
+</div>
+<div class="isoa-savebar no-print">
+<button type="button" class="btn btn-secondary" id="isoa-save-btn">💾 Save progress</button>
+<button type="button" class="btn btn-secondary" id="isoa-export-btn">⬇ Export backup (.json)</button>
+<button type="button" class="btn btn-secondary" id="isoa-import-btn">⬆ Load backup</button>
+<input type="file" id="isoa-import-file" accept="application/json" hidden>
+<span class="isoa-save-status" id="isoa-save-status"></span>
+</div>
+
+<div class="isoa-tabs no-print" id="isoa-tabs">
+<button type="button" class="isoa-tab active" data-step="standards">Standard(s)</button>
+<button type="button" class="isoa-tab" data-step="context">Context</button>
+<button type="button" class="isoa-tab" data-step="leadership">Leadership</button>
+<button type="button" class="isoa-tab" data-step="planning">Planning</button>
+<button type="button" class="isoa-tab" data-step="support">Support</button>
+<button type="button" class="isoa-tab" data-step="operation">Operation</button>
+<button type="button" class="isoa-tab" data-step="performance">Performance</button>
+<button type="button" class="isoa-tab" data-step="improvement">Improvement</button>
+<button type="button" class="isoa-tab" data-step="document">📄 Document</button>
+</div>
+
+<!-- ============ STANDARD(S) ============ -->
+<div class="isoa-card" id="step-standards" data-panel>
+<h2>Which standard(s) is this for?</h2>
+<label class="isoa-field"><span class="label-text">Organization / site name</span><input type="text" id="org-name"></label>
+<fieldset class="isoa-fieldset">
+<legend>How many standards?</legend>
+<div class="isoa-std-mode">
+<label><input type="radio" name="std-mode" value="single" checked> One standard</label>
+<label><input type="radio" name="std-mode" value="multi"> Integrated (multiple standards)</label>
+</div>
+</fieldset>
+<div id="std-single-wrap">
+<label class="isoa-field"><span class="label-text">Standard</span>
+<select id="std-single">
+<option value="">— Select —</option>
+<option value="9001">ISO 9001 — Quality</option>
+<option value="14001">ISO 14001 — Environmental</option>
+<option value="45001">ISO 45001 — Occupational Health &amp; Safety</option>
+<option value="27001">ISO/IEC 27001 — Information Security</option>
+</select>
+</label>
+</div>
+<div id="std-multi-wrap" hidden>
+<div class="isoa-std-checks">
+<label><input type="checkbox" class="std-checkbox" value="9001"> ISO 9001 — Quality</label>
+<label><input type="checkbox" class="std-checkbox" value="14001"> ISO 14001 — Environmental</label>
+<label><input type="checkbox" class="std-checkbox" value="45001"> ISO 45001 — OH&amp;S</label>
+<label><input type="checkbox" class="std-checkbox" value="27001"> ISO/IEC 27001 — Information Security</label>
+</div>
+</div>
+<p class="isoa-note">Clauses 4, 5, 6, 7, 9 and 10 stay the same shape whichever standard(s) you pick — only the Policy field and Clause 8 (Operation) change per standard. Switch modes any time; answers carry over where the fields match.</p>
+</div>
+
+<!-- ============ CONTEXT (Clause 4) ============ -->
+<div class="isoa-card" id="step-context" data-panel hidden>
+<h2>4. Context of the Organization</h2>
+<label class="isoa-field"><span class="label-text">Context summary<span class="tooltip-icon" data-tooltip="A short overview of who the organization is and the environment it operates in.">?</span></span><textarea id="ctx-summary"></textarea></label>
+<button type="button" class="btn btn-secondary isoa-ai-btn no-print" data-ai-kind="context-summary" data-ai-target="ctx-summary" style="margin:-.6rem 0 1rem;">✨ Ask AI to draft this</button>
+<label class="isoa-field"><span class="label-text">4.1 Internal issues<span class="tooltip-icon" data-tooltip="Culture, knowledge, performance, governance — things inside the organization that affect its ability to achieve its intended results.">?</span></span><textarea id="ctx-internal"></textarea></label>
+<label class="isoa-field"><span class="label-text">4.1 External issues<span class="tooltip-icon" data-tooltip="Legal, market, technological, competitive, social and economic factors outside the organization.">?</span></span><textarea id="ctx-external"></textarea></label>
+<div class="isoa-field">
+<span class="label-text">4.1 Is climate change a relevant issue?<span class="tooltip-icon" data-tooltip="Added to the Harmonized Structure in Feb 2024 — clause 4.1 now explicitly requires organizations to determine this.">?</span></span>
+<select id="ctx-climate-status" style="max-width:220px;">
+<option>Not yet assessed</option>
+<option>No</option>
+<option>Yes</option>
+</select>
+</div>
+<label class="isoa-field"><span class="label-text">Climate change notes</span><textarea id="ctx-climate-notes"></textarea></label>
+<h3 style="font-size:1rem;">4.2 Interested parties</h3>
+<div id="ctx-parties"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="ctx-parties" data-tpl="interestedParty">+ Add interested party</button>
+<label class="isoa-field" style="margin-top:1.5rem;"><span class="label-text">4.3 Scope of the management system</span><textarea id="ctx-scope"></textarea></label>
+<label class="isoa-field"><span class="label-text">Exclusions &amp; justification</span><textarea id="ctx-exclusions"></textarea></label>
+</div>
+
+<!-- ============ LEADERSHIP (Clause 5) ============ -->
+<div class="isoa-card" id="step-leadership" data-panel hidden>
+<h2>5. Leadership</h2>
+<label class="isoa-field"><span class="label-text">5.1 Top management commitment</span><textarea id="lead-commitment"></textarea></label>
+<h3 style="font-size:1rem;">5.2 Policy</h3>
+<div id="lead-policy-container"></div>
+<h3 style="font-size:1rem;margin-top:1.5rem;">5.3 Roles &amp; responsibilities</h3>
+<div id="lead-roles"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="lead-roles" data-tpl="role">+ Add role</button>
+</div>
+
+<!-- ============ PLANNING (Clause 6) ============ -->
+<div class="isoa-card" id="step-planning" data-panel hidden>
+<h2>6. Planning</h2>
+<h3 style="font-size:1rem;">6.1 Risks &amp; opportunities</h3>
+<div id="plan-risks"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="plan-risks" data-tpl="risk">+ Add risk / opportunity</button>
+<button type="button" class="btn btn-secondary isoa-ai-btn no-print" data-ai-kind="suggest-risks-opportunities" style="margin-left:.4rem;">✨ Suggest starter risks &amp; opportunities</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">6.2 Objectives</h3>
+<div id="plan-objectives"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="plan-objectives" data-tpl="objective">+ Add objective</button>
+</div>
+
+<!-- ============ SUPPORT (Clause 7) ============ -->
+<div class="isoa-card" id="step-support" data-panel hidden>
+<h2>7. Support</h2>
+<label class="isoa-field"><span class="label-text">7.1 Resources<span class="tooltip-icon" data-tooltip="People, infrastructure, work environment, monitoring/measuring equipment, and organizational knowledge.">?</span></span><textarea id="sup-resources"></textarea></label>
+<label class="isoa-field"><span class="label-text">7.2 Competence</span><textarea id="sup-competence"></textarea></label>
+<label class="isoa-field"><span class="label-text">7.3 Awareness</span><textarea id="sup-awareness"></textarea></label>
+<h3 style="font-size:1rem;">7.4 Communication</h3>
+<div id="sup-comms"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="sup-comms" data-tpl="comm">+ Add row</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">7.5 Documented information</h3>
+<div id="sup-docs"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="sup-docs" data-tpl="docInfo">+ Add document</button>
+</div>
+
+<!-- ============ OPERATION (Clause 8) ============ -->
+<div class="isoa-card" id="step-operation" data-panel hidden>
+<h2>8. Operation</h2>
+<label class="isoa-field"><span class="label-text">8.1 Operational planning &amp; control — general approach<span class="tooltip-icon" data-tooltip="Common to every standard: how you plan, implement and control the processes needed to meet requirements, and keep evidence that it happened.">?</span></span><textarea id="op8-general"></textarea></label>
+<p class="isoa-note">The fields below depend on which standard(s) you picked on the first tab — this is where they actually diverge.</p>
+<div id="op-clause8-container"></div>
+</div>
+
+<!-- ============ PERFORMANCE EVALUATION (Clause 9) ============ -->
+<div class="isoa-card" id="step-performance" data-panel hidden>
+<h2>9. Performance Evaluation</h2>
+<h3 style="font-size:1rem;">9.1 Monitoring &amp; measurement</h3>
+<div id="perf-monitor"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="perf-monitor" data-tpl="monitor">+ Add row</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">9.2 Internal audits<span class="tooltip-icon" data-tooltip="Audits your own organization runs on itself — required by clause 9.2. Auditors must be independent of the area they're auditing.">?</span></h3>
+<div id="perf-audits-internal"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="perf-audits-internal" data-tpl="auditInternal">+ Add internal audit</button>
+<h3 style="font-size:1rem;margin-top:1.5rem;">Certification &amp; external audits<span class="tooltip-icon" data-tooltip="Not a clause 9 requirement itself, but the practical companion to it — your certification body's Stage 1/2, surveillance and recertification audits, or audits of suppliers.">?</span></h3>
+<div id="perf-audits-external"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="perf-audits-external" data-tpl="auditExternal">+ Add external audit</button>
+<label class="isoa-field" style="margin-top:1.5rem;"><span class="label-text">9.3 Management review<span class="tooltip-icon" data-tooltip="Inputs typically considered: audit results, customer feedback, process performance, nonconformities, and opportunities for improvement.">?</span></span><textarea id="perf-mgmt-review"></textarea></label>
+</div>
+
+<!-- ============ IMPROVEMENT (Clause 10) ============ -->
+<div class="isoa-card" id="step-improvement" data-panel hidden>
+<h2>10. Improvement</h2>
+<label class="isoa-field"><span class="label-text">Nonconformity &amp; corrective action process</span><textarea id="imp-nc-process"></textarea></label>
+<h3 style="font-size:1rem;">Nonconformity log</h3>
+<div id="imp-nc-log"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="imp-nc-log" data-tpl="nc">+ Add nonconformity</button>
+<label class="isoa-field" style="margin-top:1.5rem;"><span class="label-text">Continual improvement approach</span><textarea id="imp-continual"></textarea></label>
+</div>
+
+<!-- ============ DOCUMENT ============ -->
+<div class="isoa-card" id="step-document" data-panel hidden>
+<div class="no-print" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
+<span class="lead" style="margin:0;font-size:.9rem;">Compiled from every tab above — nothing here is stored, only assembled from what's currently on screen.</span>
+<button type="button" class="btn btn-secondary" id="save-pdf-btn">Save as PDF</button>
+</div>
+<div class="isoa-doc" id="isoa-doc"><!-- populated by renderDocument() --></div>
+</div>
+
+</div>
+</section>
+</main>
+
+<footer class="site-footer no-print">
+<div class="wrap">
+<div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+</div>
+</footer>
+
+<script src="nav-dropdown.js?v=1" defer></script>
+<!--
+  ============================================================
+  v0.1 — PREVIEW / CONCEPT BUILD, same status as
+  project-plan-architect.html's own v0.3: inline for easy
+  previewing; a real drop-in version would split the script below
+  into iso-ms-architect.js, matching the site's pattern.
+
+  Design choices worth knowing about (full detail in
+  ISO_MS_ARCHITECT_STANDARD.md):
+  - Standard-selector supports BOTH modes at once (single dropdown
+    OR multi checkboxes) rather than picking one — both feed the
+    same getSelectedStandards() array, so nothing downstream cares
+    which mode was used.
+  - Clause 8 renders one field per DE-DUPLICATED topic across
+    selected standards (e.g. picking both 14001 and 45001 shows
+    "Emergency preparedness & response" once, tagged with both
+    codes, not twice).
+  - Annex A (27001) intentionally stops at the 4 theme names
+    rather than listing all 93 controls — those control titles are
+    ISO/IEC's own copyrighted text; work the actual list from the
+    standard itself.
+  - Audit log is split into Internal (clause 9.2, required) and
+    Certification & external (not itself a clause 9 requirement,
+    but the practical companion most businesses preparing for
+    certification also want to track).
+  ============================================================
+-->
+<script>
+const RZ_ISOA_CONFIG = {
+  totalCategoriesPlanned: 7, // Context, Leadership, Planning, Support, Operation, Performance Evaluation, Improvement
+  storageKey: "rz_isoa_draft_v1",
+  aiAssistEndpoint: "", // paste your deployed iso-assist-worker.js URL here to turn on the ✨ buttons — blank = they explain themselves instead of failing silently
+};
+
+// Same "config, not code" pattern as guideRatios in site-config.js — see
+// SITE_CONFIG_STANDARD.md and ISO_MS_ARCHITECT_STANDARD.md. Adding a new
+// standard later (22301, 50001...) is a new entry here, not new code.
+// Annex A control TITLES are ISO/IEC's own copyrighted text, so this
+// deliberately stops at the 4 theme names — see the SoA card in
+// renderOperationTab() below.
+const ISO_STANDARDS = (typeof RZ_SITE_CONFIG !== 'undefined' && RZ_SITE_CONFIG.isoStandards) || {
+  '9001': {
+    name: 'ISO 9001 — Quality', policyLabel: 'Quality Policy',
+    clause8: ['Requirements for products & services','Design & development','Control of externally provided processes','Production & service provision','Release of products & services','Control of nonconforming outputs'],
+  },
+  '14001': {
+    name: 'ISO 14001 — Environmental', policyLabel: 'Environmental Policy',
+    clause8: ['Emergency preparedness & response'],
+  },
+  '45001': {
+    name: 'ISO 45001 — Occupational Health & Safety', policyLabel: 'OH&S Policy',
+    clause8: ['Eliminating hazards & reducing OH&S risk','Management of change','Procurement','Emergency preparedness & response'],
+  },
+  '27001': {
+    name: 'ISO/IEC 27001 — Information Security', policyLabel: 'Information Security Policy',
+    clause8: ['Information security risk assessment','Information security risk treatment'],
+  },
+};
+
+let rzInitialized = false;
+function init() {
+  if (rzInitialized) return;
+  rzInitialized = true;
+
+  const templates = {
+    interestedParty: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Interested party / group"></div><div><input type="text" placeholder="Needs &amp; expectations"></div><div><select><option>Not assessed</option><option>No</option><option>Yes</option></select><div class="label-text" style="font-weight:400;">Climate-related requirement?</div></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    role: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Role"></div><div><input type="text" placeholder="Responsibility"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    risk: () => `<div class="isoa-repeat-row">
+      <div><input type="text" placeholder="Risk or opportunity description"></div>
+      <div><select><option>Low</option><option>Medium</option><option>High</option></select><div class="label-text" style="font-weight:400;">Likelihood</div></div>
+      <div><select><option>Low</option><option>Medium</option><option>High</option></select><div class="label-text" style="font-weight:400;">Impact</div></div>
+      <div><select><option>Avoid</option><option>Mitigate</option><option>Transfer</option><option>Accept</option><option>Pursue / Enhance</option></select><div class="label-text" style="font-weight:400;">Response</div></div>
+      <div><input type="text" placeholder="Owner"></div>
+      <button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button>
+    </div>`,
+    objective: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Objective"></div><div><input type="text" placeholder="Metric / target"></div><div><input type="text" placeholder="Responsible"></div><div><input type="date"></div><div><input type="text" placeholder="Resources needed"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    comm: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Audience"></div><div><input type="text" placeholder="Info needed"></div><div><input type="text" placeholder="Frequency"></div><div><input type="text" placeholder="Channel"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    docInfo: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Document name"></div><div><select><option>Digital</option><option>Paper</option><option>Both</option></select></div><div><input type="text" placeholder="Owner"></div><div><input type="text" placeholder="Review frequency"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    monitor: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="What to measure"></div><div><input type="text" placeholder="Method"></div><div><input type="text" placeholder="Frequency"></div><div><input type="text" placeholder="Responsible"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    auditInternal: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Area / process audited"></div><div><input type="text" placeholder="Frequency"></div><div><input type="text" placeholder="Auditor"></div><div><input type="date"></div><div><input type="text" placeholder="Findings / status"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    auditExternal: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Certification body / auditor"></div><div><select><option>Stage 1</option><option>Stage 2 (Initial certification)</option><option>Surveillance</option><option>Recertification</option><option>Supplier / second-party</option><option>Other</option></select></div><div><input type="date"></div><div><input type="text" placeholder="Outcome / status"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    nc: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Nonconformity description"></div><div><input type="text" placeholder="Root cause"></div><div><input type="text" placeholder="Corrective action"></div><div><select><option>Open</option><option>In progress</option><option>Closed</option></select></div><div><input type="text" placeholder="Owner"></div><div><input type="date"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+  };
+
+  function addRow(containerId, tpl, ph, prefill) {
+    const container = document.getElementById(containerId);
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = templates[tpl](ph);
+    const row = wrapper.firstElementChild;
+    row.querySelector('.isoa-remove-btn').addEventListener('click', () => row.remove());
+    if (prefill && prefill.length) {
+      const fields = row.querySelectorAll('input, select');
+      fields.forEach((f, i) => { if (prefill[i] !== undefined) f.value = prefill[i]; });
+    }
+    container.appendChild(row);
+    return row;
+  }
+
+  document.querySelectorAll('[data-add]').forEach(btn => {
+    btn.addEventListener('click', () => addRow(btn.dataset.add, btn.dataset.tpl, btn.dataset.ph || ''));
+  });
+
+  function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function slugify(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
+
+  function getSelectedStandards() {
+    const modeEl = document.querySelector('input[name="std-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'single';
+    if (mode === 'single') {
+      const v = val('std-single');
+      return v ? [v] : [];
+    }
+    return Array.from(document.querySelectorAll('.std-checkbox:checked')).map(cb => cb.value);
+  }
+
+  function renderPolicyFields() {
+    const selected = getSelectedStandards();
+    const container = document.getElementById('lead-policy-container');
+    const preserved = {};
+    container.querySelectorAll('textarea[data-policy-field]').forEach(el => { preserved[el.id] = el.value; });
+    if (!selected.length) {
+      container.innerHTML = '<p class="isoa-empty">Pick at least one standard on the "Standard(s)" tab first.</p>';
+      return;
+    }
+    let html = '';
+    selected.forEach(code => {
+      const std = ISO_STANDARDS[code];
+      if (!std) return;
+      const fieldId = 'policy-' + code;
+      html += `<label class="isoa-field"><span class="label-text">${escapeHtml(std.policyLabel)} <span class="isoa-std-tag">(${escapeHtml(std.name)})</span></span><textarea id="${fieldId}" data-policy-field></textarea></label>`
+        + `<button type="button" class="btn btn-secondary isoa-ai-btn no-print" data-ai-kind="policy-draft" data-ai-target="${fieldId}" data-policy-label="${escapeHtml(std.policyLabel)}" data-std-name="${escapeHtml(std.name)}" style="margin:-.6rem 0 1rem;">✨ Ask AI to draft this</button>`;
+    });
+    container.innerHTML = html;
+    Object.keys(preserved).forEach(id => { const el = document.getElementById(id); if (el && preserved[id]) el.value = preserved[id]; });
+  }
+
+  function renderOperationTab() {
+    const selected = getSelectedStandards();
+    const container = document.getElementById('op-clause8-container');
+    const preserved = {};
+    container.querySelectorAll('[data-op8-field]').forEach(el => { preserved[el.id] = el.value; });
+    if (!selected.length) {
+      container.innerHTML = '<p class="isoa-empty">Pick at least one standard on the "Standard(s)" tab first.</p>';
+      return;
+    }
+    const topicMap = new Map();
+    selected.forEach(code => {
+      const std = ISO_STANDARDS[code];
+      if (!std || !std.clause8) return;
+      std.clause8.forEach(topic => {
+        if (!topicMap.has(topic)) topicMap.set(topic, []);
+        topicMap.get(topic).push(code);
+      });
+    });
+    let html = '';
+    topicMap.forEach((codes, topic) => {
+      const fieldId = 'op8-' + slugify(topic);
+      html += `<label class="isoa-field"><span class="label-text">${escapeHtml(topic)} <span class="isoa-std-tag">(${codes.join(', ')})</span></span><textarea id="${fieldId}" data-op8-field></textarea></label>`;
+    });
+    if (selected.includes('27001')) {
+      html += `<div class="isoa-soa-card">
+        <h3 style="margin-top:0;">Annex A — Statement of Applicability</h3>
+        <p class="isoa-note">ISO/IEC 27001:2022 Annex A lists 93 controls across four themes. Work through your official Annex A control list from the standard itself for the individual controls — the fields below summarize your Statement of Applicability by theme rather than reproducing that list.</p>
+        <label class="isoa-field"><span class="label-text">Organizational controls (37) — included/excluded &amp; why</span><textarea id="soa-organizational" data-op8-field></textarea></label>
+        <label class="isoa-field"><span class="label-text">People controls (8) — included/excluded &amp; why</span><textarea id="soa-people" data-op8-field></textarea></label>
+        <label class="isoa-field"><span class="label-text">Physical controls (14) — included/excluded &amp; why</span><textarea id="soa-physical" data-op8-field></textarea></label>
+        <label class="isoa-field"><span class="label-text">Technological controls (34) — included/excluded &amp; why</span><textarea id="soa-technological" data-op8-field></textarea></label>
+      </div>`;
+    }
+    container.innerHTML = html;
+    Object.keys(preserved).forEach(id => { const el = document.getElementById(id); if (el && preserved[id]) el.value = preserved[id]; });
+  }
+
+  function toggleStdModeUI() {
+    const modeEl = document.querySelector('input[name="std-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'single';
+    document.getElementById('std-single-wrap').hidden = mode !== 'single';
+    document.getElementById('std-multi-wrap').hidden = mode !== 'multi';
+    renderPolicyFields();
+    renderOperationTab();
+    updateProgress();
+  }
+  document.querySelectorAll('input[name="std-mode"]').forEach(r => r.addEventListener('change', toggleStdModeUI));
+  document.getElementById('std-single').addEventListener('change', toggleStdModeUI);
+  document.querySelectorAll('.std-checkbox').forEach(cb => cb.addEventListener('change', () => { renderPolicyFields(); renderOperationTab(); updateProgress(); }));
+
+  // seed one empty row per repeatable section
+  addRow('ctx-parties', 'interestedParty');
+  addRow('lead-roles', 'role');
+  addRow('plan-risks', 'risk');
+  addRow('plan-objectives', 'objective');
+  addRow('sup-comms', 'comm');
+  addRow('sup-docs', 'docInfo');
+  addRow('perf-monitor', 'monitor');
+  addRow('perf-audits-internal', 'auditInternal');
+  addRow('perf-audits-external', 'auditExternal');
+  addRow('imp-nc-log', 'nc');
+  renderPolicyFields();
+  renderOperationTab();
+
+  // ---- save / resume / backup ----
+  function safeStorage(action) {
+    try { return action(); } catch (err) { return { error: err }; }
+  }
+  function clearRepeats(containerId) { document.getElementById(containerId).innerHTML = ''; }
+
+  function simpleRows(containerId) {
+    return Array.from(document.querySelectorAll('#' + containerId + ' .isoa-repeat-row')).map(r =>
+      Array.from(r.querySelectorAll('input')).map(el => el.value.trim())
+    ).filter(row => row.some(Boolean));
+  }
+  function mixedRows(containerId) {
+    return Array.from(document.querySelectorAll('#' + containerId + ' .isoa-repeat-row')).map(r =>
+      Array.from(r.querySelectorAll('input, select')).map(el => el.value)
+    ).filter(row => row.some(v => v && v.trim() !== ''));
+  }
+
+  function collectState() {
+    const fieldIds = ['org-name','ctx-summary','ctx-internal','ctx-external','ctx-climate-status','ctx-climate-notes','ctx-scope','ctx-exclusions',
+      'lead-commitment','sup-resources','sup-competence','sup-awareness',
+      'op8-general','perf-mgmt-review','imp-nc-process','imp-continual'];
+    const fields = {};
+    fieldIds.forEach(id => { fields[id] = val(id); });
+
+    const dynamic = {};
+    document.querySelectorAll('[data-op8-field], [data-policy-field]').forEach(el => { dynamic[el.id] = el.value; });
+
+    const modeEl = document.querySelector('input[name="std-mode"]:checked');
+    return {
+      savedAt: new Date().toISOString(),
+      stdMode: modeEl ? modeEl.value : 'single',
+      stdSingle: val('std-single'),
+      stdChecks: Array.from(document.querySelectorAll('.std-checkbox:checked')).map(cb => cb.value),
+      fields, dynamic,
+      repeats: {
+        'ctx-parties': mixedRows('ctx-parties'),
+        'lead-roles': simpleRows('lead-roles'),
+        'plan-risks': mixedRows('plan-risks'),
+        'plan-objectives': simpleRows('plan-objectives'),
+        'sup-comms': simpleRows('sup-comms'),
+        'sup-docs': mixedRows('sup-docs'),
+        'perf-monitor': simpleRows('perf-monitor'),
+        'perf-audits-internal': simpleRows('perf-audits-internal'),
+        'perf-audits-external': mixedRows('perf-audits-external'),
+        'imp-nc-log': mixedRows('imp-nc-log'),
+      },
+    };
+  }
+
+  function applyState(state) {
+    if (!state) return;
+    if (state.stdMode) {
+      const r = document.querySelector('input[name="std-mode"][value="' + state.stdMode + '"]');
+      if (r) r.checked = true;
+    }
+    if (state.stdSingle) document.getElementById('std-single').value = state.stdSingle;
+    document.querySelectorAll('.std-checkbox').forEach(cb => { cb.checked = (state.stdChecks || []).includes(cb.value); });
+    toggleStdModeUI();
+
+    Object.keys(state.fields || {}).forEach(id => { const el = document.getElementById(id); if (el) el.value = state.fields[id]; });
+    Object.keys(state.dynamic || {}).forEach(id => { const el = document.getElementById(id); if (el) el.value = state.dynamic[id]; });
+
+    const r = state.repeats || {};
+    clearRepeats('ctx-parties'); (r['ctx-parties'] && r['ctx-parties'].length ? r['ctx-parties'] : [[]]).forEach(v => addRow('ctx-parties','interestedParty','',v));
+    clearRepeats('lead-roles'); (r['lead-roles'] && r['lead-roles'].length ? r['lead-roles'] : [[]]).forEach(v => addRow('lead-roles','role','',v));
+    clearRepeats('plan-risks'); (r['plan-risks'] && r['plan-risks'].length ? r['plan-risks'] : [[]]).forEach(v => addRow('plan-risks','risk','',v));
+    clearRepeats('plan-objectives'); (r['plan-objectives'] && r['plan-objectives'].length ? r['plan-objectives'] : [[]]).forEach(v => addRow('plan-objectives','objective','',v));
+    clearRepeats('sup-comms'); (r['sup-comms'] && r['sup-comms'].length ? r['sup-comms'] : [[]]).forEach(v => addRow('sup-comms','comm','',v));
+    clearRepeats('sup-docs'); (r['sup-docs'] && r['sup-docs'].length ? r['sup-docs'] : [[]]).forEach(v => addRow('sup-docs','docInfo','',v));
+    clearRepeats('perf-monitor'); (r['perf-monitor'] && r['perf-monitor'].length ? r['perf-monitor'] : [[]]).forEach(v => addRow('perf-monitor','monitor','',v));
+    clearRepeats('perf-audits-internal'); (r['perf-audits-internal'] && r['perf-audits-internal'].length ? r['perf-audits-internal'] : [[]]).forEach(v => addRow('perf-audits-internal','auditInternal','',v));
+    clearRepeats('perf-audits-external'); (r['perf-audits-external'] && r['perf-audits-external'].length ? r['perf-audits-external'] : [[]]).forEach(v => addRow('perf-audits-external','auditExternal','',v));
+    clearRepeats('imp-nc-log'); (r['imp-nc-log'] && r['imp-nc-log'].length ? r['imp-nc-log'] : [[]]).forEach(v => addRow('imp-nc-log','nc','',v));
+
+    updateProgress();
+  }
+
+  document.getElementById('isoa-save-btn').addEventListener('click', () => {
+    const result = safeStorage(() => {
+      localStorage.setItem(RZ_ISOA_CONFIG.storageKey, JSON.stringify(collectState()));
+      return true;
+    });
+    document.getElementById('isoa-save-status').textContent = result === true
+      ? 'Saved just now.'
+      : "Couldn't save in this preview — storage is blocked here. Works once this file is on your live site; use Export as a stand-in for now.";
+  });
+
+  document.getElementById('isoa-export-btn').addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(collectState(), null, 2)], {type: 'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'iso-ms-draft.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('isoa-import-btn').addEventListener('click', () => {
+    document.getElementById('isoa-import-file').click();
+  });
+  document.getElementById('isoa-import-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        applyState(JSON.parse(reader.result));
+        document.getElementById('isoa-save-status').textContent = 'Loaded from file.';
+      } catch (err) {
+        document.getElementById('isoa-save-status').textContent = "That file couldn't be read — is it a backup exported from this tool?";
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  document.getElementById('isoa-discard-btn').addEventListener('click', () => {
+    safeStorage(() => localStorage.removeItem(RZ_ISOA_CONFIG.storageKey));
+    document.getElementById('isoa-resume-banner').hidden = true;
+  });
+
+  const existingDraft = safeStorage(() => localStorage.getItem(RZ_ISOA_CONFIG.storageKey));
+  if (typeof existingDraft === 'string' && existingDraft) {
+    try {
+      const parsed = JSON.parse(existingDraft);
+      document.getElementById('isoa-resume-text').textContent = 'Saved draft found from ' + new Date(parsed.savedAt).toLocaleString() + '.';
+      document.getElementById('isoa-resume-banner').hidden = false;
+      document.getElementById('isoa-resume-btn').addEventListener('click', () => {
+        applyState(parsed);
+        document.getElementById('isoa-resume-banner').hidden = true;
+      });
+    } catch (e) { /* corrupt saved data — ignore rather than break the page */ }
+  }
+
+  // ---- AI assist (optional — every tab works fully without this) ----
+  // Event delegation, not per-button binding: policy buttons are created
+  // dynamically by renderPolicyFields(), so they wouldn't exist yet for a
+  // one-time querySelectorAll().forEach() the way project-plan-architect.html
+  // does it — this pattern would be worth backporting there too if it ever
+  // grows dynamic AI buttons.
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.isoa-ai-btn');
+    if (!btn) return;
+    callISOAssist(btn.dataset.aiKind, btn.dataset.aiTarget, btn);
+  });
+
+  async function callISOAssist(kind, targetId, btn) {
+    if (!RZ_ISOA_CONFIG.aiAssistEndpoint) {
+      alert("AI assist isn't wired up yet — deploy iso-assist-worker.js, then paste its URL into RZ_ISOA_CONFIG.aiAssistEndpoint near the top of this file.");
+      return;
+    }
+    const selected = getSelectedStandards();
+    const standardsLabel = selected.map(c => ISO_STANDARDS[c] ? ISO_STANDARDS[c].name : '').filter(Boolean).join(', ');
+    const payload = {
+      kind,
+      orgName: val('org-name'),
+      standards: standardsLabel,
+      current: targetId ? (document.getElementById(targetId).value || '') : '',
+    };
+    if (kind === 'policy-draft' && btn) {
+      payload.policyLabel = btn.dataset.policyLabel || 'Policy';
+      payload.standardName = btn.dataset.stdName || '';
+    }
+    try {
+      const res = await fetch(RZ_ISOA_CONFIG.aiAssistEndpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('Worker returned ' + res.status);
+      const data = await res.json();
+      if (kind === 'suggest-risks-opportunities' && Array.isArray(data.risks)) {
+        data.risks.forEach(text => addRow('plan-risks', 'risk', '', [text]));
+      } else if (targetId && data.suggestion) {
+        const el = document.getElementById(targetId);
+        el.value = el.value ? el.value + '\n' + data.suggestion : data.suggestion;
+      }
+    } catch (err) {
+      alert("Couldn't reach the AI assist Worker — check it's deployed and the endpoint URL is correct.");
+    }
+  }
+
+  // ---- tab switching ----
+  const tabs = document.querySelectorAll('.isoa-tab[data-step]');
+  const panels = document.querySelectorAll('[data-panel]');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      panels.forEach(p => p.hidden = true);
+      document.getElementById('step-' + tab.dataset.step).hidden = false;
+      if (tab.dataset.step === 'document') renderDocument();
+      updateProgress();
+    });
+  });
+
+  function updateProgress() {
+    const filled = document.querySelectorAll('.isoa-card input, .isoa-card textarea, .isoa-card select');
+    let touched = 0;
+    filled.forEach(f => { if (f.value && f.value.trim() !== '') touched++; });
+    document.getElementById('isoa-progress').textContent =
+      touched > 0 ? `In progress — ${touched} fields filled across ${RZ_ISOA_CONFIG.totalCategoriesPlanned} clauses` : '';
+  }
+  document.addEventListener('input', updateProgress);
+  updateProgress();
+
+  // ---- document assembly ----
+  function fieldRowsHtml(containerSelector) {
+    return Array.from(document.querySelectorAll(containerSelector)).map(field => {
+      const labelEl = field.querySelector('.label-text');
+      const label = labelEl ? labelEl.textContent.trim() : '';
+      const textareaEl = field.querySelector('textarea');
+      const value = textareaEl ? textareaEl.value.trim() : '';
+      return `<p><strong>${escapeHtml(label)}:</strong> ${value ? escapeHtml(value) : '<span class="isoa-empty">Not entered yet.</span>'}</p>`;
+    }).join('');
+  }
+
+  function renderDocument() {
+    const selected = getSelectedStandards();
+    const standardsNames = selected.map(c => ISO_STANDARDS[c] ? ISO_STANDARDS[c].name : '').filter(Boolean);
+
+    const partyRows = Array.from(document.querySelectorAll('#ctx-parties .isoa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sel = r.querySelector('select');
+      const name = texts[0] ? texts[0].value.trim() : '';
+      return name ? [name, texts[1] ? texts[1].value.trim() : '', sel ? sel.value : ''] : null;
+    }).filter(Boolean);
+
+    const roleRows = simpleRows('lead-roles');
+    const riskRows = Array.from(document.querySelectorAll('#plan-risks .isoa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sels = r.querySelectorAll('select');
+      const desc = texts[0] ? texts[0].value.trim() : '';
+      return desc ? [desc, sels[0] ? sels[0].value : '', sels[1] ? sels[1].value : '', sels[2] ? sels[2].value : '', texts[1] ? texts[1].value.trim() : ''] : null;
+    }).filter(Boolean);
+    const objectiveRows = simpleRows('plan-objectives');
+    const commRows = simpleRows('sup-comms');
+    const docRows = Array.from(document.querySelectorAll('#sup-docs .isoa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sel = r.querySelector('select');
+      const name = texts[0] ? texts[0].value.trim() : '';
+      return name ? [name, sel ? sel.value : '', texts[1] ? texts[1].value.trim() : '', texts[2] ? texts[2].value.trim() : ''] : null;
+    }).filter(Boolean);
+    const monitorRows = simpleRows('perf-monitor');
+    const auditIntRows = simpleRows('perf-audits-internal');
+    const auditExtRows = Array.from(document.querySelectorAll('#perf-audits-external .isoa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sel = r.querySelector('select');
+      const dateEl = r.querySelector('input[type=date]');
+      const name = texts[0] ? texts[0].value.trim() : '';
+      return name ? [name, sel ? sel.value : '', dateEl ? dateEl.value : '', texts[1] ? texts[1].value.trim() : ''] : null;
+    }).filter(Boolean);
+    const ncRows = Array.from(document.querySelectorAll('#imp-nc-log .isoa-repeat-row')).map(r => {
+      const texts = r.querySelectorAll('input[type=text]');
+      const sel = r.querySelector('select');
+      const dateEl = r.querySelector('input[type=date]');
+      const desc = texts[0] ? texts[0].value.trim() : '';
+      return desc ? [desc, texts[1] ? texts[1].value.trim() : '', texts[2] ? texts[2].value.trim() : '', sel ? sel.value : '', texts[3] ? texts[3].value.trim() : '', dateEl ? dateEl.value : ''] : null;
+    }).filter(Boolean);
+
+    document.getElementById('isoa-doc').innerHTML = `
+      <h1 style="margin-bottom:0;">${escapeHtml(val('org-name') || 'Untitled Organization')}</h1>
+      <p class="isoa-empty" style="margin-top:.2rem;">Management System Documentation — drafted ${new Date().toLocaleDateString()}</p>
+      <p><strong>Standard(s):</strong> ${standardsNames.length ? escapeHtml(standardsNames.join(', ')) : '<span class="isoa-empty">None selected yet.</span>'}</p>
+
+      <h2>4. Context of the Organization</h2>
+      <p><strong>Summary:</strong> ${escapeHtml(val('ctx-summary')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Internal issues:</strong> ${escapeHtml(val('ctx-internal')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>External issues:</strong> ${escapeHtml(val('ctx-external')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Climate change relevant?</strong> ${escapeHtml(val('ctx-climate-status'))}${val('ctx-climate-notes') ? ' — ' + escapeHtml(val('ctx-climate-notes')) : ''}</p>
+      <p><strong>Interested parties</strong></p>
+      ${partyRows.length ? `<table><tr><th>Party</th><th>Needs &amp; expectations</th><th>Climate-related?</th></tr>${partyRows.map(p => `<tr><td>${escapeHtml(p[0])}</td><td>${escapeHtml(p[1])}</td><td>${p[2]}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Scope:</strong> ${escapeHtml(val('ctx-scope')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Exclusions:</strong> ${escapeHtml(val('ctx-exclusions')) || '—'}</p>
+
+      <h2>5. Leadership</h2>
+      <p><strong>Top management commitment:</strong> ${escapeHtml(val('lead-commitment')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      ${fieldRowsHtml('#lead-policy-container .isoa-field')}
+      <p><strong>Roles &amp; responsibilities</strong></p>
+      ${roleRows.length ? `<table><tr><th>Role</th><th>Responsibility</th></tr>${roleRows.map(r => `<tr><td>${escapeHtml(r[0]||'')}</td><td>${escapeHtml(r[1]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+
+      <h2>6. Planning</h2>
+      <p><strong>Risks &amp; opportunities</strong></p>
+      ${riskRows.length ? `<table><tr><th>Description</th><th>Likelihood</th><th>Impact</th><th>Response</th><th>Owner</th></tr>${riskRows.map(r => `<tr><td>${escapeHtml(r[0])}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${escapeHtml(r[4])}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Objectives</strong></p>
+      ${objectiveRows.length ? `<table><tr><th>Objective</th><th>Metric/target</th><th>Responsible</th><th>Date</th><th>Resources</th></tr>${objectiveRows.map(o => `<tr><td>${escapeHtml(o[0]||'')}</td><td>${escapeHtml(o[1]||'—')}</td><td>${escapeHtml(o[2]||'—')}</td><td>${o[3]||'—'}</td><td>${escapeHtml(o[4]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+
+      <h2>7. Support</h2>
+      <p><strong>Resources:</strong> ${escapeHtml(val('sup-resources')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Competence:</strong> ${escapeHtml(val('sup-competence')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Awareness:</strong> ${escapeHtml(val('sup-awareness')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Communication</strong></p>
+      ${commRows.length ? `<table><tr><th>Audience</th><th>Info needed</th><th>Frequency</th><th>Channel</th></tr>${commRows.map(c => `<tr><td>${escapeHtml(c[0]||'')}</td><td>${escapeHtml(c[1]||'—')}</td><td>${escapeHtml(c[2]||'—')}</td><td>${escapeHtml(c[3]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Documented information</strong></p>
+      ${docRows.length ? `<table><tr><th>Document</th><th>Format</th><th>Owner</th><th>Review frequency</th></tr>${docRows.map(d => `<tr><td>${escapeHtml(d[0]||'')}</td><td>${d[1]}</td><td>${escapeHtml(d[2]||'—')}</td><td>${escapeHtml(d[3]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+
+      <h2>8. Operation</h2>
+      <p><strong>Operational planning &amp; control (general):</strong> ${escapeHtml(val('op8-general')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      ${fieldRowsHtml('#op-clause8-container .isoa-field')}
+
+      <h2>9. Performance Evaluation</h2>
+      <p><strong>Monitoring &amp; measurement</strong></p>
+      ${monitorRows.length ? `<table><tr><th>What</th><th>Method</th><th>Frequency</th><th>Responsible</th></tr>${monitorRows.map(m => `<tr><td>${escapeHtml(m[0]||'')}</td><td>${escapeHtml(m[1]||'—')}</td><td>${escapeHtml(m[2]||'—')}</td><td>${escapeHtml(m[3]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Internal audits</strong></p>
+      ${auditIntRows.length ? `<table><tr><th>Area</th><th>Frequency</th><th>Auditor</th><th>Last completed</th><th>Findings/status</th></tr>${auditIntRows.map(a => `<tr><td>${escapeHtml(a[0]||'')}</td><td>${escapeHtml(a[1]||'—')}</td><td>${escapeHtml(a[2]||'—')}</td><td>${a[3]||'—'}</td><td>${escapeHtml(a[4]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Certification &amp; external audits</strong></p>
+      ${auditExtRows.length ? `<table><tr><th>Body/auditor</th><th>Type</th><th>Date</th><th>Outcome/status</th></tr>${auditExtRows.map(a => `<tr><td>${escapeHtml(a[0])}</td><td>${a[1]}</td><td>${a[2]||'—'}</td><td>${escapeHtml(a[3])}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Management review:</strong> ${escapeHtml(val('perf-mgmt-review')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+
+      <h2>10. Improvement</h2>
+      <p><strong>Nonconformity &amp; corrective action process:</strong> ${escapeHtml(val('imp-nc-process')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      ${ncRows.length ? `<table><tr><th>Description</th><th>Root cause</th><th>Corrective action</th><th>Status</th><th>Owner</th><th>Due</th></tr>${ncRows.map(n => `<tr><td>${escapeHtml(n[0])}</td><td>${escapeHtml(n[1])}</td><td>${escapeHtml(n[2])}</td><td>${n[3]}</td><td>${escapeHtml(n[4])}</td><td>${n[5]||'—'}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
+      <p><strong>Continual improvement approach:</strong> ${escapeHtml(val('imp-continual')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+    `;
+  }
+
+  document.getElementById('save-pdf-btn').addEventListener('click', () => {
+    renderDocument();
+    window.print();
+  });
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

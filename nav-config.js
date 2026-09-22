@@ -18,6 +18,11 @@
    is added, renamed, or reordered (see the 2026-09-08 and
    2026-09-17 change-note entries on other pages for how easy this
    was to get out of sync doing it manually).
+
+   2026-09-23: added iso-ms-architect.html (ISO Management System
+   Architect) — one line, per the rule above. Built already reading
+   from this file rather than a hand-written dropdown, since it's a
+   new page (see SITE_CONFIG_STANDARD.md's retrofit checklist).
    ============================================================ */
 
 const RZ_NAV_PAGES = [
@@ -36,6 +41,7 @@ const RZ_NAV_PAGES = [
   { href: 'project-plan-architect.html', label: 'Project Planner' },
   { href: 'form-scanner.html', label: 'Form Creator' },
   { href: 'qr-creator.html', label: 'QR Creator' },
+  { href: 'iso-ms-architect.html', label: 'ISO Management System' },
   // Add a new tool here — one line, this file only.
 ];
 

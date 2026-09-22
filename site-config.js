@@ -26,7 +26,8 @@
    literal fallback, so a page that hasn't added the <script> tag
    yet keeps working exactly as before — nothing hard-depends on
    this file existing. See interactive-costing-analysis.js's
-   GUIDE_RATIOS for the worked example, and
+   GUIDE_RATIOS for the worked example, and iso-ms-architect.html's
+   ISO_STANDARDS for a second one, and
    SITE_CONFIG_STANDARD.md for the retrofit steps for every other
    page.
 
@@ -69,6 +70,50 @@ const RZ_SITE_CONFIG = {
     stall: { ingredients: 50, overhead: 20, manpower: 15, margin: 15 },
     truck: { ingredients: 42, overhead: 20, manpower: 23, margin: 15 },
     store: { ingredients: 35, overhead: 20, manpower: 30, margin: 15 },
+  },
+
+  // ---- ISO management-system standards (added 2026-09-23) ----
+  // Read by iso-ms-architect.html to drive its standard-selector:
+  // which Policy label to show (5.2) and which Clause 8 (Operation)
+  // sub-topics apply. Clauses 4, 5 (minus Policy), 6, 7, 9 and 10
+  // are shared across every ISO management-system standard under
+  // the Harmonized Structure, so they aren't repeated per standard
+  // here — only the parts that genuinely differ are.
+  //
+  // Where two standards share an identical clause8 topic string
+  // (e.g. 14001 and 45001 both list "Emergency preparedness &
+  // response"), the tool's own de-duplication renders that field
+  // once, tagged with both standard codes, rather than twice — so
+  // keep new entries' wording byte-for-byte identical to an
+  // existing topic when it genuinely is the same requirement,
+  // and deliberately different when it isn't.
+  //
+  // TO ADD A STANDARD (e.g. 22301, 50001, 37001): add one entry
+  // below with a name, policyLabel, and clause8 array. No changes
+  // needed in iso-ms-architect.html itself — see
+  // ISO_MS_ARCHITECT_STANDARD.md.
+  //
+  // Annex A's 93 control TITLES are ISO/IEC's own copyrighted text
+  // (27001 revision), so deliberately NOT listed here — only the
+  // 4 theme names are, inside iso-ms-architect.html's own
+  // renderOperationTab(). See ISO_MS_ARCHITECT_STANDARD.md.
+  isoStandards: {
+    '9001': {
+      name: 'ISO 9001 — Quality', policyLabel: 'Quality Policy',
+      clause8: ['Requirements for products & services','Design & development','Control of externally provided processes','Production & service provision','Release of products & services','Control of nonconforming outputs'],
+    },
+    '14001': {
+      name: 'ISO 14001 — Environmental', policyLabel: 'Environmental Policy',
+      clause8: ['Emergency preparedness & response'],
+    },
+    '45001': {
+      name: 'ISO 45001 — Occupational Health & Safety', policyLabel: 'OH&S Policy',
+      clause8: ['Eliminating hazards & reducing OH&S risk','Management of change','Procurement','Emergency preparedness & response'],
+    },
+    '27001': {
+      name: 'ISO/IEC 27001 — Information Security', policyLabel: 'Information Security Policy',
+      clause8: ['Information security risk assessment','Information security risk treatment'],
+    },
   },
 
   // ---- Look and feel ----
