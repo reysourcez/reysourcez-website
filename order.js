@@ -1,5 +1,6 @@
 /* ============================================================
    QR Listing Creator — customer ordering page (order.js)
+   VERSION 1.1 (2026-09-21) — fixes + floor plan view. Change list: QLC_HANDOFF_v1.1.md
    Vanilla JS, no build step. Talks to qr-listing-creator-worker.js
    over a small JSON API — see that file's own header for the full
    contract. Nothing here decides the REAL total; the Worker
@@ -12,6 +13,9 @@
                             with that table pre-filled. This is what
                             each table's own QR code encodes.
      ?mode=delivery         starts on the delivery tab instead
+     ?mode=takeaway         (v1.1) takeaway only
+   A table, delivery or takeaway link is LOCKED to what it is for: no Dine-in / Takeaway /
+   Delivery picker in the cart. Only a plain ?biz= link gets the picker. (v1.1)
    Nothing about the customer is remembered between visits beyond the
    current cart (sessionStorage, cleared once the tab closes) — no
    accounts, no login, matching the rest of this site's privacy bar.
@@ -40,10 +44,13 @@ function formatRM(v) {
   if (!isFinite(v) || v < 0) return 'RM0.00';
   return 'RM' + v.toFixed(2);
 }
+// Escapes quotes too, so it is safe inside "double-quoted" attributes as well as in text. The old
+// textContent/innerHTML trick left " and ' alone, so anything typed into ?table= in the address bar
+// could add attributes to the table box. (v1.1)
 function escapeHTML(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 // Plain string id for a category heading/tab — category NAMES can have
 // spaces or punctuation ("Rice & Noodles"), which breaks as a raw HTML id.
@@ -59,8 +66,11 @@ const state = {
   business: null,
   products: [],
   cart: [],   // [{ productId, name, unitPriceBase, qty, selectedOptions:[{groupLabel,name,priceDelta}] }]
-  orderType: params.get('mode') === 'delivery' ? 'delivery' : 'dine_in',
-  tableNumber: params.get('table') || '',
+  orderType: null,     // decided once the menu has loaded: see pickInitialOrderType()
+  locked: false,       // true when the link itself says where the order goes (table / delivery / takeaway QR)
+  editTable: false,    // a locked table order where the customer tapped "Change table" (no floor plan to tap)
+  // The table number comes straight from the address bar, so it is cut down to plain characters first. (v1.1)
+  tableNumber: (params.get('table') || '').replace(/[^\w .-]/g, '').slice(0, 12),
   delivery: { name: '', phone: '', address: '' },
 };
 
@@ -78,33 +88,102 @@ function saveCart() {
 
 async function fetchCatalog() {
   if (!BIZ_ID) throw new Error('This link is missing which business to load — check the QR code.');
-  const res = await fetch(WORKER_ENDPOINT + '/catalog?biz=' + encodeURIComponent(BIZ_ID));
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Could not load this menu.');
-  state.business = data.business;
-  state.products = data.products;
+  // A time limit, so a stalled connection ends in "try again" instead of an endless wait. (v1.1)
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const res = await fetch(WORKER_ENDPOINT + '/catalog?biz=' + encodeURIComponent(BIZ_ID), { signal: ctl.signal });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || 'Could not load this menu.');
+      err.status = res.status;
+      throw err;
+    }
+    state.business = data.business;
+    state.products = data.products;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// The cart survives in this tab (sessionStorage) but the seller may have changed the menu since. Refresh
+// names and prices from the live menu, and drop anything that is gone or whose combo options changed, so
+// the preview total matches what the Worker will charge. (v1.1)
+function syncCartWithCatalog() {
+  const byId = new Map(state.products.map((p) => [p.id, p]));
+  const before = state.cart.length;
+  state.cart = state.cart.filter((i) => {
+    const p = byId.get(i.productId);
+    if (!p) return false;
+    i.name = p.name;
+    i.unitPriceBase = p.price;
+    if (p.type === 'combo' && p.comboGroups && p.comboGroups.length) {
+      if (!Array.isArray(i.selectedOptions) || i.selectedOptions.length !== p.comboGroups.length) return false;
+      for (let gi = 0; gi < p.comboGroups.length; gi++) {
+        const opt = p.comboGroups[gi].options.find((o) => o.name === (i.selectedOptions[gi] && i.selectedOptions[gi].name));
+        if (!opt) return false;
+        i.selectedOptions[gi].groupLabel = p.comboGroups[gi].label;
+        i.selectedOptions[gi].priceDelta = opt.priceDelta || 0;
+      }
+    } else {
+      i.selectedOptions = [];
+    }
+    return true;
+  });
+  saveCart();
+  if (state.cart.length < before) setTimeout(() => toast('Some items in your cart changed and were updated'), 300);
+}
+
+// A table QR, the delivery QR and the takeaway QR each mean one thing, so the cart does not ask again.
+// Only a plain link (no table, no mode) gets the Dine-in / Takeaway / Delivery picker. (v1.1)
+function pickInitialOrderType() {
+  const v = VERTICAL_LABELS[state.business.vertical] || VERTICAL_LABELS.fnb;
+  const mode = params.get('mode');
+  state.locked = true;
+  if (mode === 'delivery') return 'delivery';
+  if (mode === 'takeaway') return 'takeaway';
+  if (v.allowDineIn && state.tableNumber) return 'dine_in';
+  state.locked = false;
+  return 'takeaway';
 }
 
 /* ================= CART MATH ================= */
 
+// Money is added up in whole sen (RM x 100) so 0.1 + 0.2 style drift can never show up in a total. (v1.1)
+const toSen = (rm) => Math.round((Number(rm) || 0) * 100);
 function cartCount() { return state.cart.reduce((s, i) => s + i.qty, 0); }
-function lineTotal(item) {
-  const optTotal = item.selectedOptions.reduce((s, o) => s + (o.priceDelta || 0), 0);
-  return (item.unitPriceBase + optTotal) * item.qty;
+function lineTotalSen(item) {
+  const optSen = item.selectedOptions.reduce((s, o) => s + toSen(o.priceDelta), 0);
+  return (toSen(item.unitPriceBase) + optSen) * item.qty;
 }
-function cartTotal() { return state.cart.reduce((s, i) => s + lineTotal(i), 0); }
+function lineTotal(item) { return lineTotalSen(item) / 100; }
+
+// Purchase-with-purchase, mirrored from the Worker (which is what actually charges it): with the trigger
+// item in the cart, ONE unit of the offer item drops to the offer price. This is only the preview.
+function pwpSavingSen() {
+  const b = state.business;
+  if (!b || !b.pwpTriggerProductId || !b.pwpOfferProductId || b.pwpOfferPrice == null) return 0;
+  if (b.pwpTriggerProductId === b.pwpOfferProductId) return 0;
+  if (!state.cart.some((i) => i.productId === b.pwpTriggerProductId)) return 0;
+  const offerLine = state.cart.find((i) => i.productId === b.pwpOfferProductId);
+  if (!offerLine) return 0;
+  return Math.max(0, toSen(offerLine.unitPriceBase) - toSen(b.pwpOfferPrice));
+}
+function cartTotal() { return (state.cart.reduce((s, i) => s + lineTotalSen(i), 0) - pwpSavingSen()) / 100; }
 
 function addToCart(product, selectedOptions) {
   // Two combo lines with different picks are different cart rows; anything
   // else matching the same product id just bumps the quantity.
-  const optKey = JSON.stringify((selectedOptions || []).map((o) => o.name).sort());
+  // Order matters (option 1 of group 1 is not option 1 of group 2), so the names are NOT sorted. (v1.1)
+  const optKey = JSON.stringify((selectedOptions || []).map((o) => o.name));
   const existing = state.cart.find((i) => i.productId === product.id
-    && JSON.stringify((i.selectedOptions || []).map((o) => o.name).sort()) === optKey);
+    && JSON.stringify((i.selectedOptions || []).map((o) => o.name)) === optKey);
   if (existing) existing.qty += 1;
   else state.cart.push({ productId: product.id, name: product.name, unitPriceBase: product.price, qty: 1, selectedOptions: selectedOptions || [] });
   saveCart();
   renderCartBar();
-  toast(product.name + ' added');
+  // The cart drawer already shows the new line; a toast there would sit on top of the Place order button. (v1.1)
+  if (document.getElementById('ord-cart-drawer').hidden) toast(product.name + ' added');
 }
 function setQty(index, qty) {
   if (qty <= 0) state.cart.splice(index, 1);
@@ -126,7 +205,7 @@ function pwpOffer() {
   const alreadyHasOffer = state.cart.some((i) => i.productId === b.pwpOfferProductId);
   if (!hasTrigger || alreadyHasOffer) return null;
   const offerProduct = state.products.find((p) => p.id === b.pwpOfferProductId);
-  if (!offerProduct) return null;
+  if (!offerProduct || offerProduct.type === 'combo') return null; // a combo needs choices made, so it is never offered blind
   return { product: offerProduct, price: b.pwpOfferPrice != null ? b.pwpOfferPrice : offerProduct.price };
 }
 
@@ -147,20 +226,21 @@ function toast(msg) {
 }
 
 function contextBadgeText() {
-  if (state.orderType === 'dine_in' && state.tableNumber) return 'Table ' + state.tableNumber;
+  if (state.orderType === 'dine_in') return state.tableNumber ? 'Table ' + state.tableNumber : 'Dine-in';
   if (state.orderType === 'delivery') return 'Delivery';
   return 'Takeaway';
 }
 
-// Only one drawer (cart or summary) is ever open at once — matches this
+// Only one drawer (cart, summary or floor plan) is ever open at once — matches this
 // site's own "one panel open at a time" rule (see AI_BUILD_BRIEF.md).
 function openDrawer(id) {
-  ['ord-cart-drawer', 'ord-summary-drawer'].forEach((d) => { document.getElementById(d).hidden = (d !== id); });
+  ['ord-cart-drawer', 'ord-summary-drawer', 'ord-plan-drawer'].forEach((d) => { document.getElementById(d).hidden = (d !== id); });
   document.getElementById('ord-drawer-backdrop').hidden = false;
 }
 function closeDrawers() {
   document.getElementById('ord-cart-drawer').hidden = true;
   document.getElementById('ord-summary-drawer').hidden = true;
+  document.getElementById('ord-plan-drawer').hidden = true;
   document.getElementById('ord-drawer-backdrop').hidden = true;
 }
 
@@ -170,6 +250,7 @@ function renderHeader() {
   document.getElementById('ord-biz-name').textContent = state.business.name;
   document.title = state.business.name;
   document.getElementById('ord-context-badge').textContent = contextBadgeText();
+  document.getElementById('ord-plan-btn').hidden = !canShowPlan();
 }
 
 function renderVideoBanner() {
@@ -216,6 +297,9 @@ function productCardHTML(p, compact, isPromoted) {
   const tags = (p.tags && p.tags.length) ? `<div class="ord-card-tags">${p.tags.map((t) => `<span class="ord-tag">${escapeHTML(t)}</span>`).join('')}</div>` : '';
   const typeBadge = p.type === 'combo' ? '<span class="ord-type-badge">Build your own</span>' : p.type === 'set' ? '<span class="ord-type-badge">Set</span>' : '';
   const promotedBadge = isPromoted ? '<span class="ord-promoted-badge">Promoted</span>' : '';
+  // What is in a set: the seller types it, so it should be shown. (v1.1)
+  const setItems = (p.type === 'set' && p.setItems && p.setItems.length)
+    ? `<ul class="ord-set-items">${p.setItems.map((x) => `<li>${escapeHTML(x.name || x)}</li>`).join('')}</ul>` : '';
   return `
     <div class="ord-product-card${compact ? ' is-compact' : ''}" data-product-id="${escapeHTML(p.id)}">
       ${promotedBadge}${img}
@@ -223,6 +307,7 @@ function productCardHTML(p, compact, isPromoted) {
         ${typeBadge}
         <strong class="ord-card-name">${escapeHTML(p.name)}</strong>
         ${p.description ? `<p class="ord-card-desc">${escapeHTML(p.description)}</p>` : ''}
+        ${setItems}
         ${tags}
         <div class="ord-card-footer">
           <span class="ord-card-price">${formatRM(p.price)}</span>
@@ -274,22 +359,28 @@ function wireProductCards(root) {
   });
 }
 
+// A featured combo is drawn more than once (Top picks, its category, promoted tiles). Radio buttons that
+// share a name are one group across the whole page, so opening two of them un-picked the first one and
+// its Add button then failed. Every opening gets its own name. (v1.1)
+let comboPickerCount = 0;
+
 function toggleComboPicker(card, product) {
   const box = card.querySelector('.ord-combo-groups');
   if (!box.hidden) { box.hidden = true; return; }
   box.hidden = false;
+  const uid = 'c' + (++comboPickerCount);
   box.innerHTML = product.comboGroups.map((g, gi) => `
     <div class="ord-combo-group">
       <span class="ord-combo-group-label">${escapeHTML(g.label)}</span>
       ${g.options.map((o, oi) => `<label class="ord-combo-option">
-        <input type="radio" name="combo-${product.id}-${gi}" value="${oi}" ${oi === 0 ? 'checked' : ''}>
+        <input type="radio" name="combo-${uid}-${gi}" value="${oi}" ${oi === 0 ? 'checked' : ''}>
         ${escapeHTML(o.name)}${o.priceDelta ? ' (+' + formatRM(o.priceDelta) + ')' : ''}
       </label>`).join('')}
     </div>`).join('') + `<button type="button" class="btn btn-secondary ord-combo-confirm">Add to cart</button>`;
 
   box.querySelector('.ord-combo-confirm').addEventListener('click', () => {
     const selected = product.comboGroups.map((g, gi) => {
-      const checked = box.querySelector(`input[name="combo-${product.id}-${gi}"]:checked`);
+      const checked = box.querySelector(`input[name="combo-${uid}-${gi}"]:checked`);
       const opt = g.options[Number(checked.value)];
       return { groupLabel: g.label, name: opt.name, priceDelta: opt.priceDelta || 0 };
     });
@@ -309,7 +400,22 @@ function renderCartBar() {
   document.getElementById('ord-cart-total').textContent = formatRM(cartTotal());
 }
 
+// Reads what is typed in the drawer into state BEFORE it is rebuilt. Without this, tapping + / - or a tab
+// re-drew the drawer from stale state and wiped a half-typed table number, name, phone or address. (v1.1)
+function captureOrderFields() {
+  const read = (id) => { const el = document.getElementById(id); return el ? el.value : null; };
+  const table = read('ord-table-input');
+  const name = read('ord-del-name');
+  const phone = read('ord-del-phone');
+  const address = read('ord-del-address');
+  if (table !== null) state.tableNumber = table;
+  if (name !== null) state.delivery.name = name;
+  if (phone !== null) state.delivery.phone = phone;
+  if (address !== null) state.delivery.address = address;
+}
+
 function renderCartDrawer() {
+  captureOrderFields();
   const vlabel = VERTICAL_LABELS[state.business.vertical] || VERTICAL_LABELS.fnb;
   const offer = pwpOffer();
 
@@ -329,29 +435,55 @@ function renderCartDrawer() {
 
   const emptyMsg = state.cart.length ? '' : `<p class="ord-empty">No ${vlabel.itemNounPlural} yet &mdash; close this and add something.</p>`;
 
+  const savingSen = pwpSavingSen();
+  const pwpSavingRow = savingSen > 0 ? `
+    <div class="ord-cart-row">
+      <div class="ord-cart-row-info"><strong>Offer price applied</strong></div>
+      <span class="ord-cart-row-price">&minus;${formatRM(savingSen / 100)}</span>
+    </div>` : '';
+
   const pwpHTML = offer ? `
     <div class="ord-pwp-card">
       <span>Add <strong>${escapeHTML(offer.product.name)}</strong> for ${formatRM(offer.price)}?</span>
       <button type="button" class="btn btn-secondary" id="ord-pwp-add">Add</button>
     </div>` : '';
 
+  // Where the order is going. A table, takeaway or delivery QR is locked to what it is for; only a plain
+  // link (no table, no mode) gets the picker. (v1.1)
   const showDineIn = vlabel.allowDineIn;
-  const orderTypeHTML = state.cart.length ? `
-    <div class="ord-order-type-tabs" role="tablist">
-      ${showDineIn ? `<button type="button" class="ord-ot-tab${state.orderType === 'dine_in' ? ' is-active' : ''}" data-ot="dine_in">Dine-in</button>` : ''}
-      <button type="button" class="ord-ot-tab${state.orderType === 'takeaway' ? ' is-active' : ''}" data-ot="takeaway">Takeaway</button>
-      <button type="button" class="ord-ot-tab${state.orderType === 'delivery' ? ' is-active' : ''}" data-ot="delivery">Delivery</button>
-    </div>
-    <div class="ord-ot-fields">
-      ${state.orderType === 'dine_in' && showDineIn ? `<label>Table number <input type="text" id="ord-table-input" value="${escapeHTML(state.tableNumber)}"></label>` : ''}
-      ${state.orderType === 'delivery' ? `
-        <label>Name <input type="text" id="ord-del-name" value="${escapeHTML(state.delivery.name)}"></label>
-        <label>Phone <input type="tel" id="ord-del-phone" value="${escapeHTML(state.delivery.phone)}"></label>
-        <label>Address <textarea id="ord-del-address" rows="2">${escapeHTML(state.delivery.address)}</textarea></label>` : ''}
-    </div>` : '';
+  const deliveryFields = `
+    <label>Name <input type="text" id="ord-del-name" maxlength="80" value="${escapeHTML(state.delivery.name)}"></label>
+    <label>Phone <input type="tel" id="ord-del-phone" maxlength="30" value="${escapeHTML(state.delivery.phone)}"></label>
+    <label>Address <textarea id="ord-del-address" rows="2" maxlength="300">${escapeHTML(state.delivery.address)}</textarea></label>`;
+  const tableField = `<label>Table number <input type="text" id="ord-table-input" maxlength="12" value="${escapeHTML(state.tableNumber)}"></label>`
+    + (canShowPlan() ? '<button type="button" class="ord-link-btn" id="ord-plan-link">Find my table on the floor plan</button>' : '');
+  let orderTypeHTML = '';
+  if (state.cart.length) {
+    if (state.locked && state.orderType === 'dine_in') {
+      orderTypeHTML = `
+        <div class="ord-locked-row"><span>Ordering for <strong>Table ${escapeHTML(state.tableNumber || '?')}</strong></span>
+          <button type="button" class="ord-link-btn" id="ord-change-table">Change table</button></div>
+        ${state.editTable ? `<div class="ord-ot-fields">${tableField}</div>` : ''}`;
+    } else if (state.locked && state.orderType === 'delivery') {
+      orderTypeHTML = `<div class="ord-locked-row"><span><strong>Delivery</strong> order</span></div><div class="ord-ot-fields">${deliveryFields}</div>`;
+    } else if (state.locked) {
+      orderTypeHTML = '<div class="ord-locked-row"><span><strong>Takeaway</strong> order</span></div>';
+    } else {
+      orderTypeHTML = `
+        <div class="ord-order-type-tabs" role="tablist">
+          ${showDineIn ? `<button type="button" class="ord-ot-tab${state.orderType === 'dine_in' ? ' is-active' : ''}" data-ot="dine_in">Dine-in</button>` : ''}
+          <button type="button" class="ord-ot-tab${state.orderType === 'takeaway' ? ' is-active' : ''}" data-ot="takeaway">Takeaway</button>
+          <button type="button" class="ord-ot-tab${state.orderType === 'delivery' ? ' is-active' : ''}" data-ot="delivery">Delivery</button>
+        </div>
+        <div class="ord-ot-fields">
+          ${state.orderType === 'dine_in' && showDineIn ? tableField : ''}
+          ${state.orderType === 'delivery' ? deliveryFields : ''}
+        </div>`;
+    }
+  }
 
   document.getElementById('ord-cart-body').innerHTML = `
-    ${rows}${emptyMsg}${pwpHTML}
+    ${rows}${pwpSavingRow}${emptyMsg}${pwpHTML}
     ${state.cart.length ? `<div class="ord-cart-total-row"><span>Total</span><strong>${formatRM(cartTotal())}</strong></div>` : ''}
     ${orderTypeHTML}
     ${state.cart.length ? `<p class="ord-note">No payment here &mdash; this just places your order. Pay however this place normally takes payment.</p>
@@ -364,20 +496,32 @@ function renderCartDrawer() {
   });
   const pwpBtn = document.getElementById('ord-pwp-add');
   if (pwpBtn) pwpBtn.addEventListener('click', () => { addToCart(offer.product, []); renderCartDrawer(); });
-  document.querySelectorAll('.ord-ot-tab').forEach((btn) => btn.addEventListener('click', () => { state.orderType = btn.dataset.ot; renderCartDrawer(); }));
+  document.querySelectorAll('.ord-ot-tab').forEach((btn) => btn.addEventListener('click', () => { state.orderType = btn.dataset.ot; renderHeader(); renderCartDrawer(); }));
   const placeBtn = document.querySelector('.ord-place-order');
   if (placeBtn) placeBtn.addEventListener('click', placeOrder);
+  const changeBtn = document.getElementById('ord-change-table');
+  if (changeBtn) changeBtn.addEventListener('click', () => {
+    if (canShowPlan()) openPlan(true);
+    else { state.editTable = true; renderCartDrawer(); }
+  });
+  const planLink = document.getElementById('ord-plan-link');
+  if (planLink) planLink.addEventListener('click', () => openPlan(true));
 }
 
 /* ================= PLACE ORDER ================= */
 
 async function placeOrder() {
   const statusEl = document.getElementById('ord-cart-status');
-  if (state.orderType === 'dine_in') state.tableNumber = document.getElementById('ord-table-input')?.value.trim() || '';
+  captureOrderFields(); // a locked table has no box on screen; this leaves its number alone
+  if (state.orderType === 'dine_in' && !state.tableNumber.trim()) {
+    statusEl.textContent = 'Enter your table number first.';
+    statusEl.classList.add('is-error');
+    return;
+  }
   if (state.orderType === 'delivery') {
-    state.delivery.name = document.getElementById('ord-del-name')?.value.trim() || '';
-    state.delivery.phone = document.getElementById('ord-del-phone')?.value.trim() || '';
-    state.delivery.address = document.getElementById('ord-del-address')?.value.trim() || '';
+    state.delivery.name = state.delivery.name.trim();
+    state.delivery.phone = state.delivery.phone.trim();
+    state.delivery.address = state.delivery.address.trim();
     if (!state.delivery.name || !state.delivery.phone || !state.delivery.address) {
       statusEl.textContent = 'Fill in your name, phone, and address for delivery.';
       statusEl.classList.add('is-error');
@@ -421,7 +565,7 @@ function renderSummary(order) {
   document.getElementById('ord-summary-body').innerHTML = `
     <div class="ord-summary-code">${escapeHTML(order.orderId)}</div>
     <p class="ord-summary-sub">${contextLine}</p>
-    <div>${order.items.map((i) => `<div class="ord-summary-row"><span>${i.qty}&times; ${escapeHTML(i.name)}</span><span>${formatRM(i.lineTotal)}</span></div>`).join('')}</div>
+    <div>${order.items.map((i) => `<div class="ord-summary-row"><span>${i.qty}&times; ${escapeHTML(i.name)}</span><span>${formatRM(i.lineTotal)}</span></div>`).join('')}${(order.adjustments || []).map((a) => `<div class="ord-summary-row"><span>${escapeHTML(a.label)}</span><span>&minus;${formatRM(Math.abs(a.amount))}</span></div>`).join('')}</div>
     <div class="ord-summary-total"><span>Total</span><strong>${formatRM(order.subtotal)}</strong></div>
     <p class="ord-note">Show this screen at the counter to pay.</p>
     <button type="button" class="btn btn-secondary" id="ord-new-order">Back to the menu</button>
@@ -429,16 +573,144 @@ function renderSummary(order) {
   document.getElementById('ord-new-order').addEventListener('click', closeDrawers);
 }
 
+/* ================= FLOOR PLAN (v1.1) =================
+   Read-only for customers: it shows where their table is, and lets them tap another table if they move.
+   The seller draws it (see qr-listing-creator.js); floor-plan.js does the drawing so both look the same. */
+
+let planData;              // undefined = not fetched yet; null = this place has no plan
+let planZoom = window.innerWidth < 480 ? 1.5 : 1;   // a phone starts a little zoomed in: tables are big enough to tap
+let planFromCart = false;  // opened from the cart drawer, so closing it should go back there
+const PLAN_ZOOMS = [1, 1.5, 2, 3];
+
+// Offered only to someone ordering to a table, at a place that has drawn a plan.
+function canShowPlan() {
+  return !!(state.business && state.business.hasFloorPlan && state.orderType === 'dine_in' && window.FloorPlan);
+}
+
+async function openPlan(fromCart) {
+  planFromCart = !!fromCart;
+  const body = document.getElementById('ord-plan-body');
+  body.innerHTML = '<p class="ord-empty">Loading the floor plan&hellip;</p>';
+  openDrawer('ord-plan-drawer');
+  try {
+    if (planData === undefined) {
+      const res = await fetch(WORKER_ENDPOINT + '/floorplan?biz=' + encodeURIComponent(BIZ_ID));
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not load the floor plan.');
+      planData = data.plan || null;
+    }
+    renderPlan();
+  } catch (err) {
+    body.innerHTML = `<p class="ord-empty">${escapeHTML(err.message)}</p><button type="button" class="btn btn-secondary ord-btn" id="ord-plan-retry">Try again</button>`;
+    document.getElementById('ord-plan-retry').addEventListener('click', () => openPlan(planFromCart));
+  }
+}
+
+function renderPlan() {
+  const body = document.getElementById('ord-plan-body');
+  if (!planData) { body.innerHTML = '<p class="ord-empty">This place has not drawn a floor plan yet.</p>'; return; }
+  const mine = String(state.tableNumber || '').trim();
+  body.innerHTML = `
+    <div class="ord-plan-tools">
+      <span class="ord-plan-help">${mine ? 'Your table is the dark one. Tap another table to switch.' : 'Tap your table.'}</span>
+      <span class="ord-plan-zoom">
+        <button type="button" id="ord-plan-out" aria-label="Zoom out">&minus;</button>
+        <button type="button" id="ord-plan-in" aria-label="Zoom in">+</button>
+      </span>
+    </div>
+    <div class="ord-plan-scroll" id="ord-plan-scroll">
+      <svg id="ord-plan-svg" viewBox="0 0 ${FloorPlan.W} ${FloorPlan.H}" role="group" aria-label="Floor plan" style="width:${planZoom * 100}%">${FloorPlan.markup(planData, { selectable: true, highlight: mine })}</svg>
+    </div>`;
+  const svg = document.getElementById('ord-plan-svg');
+  svg.addEventListener('click', (e) => {
+    const g = e.target.closest('[data-kind="table"]');
+    if (g) chooseTable(g.dataset.n);
+  });
+  svg.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const g = e.target.closest('[data-kind="table"]');
+    if (g) { e.preventDefault(); chooseTable(g.dataset.n); }
+  });
+  document.getElementById('ord-plan-in').addEventListener('click', () => zoomPlan(1));
+  document.getElementById('ord-plan-out').addEventListener('click', () => zoomPlan(-1));
+  centerPlanOnMine();
+}
+
+function zoomPlan(direction) {
+  const i = Math.max(0, Math.min(PLAN_ZOOMS.length - 1, PLAN_ZOOMS.indexOf(planZoom) + direction));
+  planZoom = PLAN_ZOOMS[i];
+  document.getElementById('ord-plan-svg').style.width = (planZoom * 100) + '%';
+  centerPlanOnMine();
+}
+
+// When zoomed in, scroll so the customer's own table is in view.
+function centerPlanOnMine() {
+  const box = document.getElementById('ord-plan-scroll');
+  const svg = document.getElementById('ord-plan-svg');
+  const mine = String(state.tableNumber || '').trim().toLowerCase();
+  const table = mine && planData.tables.find((t) => String(t.n).toLowerCase() === mine);
+  if (!box || !table || planZoom === 1) return;
+  const width = svg.getBoundingClientRect().width;
+  box.scrollLeft = Math.max(0, (table.x / FloorPlan.W) * width - box.clientWidth / 2);
+  box.scrollTop = Math.max(0, (table.y / FloorPlan.H) * (width * FloorPlan.H / FloorPlan.W) - box.clientHeight / 2);
+}
+
+function chooseTable(label) {
+  state.tableNumber = label;
+  state.orderType = 'dine_in';
+  renderHeader();
+  toast('Table ' + label + ' selected');
+  closePlan();
+}
+
+function closePlan() {
+  if (planFromCart) { renderCartDrawer(); openDrawer('ord-cart-drawer'); }
+  else closeDrawers();
+}
+
 /* ================= INIT ================= */
 
-async function init() {
-  loadCart();
+// mode: 'busy' = spinner; 'retry' = message + Try again; 'stop' = message only (trying again would not help)
+// hint: an optional second line, for the case where the listing was only just set up
+function setLoading(message, mode, hint) {
+  document.getElementById('ord-loading').hidden = false;
+  document.getElementById('ord-app').hidden = true;
+  document.getElementById('ord-loading-text').textContent = message;
+  document.getElementById('ord-loading-hint').textContent = hint || '';
+  document.getElementById('ord-loading-hint').hidden = !hint;
+  document.getElementById('ord-spinner').hidden = mode !== 'busy';
+  document.getElementById('ord-retry').hidden = mode !== 'retry';
+}
+
+// Up to 3 tries before giving up, so a slow first scan (or a listing that has only just been published)
+// sorts itself out without the customer doing anything. (v1.1)
+async function loadWithRetry() {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await fetchCatalog();
+      return;
+    } catch (err) {
+      if (attempt === 3 || err.status === 404 || !BIZ_ID) throw err;
+      setLoading('Still loading the menu\u2026 (try ' + (attempt + 1) + ' of 3)', 'busy', 'If this menu was only just set up, it can take a moment to appear.');
+      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+    }
+  }
+}
+
+let listenersWired = false;
+
+async function start() {
+  setLoading('Loading the menu\u2026', 'busy');
   try {
-    await fetchCatalog();
+    await loadWithRetry();
   } catch (err) {
-    document.getElementById('ord-loading').textContent = err.message || 'Could not load this menu.';
+    const stop = err.status === 404 || !BIZ_ID;
+    setLoading(stop ? err.message : 'We could not load the menu. Check your connection, then tap Try again.', stop ? 'stop' : 'retry',
+      stop ? '' : 'If this menu was only just set up, wait a minute and try again.');
     return;
   }
+  syncCartWithCatalog();
+  state.orderType = pickInitialOrderType();
   document.getElementById('ord-loading').hidden = true;
   document.getElementById('ord-app').hidden = false;
 
@@ -448,10 +720,20 @@ async function init() {
   renderCatalog();
   renderCartBar();
 
+  if (listenersWired) return;
+  listenersWired = true;
   document.getElementById('ord-cart-bar-btn').addEventListener('click', () => { renderCartDrawer(); openDrawer('ord-cart-drawer'); });
   document.getElementById('ord-cart-close').addEventListener('click', closeDrawers);
   document.getElementById('ord-summary-close').addEventListener('click', closeDrawers);
   document.getElementById('ord-drawer-backdrop').addEventListener('click', closeDrawers);
+  document.getElementById('ord-plan-btn').addEventListener('click', () => openPlan(false));
+  document.getElementById('ord-plan-close').addEventListener('click', closePlan);
+}
+
+function init() {
+  loadCart();
+  document.getElementById('ord-retry').addEventListener('click', start);
+  start();
 }
 
 document.addEventListener('DOMContentLoaded', init);

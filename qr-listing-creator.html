@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- QR Listing Creator, seller page. VERSION 1.1 (2026-09-21). Change list: QLC_HANDOFF_v1.1.md -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -21,6 +22,9 @@
        (buttons, wizard-card, result-card, tooltip, toggle-row) comes
        from styles.css as-is, per AI_BUILD_BRIEF.md. -->
   <style>
+    /* styles.css has no global [hidden] rule, so any element given a display below ignored the hidden
+       attribute (the floating nav showed before sign-in; the "What's included" box always showed). (v1.1) */
+    [hidden] { display: none !important; }
     .qlc-vertical-picker { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
     .qlc-vertical-btn { flex: 1 1 120px; padding: 14px 10px; border: 2px solid var(--line); border-radius: 8px; background: var(--paper); font-family: var(--font-body); font-weight: 600; color: var(--text); cursor: pointer; }
     .qlc-vertical-btn.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-dark); }
@@ -78,6 +82,22 @@
     .qlc-quick-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
     @media print { #qlc-quick-nav { display: none !important; } }
 
+    .qlc-session-links { display: inline-flex; gap: 16px; align-items: baseline; }
+
+    /* ---- Floor plan editor (v1.1) ---- */
+    .qlc-fp-toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+    .qlc-fp-tool { background: var(--surface); border: 2px solid var(--line); border-radius: 999px; padding: 8px 18px; font-family: var(--font-body); font-weight: 600; font-size: 0.88rem; color: var(--text); cursor: pointer; }
+    .qlc-fp-tool:hover { border-color: var(--accent); color: var(--accent-dark); }
+    .qlc-fp-tool.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .qlc-fp-tool:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .qlc-fp-options { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 0 0 8px; font-size: 0.88rem; font-weight: 600; }
+    .qlc-fp-options label { display: flex; align-items: center; gap: 8px; }
+    .qlc-fp-options input, .qlc-fp-options select { padding: 7px 9px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.9rem; }
+    .qlc-fp-options input { width: 6em; }
+    /* Width capped so the canvas is never taller than ~62% of the screen: toolbar + canvas then fit together on a laptop (640:400 = 1.6). */
+    .qlc-fp-wrap { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 8px; max-width: min(900px, calc(62vh * 1.6 + 18px)); margin-bottom: 4px; }
+    .qlc-fp-canvas { display: block; width: 100%; height: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+
     @media (max-width: 800px) { .qlc-field-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
@@ -100,28 +120,9 @@
         <li><a href="services.html">Services</a></li>
         <li class="nav-dropdown">
           <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
-          <!-- Includes every tool that actually exists as of this build,
-               Rental Calculator + Market Radar included (neither lists the
-               other yet on their OWN pages — flagged separately, not fixed
-               here per AI_BUILD_BRIEF.md's "reconciled centrally" rule).
-               "Cost Structure Checker" is reserved at slot 10 in
-               NAV_ORDER_STANDARD.md but isn't built, so it's skipped here
-               per that doc's own rule against linking to pages that don't
-               exist — this tool renders as the 10th LIVE link for now, and
-               should move to make room the moment Cost Structure Checker
-               ships, to match its reserved slot 11. -->
-          <ul class="nav-dropdown-menu">
-            <li><a href="menu-calculator.html">Menu Calculator</a></li>
-            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-            <li><a href="printing-calculator.html">Printing Calculator</a></li>
-            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
-            <li><a href="food-worth-calculator.html">Food Worth</a></li>
-            <li><a href="crypto-radar.html">Crypto Radar</a></li>
-            <li><a href="rental-calculator.html">Rental Calculator</a></li>
-            <li><a href="market-radar.html">Market Radar</a></li>
-            <li><a href="qr-listing-creator.html" aria-current="page">QR Listing Creator</a></li>
-          </ul>
+          <!-- Filled in by nav-config.js (see SITE_CONFIG_STANDARD.md). To add a page, add ONE line to
+               RZ_NAV_PAGES there; nothing in this file changes. -->
+          <ul class="nav-dropdown-menu"></ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
       </ul>
@@ -188,11 +189,16 @@
         <div class="qlc-biz-summary">
           <strong id="qlc-biz-name"></strong>
           <span class="toggle-hint" id="qlc-biz-vertical"></span>
+          <span class="qlc-session-links no-print">
+            <button type="button" class="link-btn" id="qlc-show-key" style="margin:0;">Show admin key</button>
+            <button type="button" class="link-btn" id="qlc-sign-out" style="margin:0;">Sign out of this device</button>
+          </span>
         </div>
 
         <div class="qlc-calc-tabs" id="qlc-calc-tabs" role="tablist">
           <button type="button" class="qlc-calc-tab is-active" data-tab="products" aria-expanded="true">Products</button>
           <button type="button" class="qlc-calc-tab" data-tab="tables" aria-expanded="false">Tables &amp; QR</button>
+          <button type="button" class="qlc-calc-tab" data-tab="floorplan" aria-expanded="false">Floor plan</button>
           <button type="button" class="qlc-calc-tab" data-tab="settings" aria-expanded="false">Settings</button>
           <button type="button" class="qlc-calc-tab" data-tab="orders" aria-expanded="false">Orders</button>
         </div>
@@ -206,8 +212,34 @@
 
         <!-- ---- TABLES & QR ---- -->
         <div class="qlc-panel" id="qlc-panel-tables" data-panel="tables" hidden>
-          <p class="menu-builder-intro">Print one of these per table. Each QR opens your listing pre-filled with that table number, so an order arrives already tagged &mdash; no typing needed from the customer. Takeaway and delivery get their own QR too, for a counter, a window, or a flyer.</p>
+          <p class="menu-builder-intro">Print one of these per table. Each QR opens your listing pre-filled with that table number, so an order arrives already tagged &mdash; no typing needed from the customer. Takeaway and delivery get their own QR too, for a counter, a window, or a flyer. Each code is locked to what it is for: a table QR always orders for that table, the delivery QR always delivers.</p>
           <div class="qlc-qr-grid" id="qlc-qr-grid"></div>
+        </div>
+
+        <!-- ---- FLOOR PLAN ---- -->
+        <div class="qlc-panel" id="qlc-panel-floorplan" data-panel="floorplan" hidden>
+          <p class="menu-builder-intro">Draw your seating once: <strong>walls</strong> to mark out the space, numbered <strong>tables</strong>, and where the <strong>door</strong> and <strong>cashier</strong> are. Customers open it from the ordering page to see which table is theirs, and can tap another table if they move.</p>
+          <div class="qlc-fp-toolbar no-print" role="toolbar" aria-label="Floor plan tools">
+            <button type="button" class="qlc-fp-tool is-active" data-fp-tool="move" aria-pressed="true">Move</button>
+            <button type="button" class="qlc-fp-tool" data-fp-tool="wall" aria-pressed="false">Wall</button>
+            <button type="button" class="qlc-fp-tool" data-fp-tool="table" aria-pressed="false">Table</button>
+            <button type="button" class="qlc-fp-tool" data-fp-tool="door" aria-pressed="false">Door</button>
+            <button type="button" class="qlc-fp-tool" data-fp-tool="cashier" aria-pressed="false">Cashier</button>
+            <button type="button" class="qlc-fp-tool" data-fp-tool="erase" aria-pressed="false">Erase</button>
+          </div>
+          <div class="qlc-fp-options no-print" id="qlc-fp-table-opts" hidden>
+            <label>Next table <input type="text" id="qlc-fp-label" maxlength="8" aria-describedby="qlc-fp-hint"></label>
+            <label>Shape <select id="qlc-fp-shape"><option value="round">Round</option><option value="square">Square</option></select></label>
+          </div>
+          <p class="toggle-hint" id="qlc-fp-hint" role="status" style="margin:0 0 8px;"></p>
+          <div class="qlc-fp-wrap"><svg id="qlc-fp-svg" class="qlc-fp-canvas" viewBox="0 0 640 400" role="img" aria-label="Floor plan editor"></svg></div>
+          <div class="calc-actions no-print">
+            <button type="button" class="btn btn-secondary" id="qlc-fp-undo">Undo</button>
+            <button type="button" class="btn btn-secondary" id="qlc-fp-clear">Clear all</button>
+            <button type="button" class="btn btn-primary" id="qlc-fp-save">Save floor plan</button>
+          </div>
+          <p class="qlc-status" id="qlc-fp-status" role="status"></p>
+          <p class="toggle-hint" id="qlc-fp-info"></p>
         </div>
 
         <!-- ---- SETTINGS ---- -->
@@ -251,11 +283,15 @@
   <div id="qlc-quick-nav" class="no-print" hidden>
     <button type="button" class="qlc-quick-nav-btn" data-tab="products">Products</button>
     <button type="button" class="qlc-quick-nav-btn" data-tab="tables">Tables &amp; QR</button>
+    <button type="button" class="qlc-quick-nav-btn" data-tab="floorplan">Floor plan</button>
     <button type="button" class="qlc-quick-nav-btn" data-tab="settings">Settings</button>
     <button type="button" class="qlc-quick-nav-btn" data-tab="orders">Orders</button>
   </div>
 
+  <script src="site-config.js?v=1" defer></script>
+  <script src="nav-config.js?v=1" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="qr-listing-creator.js?v=1" defer></script>
+  <script src="floor-plan.js?v=1" defer></script>
+  <script src="qr-listing-creator.js?v=2" defer></script>
 </body>
 </html>
