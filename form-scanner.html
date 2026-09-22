@@ -1,104 +1,223 @@
-<!-- Version: v4.7.0 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Form & Payment Voucher Scanner</title>
-  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <title>Reysourcez Enterprise — Form Scanner</title>
+  <meta name="description" content="Photograph a paper form or upload a PDF and get back a straight, clean, genuinely fillable PDF at the same size and orientation as the source — not just an OCR text dump. Free tool, nothing saved on our side.">
+
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="manifest" href="site.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="styles.css?v=19">
+
+  <!-- Page-specific styles only \u2014 everything reusable (buttons, .calc-panel,
+       .calc-intro, .result-card, .tooltip-icon, --accent, etc.) comes from
+       styles.css as-is, per AI_BUILD_BRIEF.md. fs- prefixed classes
+       throughout so nothing here collides with another tool's page-scoped
+       classes \u2014 same convention as the rest of this file. -->
   <style>
-    :root {
-      --bg: #f4f6f8;
-      --card-bg: #ffffff;
-      --primary: #0f766e;
-      --primary-hover: #115e59;
-      --border: #cbd5e1;
-      --text: #1e293b;
-      --text-muted: #64748b;
-      --danger: #b91c1c;
-      --radius: 8px;
+    .fs-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; background: var(--surface); max-width: 480px; }
+    .fs-upload-zone.has-image { border-style: solid; padding: 20px; }
+    .fs-preview-img { max-width: 100%; max-height: 320px; border-radius: 8px; display: block; margin: 0 0 14px; }
+    .fs-pdf-preview { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); margin: 0 0 14px; }
+    .fs-pdf-preview svg { flex-shrink: 0; color: var(--accent); }
+    .fs-pdf-filename { font-weight: 600; font-size: 0.92rem; color: var(--text); word-break: break-all; margin: 0; }
+    .fs-pdf-sub { font-size: 0.8rem; color: var(--muted); margin: 2px 0 0; }
+    .fs-upload-row { display: flex; flex-direction: column; gap: 10px; }
+    .fs-upload-row > .btn { display: flex; width: 100%; align-items: center; justify-content: center; cursor: pointer; }
+    .fs-note {
+      display: block; width: 100%; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line);
+      border-radius: 8px; font-family: var(--font-body); font-size: 0.92rem; color: var(--text);
+      resize: vertical; min-height: 56px; box-sizing: border-box;
     }
+    .fs-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .fs-color-toggle-row {
+      display: flex; align-items: flex-start; gap: 8px; margin-top: 12px;
+      font-size: 0.88rem; color: var(--text); cursor: pointer;
+    }
+    .fs-color-toggle-row input[type="checkbox"] { width: 17px; height: 17px; margin-top: 1px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
+    .fs-color-toggle-row span { color: var(--muted); }
+    .fs-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 14px; }
+    .fs-status.is-error { color: #C0392B; font-weight: 600; }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
-    body { background: var(--bg); color: var(--text); padding: 2rem 1rem; line-height: 1.5; }
-    .container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
-    
-    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    .card-title { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
-    .card-subtitle { color: var(--text-muted); font-size: 0.875rem; margin-bottom: 1.25rem; }
+    .fs-scope-note { background: var(--paper); border-left: 3px solid var(--accent); border-radius: 6px; padding: 12px 16px; font-size: 0.88rem; color: var(--muted); margin: 18px 0 0; max-width: 640px; }
+    .fs-scope-note strong { color: var(--text); }
 
-    .upload-area { border: 2px dashed var(--border); border-radius: var(--radius); padding: 2rem; text-align: center; cursor: pointer; position: relative; }
-    .upload-area:hover { border-color: var(--primary); }
-    .upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; z-index: 10; }
+    /* Detected-structure preview \u2014 a plain-English readout of exactly
+       what will end up in the PDF, shown BEFORE download so a wrong
+       column header, missed field, or unwanted output size is obvious
+       immediately rather than only discovered after opening the file.
+       Deliberately read-only in this version. */
+    .fs-preview-title { font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 2px; }
+    .fs-preview-subtitle { font-size: 0.85rem; color: var(--muted); margin: 0 0 6px; }
+    .fs-preview-ref { font-size: 0.82rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; margin: 0 0 6px; }
+    .fs-preview-geometry {
+      display: inline-block; font-size: 0.8rem; font-weight: 600; color: var(--accent-dark);
+      background: var(--accent-soft); padding: 4px 10px; border-radius: 999px; margin: 0 0 20px;
+    }
+    .fs-preview-group { margin-bottom: 20px; }
+    .fs-preview-group:last-child { margin-bottom: 0; }
+    .fs-preview-group h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 10px; font-family: var(--font-body); font-weight: 600; }
+    .fs-field-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .fs-field-tag { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 0.85rem; font-weight: 500; color: var(--text); }
+    .fs-field-tag.is-multiline::after { content: " \u2261"; color: var(--muted); }
 
-    .preview-img { max-height: 250px; margin: 1rem auto 0; display: none; border-radius: 4px; border: 1px solid var(--border); }
-    
-    .input-group { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1rem; }
-    .input-group label { font-size: 0.875rem; font-weight: 500; }
-    .input-group input, .input-group select { padding: 0.6rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; font-size: 0.9rem; }
+    .fs-table-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); margin-bottom: 10px; }
+    .fs-table-card:last-child { margin-bottom: 0; }
+    .fs-table-card-title { font-weight: 600; font-size: 0.92rem; margin: 0 0 8px; }
+    .fs-table-groups { font-size: 0.78rem; color: var(--accent-dark); margin: 0 0 4px; }
+    .fs-table-cols { font-size: 0.85rem; color: var(--muted); margin: 0 0 4px; }
+    .fs-table-rows { font-size: 0.8rem; color: var(--accent-dark); font-weight: 600; margin: 0; }
 
-    .btn { background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer; width: 100%; margin-top: 1rem; transition: background 0.2s; }
-    .btn:hover { background: var(--primary-hover); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .fs-sig-card { display: inline-flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; background: var(--surface); margin: 0 10px 10px 0; }
+    .fs-sig-card-title { font-weight: 600; font-size: 0.88rem; }
+    .fs-sig-card-fields { font-size: 0.82rem; color: var(--muted); }
 
-    .status-box { padding: 0.8rem 1rem; border-radius: 6px; font-size: 0.875rem; background: #e0f2fe; color: #0369a1; display: none; }
-    .status-box.active { display: block; }
-    .status-box.is-error { background: #fef2f2; color: var(--danger); border: 1px solid #fecaca; }
+    .fs-footnotes-list { margin: 0; padding-left: 20px; font-size: 0.85rem; color: var(--muted); }
+    .fs-footnotes-list li { margin-bottom: 4px; }
 
-    .badge { background: #ccfbf1; color: #115e59; padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+    .fs-download-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 24px; align-items: center; }
+    .fs-rescan-hint { font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+
+    @media (max-width: 800px) {
+      .fs-upload-zone { max-width: none; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card">
-      <h1 class="card-title">Form & Payment Voucher Scanner</h1>
-      <p class="card-subtitle">Upload a photo or PDF to convert it into an exactly formatted fillable PDF.</p>
 
-      <div class="upload-area">
-        <p>Click or drag & drop voucher photo or PDF here</p>
-        <input type="file" id="fs-photo-input" accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png,.webp">
-        <img id="fs-preview-img" class="preview-img" alt="Form Preview">
-        <div id="fs-pdf-preview" style="display:none; padding: 1rem; background: #f8fafc; border-radius: 4px; border: 1px solid var(--border); margin-top: 1rem; text-align: center;">
-          <p id="fs-pdf-filename" style="font-weight: 600; font-size: 0.9rem; color: var(--text);"></p>
-          <span id="fs-pdf-meta" style="font-size: 0.75rem; color: var(--text-muted);">PDF Document Ready</span>
-        </div>
+  <a href="#main" class="skip-link">Skip to content</a>
+
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a href="index.html" class="brand">
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
+          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
+        </svg>
+        Reysourcez Enterprise
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="about.html">About</a></li>
+        <li><a href="services.html">Services</a></li>
+        <li class="nav-dropdown">
+          <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
+          <ul class="nav-dropdown-menu"><!-- populated by nav-config.js --></ul>
+        </li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main">
+
+    <section class="calc-intro">
+      <div class="wrap">
+        <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
+        <h1>Form Scanner</h1>
+        <p class="lead">Photograph a paper form \u2014 crooked, at an angle, whatever \u2014 or upload a PDF, and get back a clean, genuinely fillable PDF at the <strong>same size and orientation as your source</strong> by default. Not an OCR text dump: an actual usable digital version of the form, ready to type into.</p>
       </div>
+    </section>
 
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
-        <div class="input-group">
-          <label for="fs-paper-size">Output Paper Size:</label>
-          <select id="fs-paper-size">
-            <option value="A4">A4 (Standard)</option>
-            <option value="A5">A5 (Half A4 / Receipt)</option>
-            <option value="A3">A3 (Large)</option>
-            <option value="A6">A6 (Small)</option>
-            <option value="B5">B5</option>
-            <option value="Letter">US Letter</option>
-            <option value="Legal">US Legal</option>
-          </select>
+    <!-- ============ UPLOAD ============ -->
+    <section class="calc-panel">
+      <div class="wrap">
+        <div class="fs-upload-zone" id="fs-upload-zone">
+          <img class="fs-preview-img" id="fs-preview-img" alt="" hidden>
+          <div class="fs-pdf-preview" id="fs-pdf-preview" hidden>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+            <div>
+              <p class="fs-pdf-filename" id="fs-pdf-filename"></p>
+              <p class="fs-pdf-sub">PDF ready for analysis</p>
+            </div>
+          </div>
+          <div class="fs-upload-row no-print">
+            <label class="btn btn-secondary" style="cursor:pointer;">Choose a photo or PDF<input type="file" accept="image/*,application/pdf" class="sr-only" id="fs-photo-input"></label>
+          </div>
+          <textarea class="fs-note" id="fs-note" placeholder="Optional &mdash; structure guidance (ignore the letterhead, it's two pages) and/or an output request (make this A5 landscape, use a serif font, bigger text)."></textarea>
+          <label class="fs-color-toggle-row" for="fs-color-toggle">
+            <input type="checkbox" id="fs-color-toggle">
+            <span>Shade fillable fields with a light tint (unchecked = colorless, best for printing)</span>
+          </label>
         </div>
 
-        <div class="input-group">
-          <label for="fs-note">Optional guidance:</label>
-          <input type="text" id="fs-note" placeholder="e.g. Force landscape mode">
+        <div class="calc-actions no-print">
+          <button type="button" class="btn btn-primary" id="fs-scan-btn" disabled>Scan this form</button>
         </div>
+        <p class="fs-status no-print" id="fs-status" role="status" aria-live="polite"></p>
+
+        <p class="fs-scope-note">Built for <strong>printed or typed forms</strong> with labelled fields and tables — registers, checklists, vouchers, intake sheets, and similar. It reconstructs the blank template (not any handwriting already on the page) at your source file's own size and orientation unless your note asks for something different. Messier documents — dense handwriting, long prose, heavily designed layouts — aren't what this is built for yet.</p>
       </div>
+    </section>
 
-      <button id="fs-scan-btn" class="btn" disabled>Scan & Extract Form Structure</button>
+    <!-- ============ RESULTS ============ -->
+    <section class="calc-panel" id="fs-results-section" hidden>
+      <div class="wrap">
+        <div class="fs-preview-title" id="fs-preview-title">Untitled form</div>
+        <p class="fs-preview-subtitle" id="fs-preview-subtitle" hidden></p>
+        <p class="fs-preview-ref" id="fs-preview-ref"></p>
+        <div class="fs-preview-geometry" id="fs-preview-geometry"></div>
+
+        <div class="fs-preview-group" id="fs-header-fields-group" hidden>
+          <h3>Fields</h3>
+          <div class="fs-field-tags" id="fs-header-fields"></div>
+        </div>
+
+        <div class="fs-preview-group" id="fs-tables-group" hidden>
+          <h3>Tables</h3>
+          <div id="fs-tables"></div>
+        </div>
+
+        <div class="fs-preview-group" id="fs-reference-tables-group" hidden>
+          <h3>Reference tables (printed, not fillable)</h3>
+          <div id="fs-reference-tables"></div>
+        </div>
+
+        <div class="fs-preview-group" id="fs-signatures-group" hidden>
+          <h3>Sign-off blocks</h3>
+          <div id="fs-signatures"></div>
+        </div>
+
+        <div class="fs-preview-group" id="fs-footnotes-group" hidden>
+          <h3>Footnotes</h3>
+          <ul class="fs-footnotes-list" id="fs-footnotes"></ul>
+        </div>
+
+        <div class="fs-download-row no-print">
+          <button type="button" class="btn btn-primary" id="fs-download-btn">Download fillable PDF</button>
+        </div>
+        <p class="fs-rescan-hint no-print">Something off? Retake the photo straighter or closer (or try a clearer PDF page) and scan again — there's no limit on retries within today's usage cap. Want a different size, orientation, or font? Add a note above and rescan.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="wrap">
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
     </div>
+  </footer>
 
-    <div id="fs-status" class="status-box"></div>
+  <!-- site-config.js / nav-config.js load first, per SITE_CONFIG_STANDARD.md's
+       retrofit checklist \u2014 nav-config.js renders the dropdown above from
+       RZ_NAV_PAGES, replacing this page's old hand-written 10-item list. -->
+  <script src="site-config.js?v=1" defer></script>
+  <script src="nav-config.js?v=1" defer></script>
 
-    <div id="fs-results-section" class="card" style="display:none;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <h2 id="fs-preview-title" class="card-title" style="margin: 0;"></h2>
-        <span id="fs-preview-ref" class="badge"></span>
-      </div>
-
-      <button id="fs-download-btn" class="btn" style="background: #0369a1;">Download Fillable PDF</button>
-    </div>
-  </div>
-
-  <script src="form-scanner.js"></script>
+  <!-- pdf-lib builds the actual fillable PDF entirely in the browser \u2014
+       nothing about the finished file ever touches our server, matching
+       the rest of this site's "nothing saved on our side" rule. Pinned
+       version, loaded from cdnjs per this site's existing convention. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="nav-dropdown.js?v=1" defer></script>
+  <script src="form-scanner.js?v=2" defer></script>
 </body>
 </html>
