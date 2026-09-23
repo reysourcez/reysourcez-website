@@ -1,6 +1,6 @@
 /* ============================================================
    QR Listing Creator — customer ordering page (order.js)
-   VERSION 1.1 (2026-09-21) — fixes + floor plan view. Change list: QLC_HANDOFF_v1.1.md
+   VERSION 1.3 (2026-09-24) — customer-page UI round: themes, ads banner, Top picks look, shop-layout table switch. Notes: QLC_HANDOFF_v1.3_ADDENDUM.md (v1.1 base: QLC_HANDOFF_v1.1.md)
    Vanilla JS, no build step. Talks to qr-listing-creator-worker.js
    over a small JSON API — see that file's own header for the full
    contract. Nothing here decides the REAL total; the Worker
@@ -28,6 +28,9 @@
    ============================================================ */
 
 const WORKER_ENDPOINT = 'https://qr-listing-creator-proxy.reysourcez-ent.workers.dev';
+
+// Wording you can change in order-config.js (these are the fallbacks if that file is missing). (v1.3)
+const TXT = Object.assign({ topPicks: '\u2605 Top picks', fullMenu: 'Full menu', shopLayout: 'Shop layout' }, (window.ORDER_CONFIG || {}).text);
 
 // Vertical-specific wording and which order types make sense. F&B is the
 // only one dine-in applies to — a retail shop or a service business
@@ -251,6 +254,8 @@ function renderHeader() {
   document.title = state.business.name;
   document.getElementById('ord-context-badge').textContent = contextBadgeText();
   document.getElementById('ord-plan-btn').hidden = !canShowPlan();
+  document.getElementById('ord-plan-btn').textContent = TXT.shopLayout;
+  document.getElementById('ord-plan-title').textContent = TXT.shopLayout;
 }
 
 function renderVideoBanner() {
@@ -265,11 +270,50 @@ function renderVideoBanner() {
 function renderPicks() {
   const featured = state.products.filter((p) => p.isFeatured);
   const section = document.getElementById('ord-picks-section');
-  if (!featured.length) { section.hidden = true; return; }
-  section.hidden = false;
+  const divider = document.getElementById('ord-divider');
+  divider.hidden = section.hidden = !featured.length; // the line under Top picks only shows when there are picks
+  if (!featured.length) return;
+  document.getElementById('ord-picks-title').textContent = TXT.topPicks;
+  divider.querySelector('span').textContent = TXT.fullMenu;
   const row = document.getElementById('ord-picks-row');
   row.innerHTML = featured.map((p) => productCardHTML(p, true)).join('');
   wireProductCards(row);
+}
+
+/* ================= ADS BANNER (v1.3) =================
+   Slides come from order-config.js. Text is escaped; a link must be https:// or a page on this site. */
+let adTimer = null;
+function safeAdUrl(u) {
+  u = String(u || '').trim();
+  return /^(https:\/\/|(?!\/\/)[\w.\/-]+$)/i.test(u) ? u : '';
+}
+function renderAds() {
+  const cfg = (window.ORDER_CONFIG || {}).ads || {};
+  const box = document.getElementById('ord-ad');
+  const slides = cfg.enabled ? (cfg.slides || []).slice(0, 6) : [];
+  box.hidden = !slides.length;
+  if (!slides.length) return;
+  box.innerHTML = '<div class="ord-ad-track">' + slides.map((s) => {
+    const url = safeAdUrl(s.url);
+    const style = (s.bg ? '--ad-bg:' + escapeHTML(s.bg) + ';' : '') + (s.fg ? '--ad-fg:' + escapeHTML(s.fg) + ';' : '');
+    const inner = `<span class="ord-ad-tag">Ad</span><span class="ord-ad-copy"><strong>${escapeHTML(s.title)}</strong><span>${escapeHTML(s.text)}</span>${s.cta ? `<em>${escapeHTML(s.cta)} &rsaquo;</em>` : ''}</span><span class="ord-ad-emoji" aria-hidden="true">${escapeHTML(s.emoji || '')}</span>`;
+    return url
+      ? `<a class="ord-ad-slide" style="${style}" href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer sponsored">${inner}</a>`
+      : `<div class="ord-ad-slide" style="${style}">${inner}</div>`;
+  }).join('') + '</div>' + (slides.length > 1 ? '<div class="ord-ad-dots" aria-hidden="true">' + slides.map((_, i) => `<i${i ? '' : ' class="on"'}></i>`).join('') + '</div>' : '');
+  if (slides.length < 2) return;
+  const track = box.querySelector('.ord-ad-track');
+  const dots = box.querySelectorAll('.ord-ad-dots i');
+  const step = () => track.children[1].offsetLeft - track.children[0].offsetLeft;
+  track.addEventListener('scroll', () => { const n = Math.round(track.scrollLeft / step()); dots.forEach((d, k) => d.classList.toggle('on', k === n)); }, { passive: true });
+  if (cfg.rotateSeconds > 0 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (adTimer) clearInterval(adTimer);
+    adTimer = setInterval(() => {
+      if (document.hidden || !box.offsetParent) return;
+      const n = Math.round(track.scrollLeft / step()) + 1;
+      track.scrollTo({ left: (n >= slides.length ? 0 : n) * step(), behavior: 'smooth' });
+    }, cfg.rotateSeconds * 1000);
+  }
 }
 
 /* ================= RENDER: catalog + native "promoted" tiles =================
@@ -301,8 +345,8 @@ function productCardHTML(p, compact, isPromoted) {
   const setItems = (p.type === 'set' && p.setItems && p.setItems.length)
     ? `<ul class="ord-set-items">${p.setItems.map((x) => `<li>${escapeHTML(x.name || x)}</li>`).join('')}</ul>` : '';
   return `
-    <div class="ord-product-card${compact ? ' is-compact' : ''}" data-product-id="${escapeHTML(p.id)}">
-      ${promotedBadge}${img}
+    <div class="ord-product-card${compact ? ' is-compact is-top' : ''}" data-product-id="${escapeHTML(p.id)}">
+      ${compact ? '<span class="ord-top-ribbon">\u2605 Top pick</span><span class="ord-glitter" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' : ''}${promotedBadge}${img}
       <div class="ord-card-body">
         ${typeBadge}
         <strong class="ord-card-name">${escapeHTML(p.name)}</strong>
@@ -414,6 +458,13 @@ function captureOrderFields() {
   if (address !== null) state.delivery.address = address;
 }
 
+// Table chips 1..tableCount: the "change table" picker when this place has no shop layout drawn. (v1.3)
+function tablePickerHTML() {
+  const n = Math.min(60, Number(state.business.tableCount) || 0);
+  const chips = Array.from({ length: n }, (_, i) => `<button type="button" class="ord-chip${String(i + 1) === String(state.tableNumber) ? ' is-on' : ''}" data-table="${i + 1}">${i + 1}</button>`).join('');
+  return `<div class="ord-ot-fields"><span class="ord-plan-help">Tap your table &mdash; your order moves with you.</span>${n ? `<div class="ord-chips">${chips}</div>` : ''}<label>Other table <input type="text" id="ord-table-input" maxlength="12" value="${escapeHTML(state.tableNumber)}"></label></div>`;
+}
+
 function renderCartDrawer() {
   captureOrderFields();
   const vlabel = VERTICAL_LABELS[state.business.vertical] || VERTICAL_LABELS.fnb;
@@ -456,14 +507,14 @@ function renderCartDrawer() {
     <label>Phone <input type="tel" id="ord-del-phone" maxlength="30" value="${escapeHTML(state.delivery.phone)}"></label>
     <label>Address <textarea id="ord-del-address" rows="2" maxlength="300">${escapeHTML(state.delivery.address)}</textarea></label>`;
   const tableField = `<label>Table number <input type="text" id="ord-table-input" maxlength="12" value="${escapeHTML(state.tableNumber)}"></label>`
-    + (canShowPlan() ? '<button type="button" class="ord-link-btn" id="ord-plan-link">Find my table on the floor plan</button>' : '');
+    + (canShowPlan() ? '<button type="button" class="ord-link-btn" id="ord-plan-link">Find my table on the shop layout</button>' : '');
   let orderTypeHTML = '';
   if (state.cart.length) {
     if (state.locked && state.orderType === 'dine_in') {
       orderTypeHTML = `
-        <div class="ord-locked-row"><span>Ordering for <strong>Table ${escapeHTML(state.tableNumber || '?')}</strong></span>
-          <button type="button" class="ord-link-btn" id="ord-change-table">Change table</button></div>
-        ${state.editTable ? `<div class="ord-ot-fields">${tableField}</div>` : ''}`;
+        <div class="ord-locked-row ord-table-card"><span>&#128205; Ordering for <strong>Table ${escapeHTML(state.tableNumber || '?')}</strong></span>
+          <button type="button" class="ord-plan-btn" id="ord-change-table">${canShowPlan() ? 'Change table &middot; ' + escapeHTML(TXT.shopLayout) : 'Change table'}</button></div>
+        ${state.editTable ? tablePickerHTML() : ''}`;
     } else if (state.locked && state.orderType === 'delivery') {
       orderTypeHTML = `<div class="ord-locked-row"><span><strong>Delivery</strong> order</span></div><div class="ord-ot-fields">${deliveryFields}</div>`;
     } else if (state.locked) {
@@ -506,6 +557,7 @@ function renderCartDrawer() {
   });
   const planLink = document.getElementById('ord-plan-link');
   if (planLink) planLink.addEventListener('click', () => openPlan(true));
+  document.querySelectorAll('.ord-chip').forEach((b) => b.addEventListener('click', () => chooseTable(b.dataset.table)));
 }
 
 /* ================= PLACE ORDER ================= */
@@ -612,7 +664,7 @@ function renderPlan() {
   const mine = String(state.tableNumber || '').trim();
   body.innerHTML = `
     <div class="ord-plan-tools">
-      <span class="ord-plan-help">${mine ? 'Your table is the dark one. Tap another table to switch.' : 'Tap your table.'}</span>
+      <span class="ord-plan-help">${mine ? 'You are at <strong>Table ' + escapeHTML(mine) + '</strong> (marked &ldquo;You&rdquo;). Tap another table and your order moves there.' : 'Tap your table.'}</span>
       <span class="ord-plan-zoom">
         <button type="button" id="ord-plan-out" aria-label="Zoom out">&minus;</button>
         <button type="button" id="ord-plan-in" aria-label="Zoom in">+</button>
@@ -624,12 +676,12 @@ function renderPlan() {
   const svg = document.getElementById('ord-plan-svg');
   svg.addEventListener('click', (e) => {
     const g = e.target.closest('[data-kind="table"]');
-    if (g) chooseTable(g.dataset.n);
+    if (g) chooseTable(g.dataset.n, true);
   });
   svg.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const g = e.target.closest('[data-kind="table"]');
-    if (g) { e.preventDefault(); chooseTable(g.dataset.n); }
+    if (g) { e.preventDefault(); chooseTable(g.dataset.n, true); }
   });
   document.getElementById('ord-plan-in').addEventListener('click', () => zoomPlan(1));
   document.getElementById('ord-plan-out').addEventListener('click', () => zoomPlan(-1));
@@ -655,12 +707,22 @@ function centerPlanOnMine() {
   box.scrollTop = Math.max(0, (table.y / FloorPlan.H) * (width * FloorPlan.H / FloorPlan.W) - box.clientHeight / 2);
 }
 
-function chooseTable(label) {
+// Moving to another table keeps the cart and re-tags the order: ?table= in the address bar follows, so a refresh or
+// re-scan lands on the new table too. (v1.3)
+function chooseTable(label, fromPlan) {
   state.tableNumber = label;
   state.orderType = 'dine_in';
+  state.editTable = false;
+  const box = document.getElementById('ord-table-input');
+  if (box) box.value = label; // otherwise the cart reads the old typed number back over the new one
+  try {
+    const q = new URLSearchParams(location.search);
+    q.set('table', label);
+    history.replaceState(null, '', location.pathname + '?' + q.toString());
+  } catch (e) {}
   renderHeader();
-  toast('Table ' + label + ' selected');
-  closePlan();
+  toast('Order moved to Table ' + label);
+  if (fromPlan) closePlan(); else renderCartDrawer();
 }
 
 function closePlan() {
@@ -716,6 +778,7 @@ async function start() {
 
   renderHeader();
   renderVideoBanner();
+  renderAds();
   renderPicks();
   renderCatalog();
   renderCartBar();

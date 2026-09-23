@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- QR Listing Creator, customer ordering page. VERSION 1.1 (2026-09-21). Change list: QLC_HANDOFF_v1.1.md -->
-<html lang="en">
+<!-- QR Listing Creator, customer ordering page. VERSION 1.3 (2026-09-24). Change list: QLC_HANDOFF_v1.3_ADDENDUM.md (v1.1 base: QLC_HANDOFF_v1.1.md) -->
+<html lang="en" data-theme="classic" data-cards="grid" data-cart="bar" data-nav="pills">
 <head>
   <meta charset="UTF-8">
   <!-- Security policy (v1.1). Only this site's own scripts may run, and the page may only talk to the ordering
@@ -125,6 +125,7 @@
       .ord-drawer { left: 50%; right: auto; width: 420px; transform: translateX(-50%); border-radius: 16px; bottom: 20px; max-height: 80vh; }
     }
   </style>
+  <link rel="stylesheet" href="order-look.css?v=1">
 </head>
 <body>
 
@@ -141,17 +142,20 @@
         <strong id="ord-biz-name"></strong>
         <span class="ord-context-badge" id="ord-context-badge"></span>
       </div>
-      <button type="button" class="ord-plan-btn" id="ord-plan-btn" hidden>Floor plan</button>
+      <button type="button" class="ord-plan-btn" id="ord-plan-btn" hidden>Shop layout</button>
     </header>
 
     <div class="ord-video-banner" id="ord-video-banner" hidden>
       <video id="ord-video" autoplay muted loop playsinline></video>
     </div>
 
+    <section class="ord-ad" id="ord-ad" aria-label="Sponsored" hidden></section>
+
     <section id="ord-picks-section" hidden>
-      <h2 class="ord-section-title">Top picks</h2>
+      <h2 class="ord-section-title" id="ord-picks-title">&#9733; Top picks</h2>
       <div class="ord-picks-row" id="ord-picks-row"></div>
     </section>
+    <div class="ord-divider" id="ord-divider" role="separator" hidden><span>Full menu</span></div>
 
     <nav class="ord-cat-tabs" id="ord-cat-tabs" hidden aria-label="Categories"></nav>
 
@@ -186,13 +190,22 @@
 
   <div class="ord-drawer" id="ord-plan-drawer" hidden>
     <div class="ord-drawer-header">
-      <h2>Floor plan</h2>
+      <h2 id="ord-plan-title">Shop layout</h2>
       <button type="button" id="ord-plan-close" aria-label="Close floor plan">&times;</button>
     </div>
     <div id="ord-plan-body"></div>
   </div>
 
-  <script src="floor-plan.js?v=1" defer></script>
-  <script src="order.js?v=2" defer></script>
+  <div class="ord-theme-test" id="ord-theme-test" hidden>
+    <span aria-hidden="true">&#127912;</span>
+    <button type="button" data-step="-1" aria-label="Previous theme">&lsaquo;</button>
+    <select aria-label="Theme (testing)"></select>
+    <button type="button" data-step="1" aria-label="Next theme">&rsaquo;</button>
+  </div>
+
+  <script src="order-config.js?v=1" defer></script>
+  <script src="order-themes.js?v=1" defer></script>
+  <script src="floor-plan.js?v=2" defer></script>
+  <script src="order.js?v=3" defer></script>
 </body>
 </html>

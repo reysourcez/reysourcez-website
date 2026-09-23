@@ -1,6 +1,6 @@
 /* ============================================================
    QR Listing Creator — floor plan drawing (floor-plan.js)
-   VERSION 1.1 (2026-09-21) — new in this version.
+   VERSION 1.3 (2026-09-24) — v1.3: a "You" tag marks the customer's own table. (File first added in v1.1.)
    Shared by the seller page (draws + edits) and the customer page
    (read-only; tap a table to choose it). One file decides how a plan
    LOOKS, so the seller sees exactly what customers will see.
@@ -87,8 +87,12 @@
         ? `<circle cx="${x}" cy="${y}" r="30" pointer-events="none" style="fill:none;stroke:var(--accent,#1F6F5C);stroke-width:3;stroke-dasharray:5 4"/>` : '';
       const attrs = opts.selectable
         ? ` tabindex="0" role="button" aria-label="Table ${esc(label)}${isMine ? ', your table' : ''}" style="cursor:pointer"` : '';
+      const ty = y < 64 ? y + 42 : y - 42; // the "You" tag sits above the table, or below it near the top edge
+      const pin = isMine
+        ? `<g pointer-events="none"><rect x="${x - 21}" y="${ty - 11}" width="42" height="22" rx="11" style="fill:var(--accent,#1F6F5C);stroke:var(--surface,#fff);stroke-width:2"/>`
+          + `<text x="${x}" y="${ty}" dy=".35em" text-anchor="middle" style="${FONT};font-size:12px;fill:var(--on-accent,#fff)">You</text></g>` : '';
       out.push(`<g data-kind="table" data-i="${i}" data-n="${esc(label)}"${attrs}>${ring}${shape}`
-        + `<text x="${x}" y="${y}" dy=".35em" text-anchor="middle" pointer-events="none" style="${FONT};font-size:${size}px;fill:${isMine ? '#fff' : 'var(--ink,#1F2A26)'}">${esc(label)}</text></g>`);
+        + `<text x="${x}" y="${y}" dy=".35em" text-anchor="middle" pointer-events="none" style="${FONT};font-size:${size}px;fill:${isMine ? 'var(--on-accent,#fff)' : 'var(--ink,#1F2A26)'}">${esc(label)}</text>${pin}</g>`);
     });
 
     p.doors.forEach((m, i) => out.push(chip('door', m, i, 'Door', '#2B6CB0', 60)));
