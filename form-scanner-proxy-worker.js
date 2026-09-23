@@ -153,11 +153,11 @@ const FORM_SCHEMA = {
         type: 'object',
         properties: {
           label: { type: 'string' },
-          column: { type: 'integer', description: 'Which vertical column this field visually sits in, left to right starting at 1. Use 1 for every field if the header is a single stacked column (the common case) — only use 2 or 3 when the source genuinely lays fields out side by side, e.g. a payment-voucher header with a left block and a right block.' },
+          column: { type: 'integer', description: 'REQUIRED, do not skip this even under time pressure: which vertical column this field visually sits in, left to right starting at 1. Check every field\u2019s horizontal position against the others near it, not just its reading order. This is very common on official forms \u2014 e.g. a payment-voucher header where "BAYAR KEPADA" on the left and "NO. BAUCAR" on the right both start at roughly the same height: those are column 1 and column 2, not two fields in one stacked list. Only use 1 for every field if the header is genuinely one single stacked column with nothing beside anything.' },
           multiline: { type: 'boolean', description: 'True only if the blank space after this label is clearly taller than a single line (e.g. an address block).' },
           options: { type: 'array', items: { type: 'string' }, description: 'Fill in ONLY when this field is really a set of tick/checkboxes rather than a blank to write in, e.g. a payment-method choice — one entry per choice, exactly as printed. Empty array for an ordinary blank field.' },
         },
-        required: ['label', 'multiline'],
+        required: ['label', 'column', 'multiline'],
       },
     },
     tables: {
@@ -210,10 +210,10 @@ const FORM_SCHEMA = {
         type: 'object',
         properties: {
           heading: { type: 'string', description: 'e.g. "Prepared by". Empty string if the block has no heading.' },
-          column: { type: 'integer', description: 'Which position, left to right starting at 1, this block sits in when several signature blocks are arranged side by side (2 or even 3 across is common). Use 1 for every block if they are simply stacked one after another down the page.' },
+          column: { type: 'integer', description: 'REQUIRED, do not skip this even under time pressure: which position, left to right starting at 1, this block sits in. Check each block\u2019s actual horizontal position against the others, not just the order you read them in \u2014 e.g. if "Disediakan oleh" sits on the left of the page and "Disemak dan diluluskan oleh" sits to its right at a similar height (even if there are two or three "Disemak" blocks stacked underneath each other on that same right side), that is column 1 for the first and column 2 for all of the others, not four blocks all in column 1. Only use 1 for every block if they are genuinely one single stacked column with nothing beside anything.' },
           fields: { type: 'array', items: { type: 'string' }, description: 'e.g. ["Name", "Position", "Date"]' },
         },
-        required: ['heading', 'fields'],
+        required: ['heading', 'column', 'fields'],
       },
     },
     footnotes: { type: 'array', items: { type: 'string' }, description: 'Small printed note/instruction lines near the bottom of the page (not a signature field). Empty array if none.' },
@@ -238,6 +238,7 @@ const PROMPT = 'You are looking at either a photo or one PDF page of a printed o
   + 'First decide whether this genuinely is a fillable form, worksheet, or register (recognized: true) or something else \u2014 a blank page, a photo unrelated to any document, or a passage of ordinary prose with no fields or tables (recognized: false). '
   + 'If recognized, also read the page\u2019s own natural orientation (orientation) and, only if this is a photo rather than a real PDF page, your best guess at its original paper size (page_size_guess). '
   + 'Identify: the main title; any subtitle/address lines under it; any form or reference code; every standalone header field in reading order, noting which column it sits in if the header genuinely has more than one and whether it is really a set of tick-box choices rather than a blank; every distinct table or ruled grid \u2014 including a repeating "label + two or three blank columns" block, which counts as a table even without a conventional header row \u2014 together with its column headers exactly as printed, a two-row grouped header if one genuinely exists, your best estimate of each column\u2019s relative width, and how many blank rows it has; any table that is already-printed reference/lookup information rather than something to fill in, as a separate reference table with its literal row text; any signature or sign-off blocks together with the field labels inside each one and which column position they sit in if more than one is arranged side by side; any small footnote lines near the bottom; and a single emphasised "amount in words" line if the form has one. '
+  + 'For every header field and every signature block, actively check its horizontal position against the others near it before deciding on column \u2014 this is not optional and defaulting everything to column 1 is a common mistake to avoid. Official forms very often place two or three things side by side: a payment-voucher header with one block of fields on the left and another block (often including tick-box choices like a payment method) on the right at the same height; two, three, or more separate sign-off blocks such as "Disediakan oleh" and one or more "Disemak dan diluluskan oleh" blocks arranged in columns rather than one long stacked list. Look at where each piece of text actually sits on the page, not just the order it would be read aloud in. '
   + 'Read every label exactly as printed, in its original language. If a printed section heading sits directly above a table, attach it to that table as section_title rather than listing it separately. Keep strictly to what is visibly printed \u2014 do not invent fields, do not guess at values, and do not call a genuinely blank template unrecognized just because nothing has been filled in yet. '
   + 'Finally, look at any note the person scanning this form added (it may be about the form\u2019s content, or it may be a request about the OUTPUT \u2014 a different paper size, a different orientation, a different font, or bigger/smaller text). Populate render_directives from that request ONLY if it explicitly asks for one of those things; otherwise leave every render_directives field at its default ("auto", or 100 for font_scale_pct) so the output matches the source by default.';
 

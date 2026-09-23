@@ -647,24 +647,32 @@ async function buildFillablePdf(result, options) {
   });
   y += s(14);
 
-  // ---- Header fields: plain fields first (split into columns if the
-  // source genuinely has more than one), then any checkbox-choice
-  // fields, always full width, stacked below them. ----
-  const plainHeaderFields = result.header_fields.filter((f) => !(f.options && f.options.length));
-  const optionHeaderFields = result.header_fields.filter((f) => f.options && f.options.length);
+  // ---- Header fields: rendered per-column (or one stacked column if
+  // the source genuinely only has one), with plain fields and
+  // checkbox-choice rows interleaved in their real order within each
+  // column \u2014 2026-09-23 fix: a field like a payment-method choice
+  // used to always render full-width in a separate pass after every
+  // plain field, regardless of which column it actually belonged in.
+  // renderField() below picks the right drawing path per field so
+  // both kinds share one column-aware loop instead of two passes. ----
+  const renderField = (f, x, yTop, w) => {
+    if (f.options && f.options.length) return renderOptionsRow(f, x, yTop, w);
+    const h = f.multiline ? s(28) : s(15);
+    text(f.label + ' :', x, yTop + s(10), { size: 8.5, bold: true });
+    const labelW = fontBold.widthOfTextAtSize(cleanPdfText(f.label + ' :'), s(8.5)) + s(8);
+    const fx = x + labelW;
+    const fw = Math.max(x + w - fx, s(24));
+    field(fx, yTop, fw, h, { multiline: f.multiline });
+    line(fx, yTop + h, x + w, 0.75);
+    return h + s(9);
+  };
 
-  if (plainHeaderFields.length) {
-    const columnsUsed = Array.from(new Set(plainHeaderFields.map((f) => f.column || 1))).sort((a, b) => a - b);
+  if (result.header_fields.length) {
+    const columnsUsed = Array.from(new Set(result.header_fields.map((f) => f.column || 1))).sort((a, b) => a - b);
     if (columnsUsed.length <= 1) {
-      plainHeaderFields.forEach((f) => {
-        const h = f.multiline ? s(30) : s(16);
-        ensureSpace(h + s(10));
-        text(f.label + ' :', MARGIN, y + s(10), { size: 9, bold: true });
-        const labelW = fontBold.widthOfTextAtSize(cleanPdfText(f.label + ' :'), s(9)) + s(10);
-        const fx = MARGIN + labelW;
-        field(fx, y, PAGE_W - MARGIN - fx, h, { multiline: f.multiline });
-        line(fx, y + h, PAGE_W - MARGIN, 0.75);
-        y += h + s(10);
+      result.header_fields.forEach((f) => {
+        ensureSpace(s(30));
+        y += renderField(f, MARGIN, y, CONTENT_W);
       });
     } else {
       // Side-by-side columns don't paginate mid-block \u2014 see
@@ -672,22 +680,15 @@ async function buildFillablePdf(result, options) {
       // block on a fresh page when it clearly won't fit what's left.
       const numCols = Math.min(columnsUsed.length, 3);
       const colW = CONTENT_W / numCols;
-      const maxFieldsInCol = Math.max.apply(null, columnsUsed.slice(0, numCols).map((cn) => plainHeaderFields.filter((f) => (f.column || 1) === cn).length));
+      const maxFieldsInCol = Math.max.apply(null, columnsUsed.slice(0, numCols).map((cn) => result.header_fields.filter((f) => (f.column || 1) === cn).length));
       ensureSpace(maxFieldsInCol * s(25) + s(10));
       const blockTop = y;
       let maxBottom = y;
       columnsUsed.slice(0, numCols).forEach((cn, idx) => {
         const colX = MARGIN + idx * colW;
         let cy = y;
-        plainHeaderFields.filter((f) => (f.column || 1) === cn).forEach((f) => {
-          const h = f.multiline ? s(28) : s(15);
-          text(f.label + ' :', colX + s(4), cy + s(10), { size: 8.5, bold: true });
-          const labelW = fontBold.widthOfTextAtSize(cleanPdfText(f.label + ' :'), s(8.5)) + s(8);
-          const fx = colX + s(4) + labelW;
-          const fw = Math.max(colX + colW - s(6) - fx, s(24));
-          field(fx, cy, fw, h, { multiline: f.multiline });
-          line(fx, cy + h, colX + colW - s(6), 0.75);
-          cy += h + s(9);
+        result.header_fields.filter((f) => (f.column || 1) === cn).forEach((f) => {
+          cy += renderField(f, colX + s(4), cy, colW - s(10));
         });
         maxBottom = Math.max(maxBottom, cy);
       });
@@ -697,11 +698,6 @@ async function buildFillablePdf(result, options) {
     }
     y += s(6);
   }
-  optionHeaderFields.forEach((f) => {
-    ensureSpace(s(24));
-    y += renderOptionsRow(f, MARGIN, y, CONTENT_W);
-  });
-  if (optionHeaderFields.length) y += s(4);
 
   // ---- Tables ----
   result.tables.forEach((t) => {

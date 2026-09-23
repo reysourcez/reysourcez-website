@@ -28,6 +28,16 @@
     .fs-preview-img { max-width: 100%; max-height: 320px; border-radius: 8px; display: block; margin: 0 0 14px; }
     .fs-pdf-preview { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); margin: 0 0 14px; }
     .fs-pdf-preview svg { flex-shrink: 0; color: var(--accent); }
+    /* Bug fix, 2026-09-23: the two unconditional `display` rules above
+       have the same CSS specificity as the browser's own built-in
+       [hidden] { display: none } rule, and load later \u2014 so they were
+       silently winning, and toggling .hidden in JS stopped actually
+       hiding either element. A stale photo preview could stay on
+       screen after switching to a new PDF upload even though the scan
+       itself was reading the new file correctly. This rule is more
+       specific (class + attribute) so it always wins regardless of
+       source order. */
+    .fs-preview-img[hidden], .fs-pdf-preview[hidden] { display: none; }
     .fs-pdf-filename { font-weight: 600; font-size: 0.92rem; color: var(--text); word-break: break-all; margin: 0; }
     .fs-pdf-sub { font-size: 0.8rem; color: var(--muted); margin: 2px 0 0; }
     .fs-upload-row { display: flex; flex-direction: column; gap: 10px; }
