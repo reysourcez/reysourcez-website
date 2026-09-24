@@ -42,8 +42,7 @@ const RZ_NAV_PAGES = [
   { href: 'form-scanner.html', label: 'Form Creator' },
   { href: 'qr-creator.html', label: 'QR Creator' },
   { href: 'iso-ms-architect.html', label: 'ISO Management System' },
-   { href: 'crm-ms-architect.html', label: 'CRM Management System' },
-  // Add a new tool here — one line, this file only.
+    // Add a new tool here — one line, this file only.
 ];
 
 function rzCurrentPageFile() {
