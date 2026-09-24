@@ -1,6 +1,6 @@
 /* ============================================================
    QR Listing Creator — seller-facing setup & management (qr-listing-creator.js)
-   VERSION 1.4 (2026-09-24) — v1.4: Products use tabs (one form, tabs on top); floor-plan tables capped by Settings. Notes: QLC_HANDOFF_v1.4_ADDENDUM.md (base: v1.1)
+   VERSION 1.5 (2026-09-24) — v1.5: private product Cost + Orders analytics (on top of v1.4 product tabs). Notes: QLC_HANDOFF_v1.5_ADDENDUM.md (base: v1.1)
    Vanilla JS, no build step. Talks to the same Worker as order.js —
    see qr-listing-creator-worker.js's own header for the full API
    contract. This file owns everything a seller does: set up a
@@ -152,7 +152,7 @@ async function loadManageView(justCreated) {
   // The orders call needs the admin key, so it also proves the saved key still works. The floor plan is
   // optional: if it cannot be fetched the seller still gets everything else. (v1.1)
   const [data, orderData, planData] = await Promise.all([
-    apiFetch('/catalog?biz=' + enc),
+    adminFetch('/catalog?biz=' + enc), // with the key, so the private Cost comes back too (v1.5)
     adminFetch('/orders?biz=' + enc),
     apiFetch('/floorplan?biz=' + enc).catch(() => ({ plan: null })),
   ]);
@@ -268,6 +268,7 @@ function productRowHTML(p) {
       </div>
       <div class="qlc-field-grid">
         <label>Price (RM) <input type="number" class="qlc-p-price" min="0" step="0.01" value="${p.price}"></label>
+        <label>Cost (RM) <span class="toggle-hint">optional, private</span><input type="number" class="qlc-p-cost" min="0" step="0.01" placeholder="what it costs you" value="${p.cost == null ? '' : p.cost}"></label>
         <label>Category <input type="text" class="qlc-p-category" placeholder="e.g. Mains" value="${escapeHTML(p.category || '')}"></label>
         <label>Type
           <select class="qlc-p-type">
@@ -323,6 +324,7 @@ async function saveProductRow(row) {
     id: row.dataset.id || undefined,
     name: row.querySelector('.qlc-p-name').value.trim(),
     price: num(row.querySelector('.qlc-p-price')),
+    cost: row.querySelector('.qlc-p-cost').value, // '' = no cost; the Worker keeps it private (v1.5)
     category: row.querySelector('.qlc-p-category').value.trim(),
     description: row.querySelector('.qlc-p-desc').value.trim(),
     imageUrl: row.querySelector('.qlc-p-image').value.trim(),
@@ -341,8 +343,8 @@ async function saveProductRow(row) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     row.dataset.id = data.id;
-    statusEl.textContent = 'Saved';
-    statusEl.className = 'qlc-status is-ok';
+    statusEl.textContent = data.warning || 'Saved';
+    statusEl.className = 'qlc-status ' + (data.warning ? 'is-error' : 'is-ok');
     await refreshProductsQuietly();
   } catch (err) {
     statusEl.textContent = err.message;
@@ -366,8 +368,9 @@ async function removeProductRow(row) {
 // appear in the PWP dropdowns on Settings) without rebuilding product
 // rows the seller might still be mid-edit on.
 async function refreshProductsQuietly() {
-  const data = await apiFetch('/catalog?biz=' + encodeURIComponent(session.bizId));
+  const data = await adminFetch('/catalog?biz=' + encodeURIComponent(session.bizId)); // with the key: keeps Cost in step
   products = data.products;
+  if (lastOrders) renderAnalytics(lastOrders); // a changed Cost changes the profit view
   renderPwpOptions(); // only the dropdowns: anything typed but not yet saved in Settings stays put
 }
 
@@ -509,6 +512,104 @@ async function saveSettings() {
   }
 }
 
+/* ================= ORDERS ANALYTICS (v1.5) =================
+   Worked out here in the browser from the latest 500 orders the Worker returns (the last 30 days are shown) plus each
+   product's private Cost, which only the owner's key ever receives. Menu engineering = the Kasavana & Smith method: an
+   item is "popular" when its share of units sold is at least 70% of an even share (0.7 / number of items) and
+   "profitable" when its margin per unit (average selling price - cost) is at least the units-weighted average margin.
+   Item revenue is before purchase-with-purchase discounts; the revenue total is after them. */
+let lastOrders = null;
+const CLASSES = {
+  star: ['Star', 'Popular and profitable: keep it and feature it'],
+  plow: ['Plowhorse', 'Popular but thin margin: raise the price or trim the cost'],
+  puzzle: ['Puzzle', 'Profitable but slow: promote it, or move it up the menu'],
+  dog: ['Dog', 'Slow and thin: rethink it or drop it'],
+};
+const rmSigned = (sen) => (sen < 0 ? '\u2212' : '') + formatRM(Math.abs(sen) / 100);
+const localDay = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+function computeAnalytics(orders, prods) {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  start.setDate(start.getDate() - 29);
+  const days = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    return { key: localDay(d), label: d.getDate() + '/' + (d.getMonth() + 1), sen: 0, n: 0 };
+  });
+  const byKey = new Map(days.map((d) => [d.key, d]));
+  const items = new Map();
+  let orderCount = 0;
+  let revenueSen = 0;
+  for (const o of orders) {
+    const day = byKey.get(localDay(new Date(String(o.created_at).replace(' ', 'T') + 'Z')));
+    if (!day) continue; // older than 30 days
+    const sen = Math.round((Number(o.subtotal) || 0) * 100);
+    day.sen += sen; day.n += 1; orderCount += 1; revenueSen += sen;
+    for (const l of o.items || []) {
+      const key = l.productId || l.name;
+      const it = items.get(key) || { name: l.name, units: 0, sen: 0 };
+      it.units += Number(l.qty) || 0;
+      it.sen += Math.round((Number(l.lineTotal) || 0) * 100);
+      items.set(key, it);
+    }
+  }
+  const best = Array.from(items.values()).sort((a, b) => b.units - a.units || b.sen - a.sen).slice(0, 5);
+  const costed = prods.filter((p) => p.cost != null && isFinite(p.cost)).map((p) => {
+    const s = items.get(p.id) || { units: 0, sen: 0 };
+    const avgSen = s.units ? s.sen / s.units : Math.round(p.price * 100);
+    const costSen = Math.round(p.cost * 100);
+    return { name: p.name, units: s.units, avgSen, costSen, cmSen: avgSen - costSen, cls: '' };
+  });
+  const totalUnits = costed.reduce((t, c) => t + c.units, 0);
+  const soldSen = costed.reduce((t, c) => t + c.avgSen * c.units, 0);
+  const marginPct = soldSen > 0 ? Math.round(((soldSen - costed.reduce((t, c) => t + c.costSen * c.units, 0)) / soldSen) * 100) : null;
+  let matrix = null;
+  if (costed.length >= 2 && totalUnits > 0) {
+    const popCut = 0.7 / costed.length;
+    const avgCm = costed.reduce((t, c) => t + c.cmSen * c.units, 0) / totalUnits;
+    costed.forEach((c) => {
+      const popular = c.units / totalUnits >= popCut;
+      const profitable = c.cmSen >= avgCm;
+      c.cls = popular ? (profitable ? 'star' : 'plow') : (profitable ? 'puzzle' : 'dog');
+    });
+    matrix = costed.slice().sort((a, b) => b.units - a.units);
+  }
+  return { days, orderCount, revenueSen, best, matrix, costedCount: costed.length, uncosted: prods.filter((p) => p.cost == null).map((p) => p.name), marginPct };
+}
+
+function renderAnalytics(orders) {
+  lastOrders = orders;
+  const box = document.getElementById('qlc-analytics');
+  if (!box) return;
+  if (!orders.length) { box.innerHTML = '<p class="structure-note">No orders yet &mdash; sales charts and the profit view appear here once customers order.</p>'; return; }
+  const a = computeAnalytics(orders, products);
+  const max = Math.max(1, ...a.days.map((d) => d.sen));
+  const bars = a.days.map((d, i) => {
+    const h = Math.round((d.sen / max) * 100);
+    return `<rect x="${i * 20 + 4}" y="${110 - h}" width="14" height="${d.sen ? Math.max(h, 2) : 1}" rx="2" style="fill:${d.sen ? 'var(--accent)' : 'var(--line)'}"><title>${escapeHTML(d.label)}: ${formatRM(d.sen / 100)} (${d.n} order${d.n === 1 ? '' : 's'})</title></rect>`;
+  }).join('');
+  const lbl = (i, anchor) => `<text x="${i * 20 + 11}" y="128" text-anchor="${anchor}" style="font-size:10px;fill:var(--muted)">${escapeHTML(a.days[i].label)}</text>`;
+  const kpis = [['Orders', String(a.orderCount)], ['Revenue', formatRM(a.revenueSen / 100)], ['Average order', a.orderCount ? formatRM(a.revenueSen / a.orderCount / 100) : '\u2014']];
+  if (a.marginPct !== null) kpis.push(['Margin on costed items', a.marginPct + '%']);
+  const best = a.best.length
+    ? `<div class="table-scroll"><table class="qlc-orders-table"><thead><tr><th>#</th><th>Item</th><th>Sold</th><th>Revenue</th></tr></thead><tbody>${a.best.map((b, i) => `<tr><td>${i + 1}</td><td>${escapeHTML(b.name)}</td><td>${b.units}</td><td>${formatRM(b.sen / 100)}</td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="toggle-hint">No sales in the last 30 days.</p>';
+  const matrix = a.matrix
+    ? `<div class="table-scroll"><table class="qlc-orders-table"><thead><tr><th>Item</th><th>Sold</th><th>Avg price</th><th>Cost</th><th>Margin / unit</th><th>Class</th></tr></thead><tbody>${a.matrix.map((c) => `<tr><td>${escapeHTML(c.name)}</td><td>${c.units}</td><td>${formatRM(c.avgSen / 100)}</td><td>${formatRM(c.costSen / 100)}</td><td>${rmSigned(c.cmSen)}</td><td><span class="qlc-cls qlc-cls-${c.cls}" title="${escapeHTML(CLASSES[c.cls][1])}">${CLASSES[c.cls][0]}</span></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="toggle-hint">' + (a.costedCount < 2 ? 'Add a Cost to at least 2 products (Products tab) to see the Star / Plowhorse / Puzzle / Dog view.' : 'None of your costed items sold in the last 30 days yet.') + '</p>';
+  const legend = Object.keys(CLASSES).map((k) => `<span class="qlc-cls qlc-cls-${k}">${CLASSES[k][0]}</span> ${escapeHTML(CLASSES[k][1])}`).join(' &middot; ');
+  box.innerHTML = `
+    <h3>Last 30 days</h3>
+    <div class="qlc-kpis">${kpis.map((k) => `<div class="qlc-kpi"><small>${k[0]}</small><strong>${k[1]}</strong></div>`).join('')}</div>
+    <svg class="qlc-chart" viewBox="0 0 608 134" role="img" aria-label="Daily revenue, last 30 days">${bars}${lbl(0, 'start')}${lbl(14, 'middle')}${lbl(29, 'end')}</svg>
+    <h3>Bestsellers</h3>${best}
+    <h3>Star / Plowhorse / Puzzle / Dog</h3>${matrix}
+    ${a.matrix ? `<p class="toggle-hint">${legend}</p>` : ''}
+    ${a.matrix && a.uncosted.length ? `<p class="toggle-hint">Not classified (no Cost yet): ${escapeHTML(a.uncosted.slice(0, 12).join(', '))}${a.uncosted.length > 12 ? '&hellip;' : ''}</p>` : ''}
+    <p class="toggle-hint">Based on your latest ${orders.length} orders${orders.length >= 500 ? ' (the most the list holds: the oldest days may be incomplete)' : ''}. Cost stays private: customers never receive it.</p>`;
+}
+
 /* ================= ORDERS ================= */
 
 // `preloaded` is the orders array when the caller already has it (first load); otherwise it is fetched.
@@ -520,6 +621,7 @@ async function renderOrders(preloaded) {
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted);">Loading&hellip;</td></tr>';
       orders = (await adminFetch('/orders?biz=' + encodeURIComponent(session.bizId))).orders;
     }
+    renderAnalytics(orders);
     if (!orders.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted);">No orders yet.</td></tr>'; return; }
     tbody.innerHTML = orders.map((o) => {
       const context = o.order_type === 'dine_in' ? 'Table ' + (o.table_number || '\u2014') : o.order_type === 'delivery' ? 'Delivery' : 'Takeaway';
