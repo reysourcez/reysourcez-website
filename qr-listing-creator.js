@@ -1,6 +1,6 @@
 /* ============================================================
    QR Listing Creator — seller-facing setup & management (qr-listing-creator.js)
-   VERSION 1.1 (2026-09-21) — fixes + floor plans. Change list: QLC_HANDOFF_v1.1.md
+   VERSION 1.4 (2026-09-24) — v1.4: Products use tabs (one form, tabs on top); floor-plan tables capped by Settings. Notes: QLC_HANDOFF_v1.4_ADDENDUM.md (base: v1.1)
    Vanilla JS, no build step. Talks to the same Worker as order.js —
    see qr-listing-creator-worker.js's own header for the full API
    contract. This file owns everything a seller does: set up a
@@ -306,6 +306,7 @@ function productRowHTML(p) {
 }
 
 function wireProductRow(row) {
+  row.querySelector('.qlc-p-name').addEventListener('input', renderProductTabs); // the tab label follows the name as it is typed
   const typeSelect = row.querySelector('.qlc-p-type');
   typeSelect.addEventListener('change', () => {
     row.querySelectorAll('[data-visible-for]').forEach((el) => { el.hidden = el.dataset.visibleFor !== typeSelect.value; });
@@ -350,11 +351,11 @@ async function saveProductRow(row) {
 }
 
 async function removeProductRow(row) {
-  if (!row.dataset.id) { row.remove(); return; }
+  if (!row.dataset.id) { dropProductRow(row); return; }
   if (!confirm('Remove this item from the listing?')) return;
   try {
     await adminFetch('/catalog?biz=' + encodeURIComponent(session.bizId) + '&id=' + encodeURIComponent(row.dataset.id), { method: 'DELETE' });
-    row.remove();
+    dropProductRow(row);
     await refreshProductsQuietly();
   } catch (err) {
     alert(err.message);
@@ -370,10 +371,42 @@ async function refreshProductsQuietly() {
   renderPwpOptions(); // only the dropdowns: anything typed but not yet saved in Settings stays put
 }
 
+// Products use the tabbed editor ("hide siblings, show one", like the Menu Calculator's menu tabs): one product form is
+// visible and a tab row above switches between them. Every form stays in the page, only hidden, so half-typed edits in
+// another tab are never lost. Tabs appear once there are 2+ products. (v1.4)
+function showProductRow(row) {
+  if (!document.getElementById('qlc-product-tabs')) return; // older HTML without the tab strip: stay stacked
+  document.querySelectorAll('#qlc-product-list .qlc-product-row').forEach((r) => { r.hidden = (r !== row); });
+  renderProductTabs();
+}
+function renderProductTabs() {
+  const tabs = document.getElementById('qlc-product-tabs');
+  if (!tabs) return;
+  const rows = Array.from(document.querySelectorAll('#qlc-product-list .qlc-product-row'));
+  if (!rows.length) { tabs.innerHTML = '<span class="toggle-hint">No products yet &mdash; press + Add product.</span>'; return; }
+  if (rows.length === 1) { rows[0].hidden = false; tabs.innerHTML = ''; return; }
+  tabs.innerHTML = rows.map((r, i) => {
+    const name = r.querySelector('.qlc-p-name').value.trim() || 'New item';
+    return `<button type="button" role="tab" aria-selected="${!r.hidden}" class="qlc-ptab${r.hidden ? '' : ' is-active'}" data-i="${i}">${escapeHTML(name)}</button>`;
+  }).join('');
+  tabs.querySelectorAll('.qlc-ptab').forEach((b) => b.addEventListener('click', () => showProductRow(rows[Number(b.dataset.i)])));
+}
+// Takes a product form out of the page, then opens its neighbour so the editor is never left blank.
+function dropProductRow(row) {
+  const rows = Array.from(document.querySelectorAll('#qlc-product-list .qlc-product-row'));
+  const i = rows.indexOf(row);
+  const wasActive = !row.hidden;
+  row.remove();
+  rows.splice(i, 1);
+  if (wasActive && rows.length) showProductRow(rows[Math.min(i, rows.length - 1)]);
+  else renderProductTabs();
+}
+
 function renderProducts() {
   const list = document.getElementById('qlc-product-list');
   list.innerHTML = products.map(productRowHTML).join('');
   list.querySelectorAll('.qlc-product-row').forEach(wireProductRow);
+  showProductRow(list.querySelector('.qlc-product-row')); // first product open
 }
 
 document.addEventListener('click', (e) => {
@@ -382,7 +415,8 @@ document.addEventListener('click', (e) => {
     list.insertAdjacentHTML('beforeend', productRowHTML(null));
     const row = list.lastElementChild;
     wireProductRow(row);
-    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showProductRow(row);
+    row.querySelector('.qlc-p-name').focus();
   }
 });
 
@@ -570,13 +604,17 @@ function fpNextFreeNumber() {
   return String(n);
 }
 
+// The plan holds as many tables as Settings > Number of tables (which is also how many table QR codes exist). (v1.4)
+function fpTableLimit() { return Math.max(0, Math.min(200, (business && business.tableCount) || 0)); }
+
 function fpUpdateInfo() {
   if (!fp.plan) return;
   const labels = fp.plan.tables.map((t) => String(t.n));
   const qrCount = business ? (business.tableCount || 0) : 0;
   const hasQr = (n) => /^\d+$/.test(n) && Number(n) >= 1 && Number(n) <= qrCount;
   const noQr = labels.filter((n) => !hasQr(n));
-  let text = labels.length + (labels.length === 1 ? ' table' : ' tables') + ' on the plan.';
+  let text = labels.length + ' of ' + qrCount + (qrCount === 1 ? ' table' : ' tables') + ' on the plan (the limit is "Number of tables" in Settings).';
+  if (labels.length > qrCount) text += ' That is ' + (labels.length - qrCount) + ' too many: remove some or raise the setting.';
   if (noQr.length) text += ' No QR code for ' + noQr.slice(0, 12).join(', ') + ' — QR codes are numbered 1 to ' + qrCount + '; raise the number of tables in Settings.';
   document.getElementById('qlc-fp-info').textContent = text;
   const box = document.getElementById('qlc-fp-label');
@@ -639,7 +677,8 @@ function fpPointerDown(e) {
     fp.drag = { kind: 'wall', x1: x, y1: y, x2: x, y2: y };
     fpSvg().setPointerCapture(e.pointerId);
   } else if (fp.tool === 'table') {
-    if (fp.plan.tables.length >= 200) fpStatus('That is the most tables one plan can hold (200).', 'error');
+    const max = fpTableLimit();
+    if (fp.plan.tables.length >= max) fpStatus(max ? 'Your settings say ' + max + (max === 1 ? ' table' : ' tables') + ', so the plan is full. Raise "Number of tables" in Settings to add more.' : 'Set "Number of tables" in Settings first: that is how many tables the plan can hold.', 'error');
     else fpPlaceTable(x, y);
   } else if (fp.tool === 'door' || fp.tool === 'cashier') {
     const list = fpListFor(fp.tool);
@@ -718,6 +757,8 @@ function fpClear() {
 }
 
 async function fpSave() {
+  const over = fp.plan.tables.length - fpTableLimit();
+  if (over > 0) { fpStatus('The plan has ' + over + ' more table' + (over === 1 ? '' : 's') + ' than "Number of tables" in Settings. Remove ' + (over === 1 ? 'it' : 'them') + ' or raise the setting, then save.', 'error'); return; }
   fpStatus('Saving\u2026', '');
   try {
     const data = await adminFetch('/floorplan?biz=' + encodeURIComponent(session.bizId), {
