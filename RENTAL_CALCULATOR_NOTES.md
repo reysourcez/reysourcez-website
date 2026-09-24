@@ -4,6 +4,19 @@ New tool, built 2026-09-11, for renting out equipment (JCB backhoe loaders, exca
 
 This doc assumes no prior context. If you only read one section, read "Cost structure, in plain terms" and "What changed from your old Excel." For the most recent additions, read the entries immediately below first (newest first, same convention as this site's other change-notes files).
 
+## 2026-09-24 — nav retrofit (per `NAV_RETROFIT_HOWTO.md`)
+
+Per that doc's own instruction to any AI session maintaining a page here — do it now, don't wait to be asked again. Two edits, both nav-only:
+
+1. Added `<script src="site-config.js?v=1" defer></script>` and `<script src="nav-config.js?v=1" defer></script>` as the first two script tags on the page, before `costing-sync.js` and `nav-dropdown.js`.
+2. Emptied this page's hard-coded `<ul class="nav-dropdown-menu">` list down to the single placeholder comment — `nav-config.js` now renders it from `RZ_NAV_PAGES` on every load. This page's old hard-coded list was already stale (missing SOP Creator, Project Planner, Form Creator, and QR Creator, all four added to `RZ_NAV_PAGES` after this page's own dropdown was last hand-edited) — the retrofit fixes that as a side effect, not a separate change.
+
+**Business-constants half of the retrofit (step 4) does NOT apply here.** This file's own `GUIDE_RATIOS` is keyed by equipment category (excavator, backhoe, crane, forklift…) — a different schema entirely from `RZ_SITE_CONFIG.guideRatios`, which is keyed by F&B venue type (home/stall/truck/store) for Costing Analysis and Margin Analysis. There's nothing in site-config.js today for this file's `GUIDE_RATIOS` to read from, and inventing a new shared config entry for a value only this one tool currently uses would add complexity with no present drift risk to justify it (same reasoning `SITE_CONFIG_STANDARD.md` already applies to its own "flagged, not built" candidates) — left as a local constant, unchanged.
+
+Also fixed in passing: both `NAV_RETROFIT_HOWTO.md` and `SITE_CONFIG_STANDARD.md` still listed this page under "not yet retrofitted" — moved to "done" in both, since a stale tracker is exactly the kind of drift these docs exist to prevent.
+
+No settings-reference or version-string changes needed — this was markup/script-tag only, `rental-calculator.js` itself is untouched.
+
 ## 2026-09-22 — machine photos in the ad, and a checkbox-driven client-safe print summary
 
 Two features, both direct requests, both resolve open items from the 2026-09-20 entry below.

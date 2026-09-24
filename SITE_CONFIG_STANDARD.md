@@ -80,9 +80,9 @@ This is the exact pattern already live in `interactive-costing-analysis.js` — 
 
 ## Pages this currently applies to
 
-**Done:** `menu-calculator.html` (nav only — no business constants to wire yet), `interactive-costing-analysis.html` / `.js` (nav + `guideRatios`).
+**Done:** `menu-calculator.html` (nav only — no business constants to wire yet), `interactive-costing-analysis.html` / `.js` (nav + `guideRatios`), `rental-calculator.html` (nav only, 2026-09-24 — its `GUIDE_RATIOS` is equipment-category-based, not the venue-type schema `guideRatios` holds, so there's no matching value here for it to read yet).
 
-**Needs the retrofit, not done this round** (this session doesn't have direct access to these files): `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html` (nav retrofit, **plus** its own `GUIDE_RATIOS` object is the byte-for-byte duplicate this whole file exists to fix — highest-value single retrofit on this list), `food-worth-calculator.html`, `crypto-radar.html`, `rental-calculator.html`, `index.html`, `about.html`, `services.html`, `contact.html`.
+**Needs the retrofit, not done this round** (this session doesn't have direct access to these files): `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html` (nav retrofit, **plus** its own `GUIDE_RATIOS` object is the byte-for-byte duplicate this whole file exists to fix — highest-value single retrofit on this list), `food-worth-calculator.html`, `crypto-radar.html`, `index.html`, `about.html`, `services.html`, `contact.html`.
 
 ## KIV / open items
 

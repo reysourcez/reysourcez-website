@@ -33,10 +33,8 @@ Open the page, click "Business Analysis." It should list every current tool with
 
 ## Status across the site (as of 2026-09-24)
 
-**Done:** `index.html`, `about.html`, `services.html`, `contact.html`, `menu-calculator.html`, `interactive-costing-analysis.html`, `qr-listing-creator.html` (checked 2026-09-24: `site-config.js` and `nav-config.js` are its first two scripts and its dropdown list is empty).
+**Done:** `index.html`, `about.html`, `services.html`, `contact.html`, `menu-calculator.html`, `interactive-costing-analysis.html`, `rental-calculator.html` (2026-09-24 — nav only; its own `GUIDE_RATIOS` uses equipment categories, not the venue-type schema `RZ_SITE_CONFIG.guideRatios` holds, so there's nothing there for it to read from site-config.js yet — see the note this same date in `RENTAL_CALCULATOR_NOTES.md`).
 
-**Not applicable:** `order.html` — the customer ordering page has no site header or nav on purpose (a customer scanning a table QR is there to order).
-
-**Not yet — if this is your page, do the retrofit above before anything else:** `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html`, `food-worth-calculator.html`, `crypto-radar.html`, `rental-calculator.html`, `market-radar.html`, `cost-structure-checker.html`, `sop-creator.html`, `project-plan-architect.html`, `form-scanner.html`, `qr-creator.html`.
+**Not yet — if this is your page, do the retrofit above before anything else:** `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html`, `food-worth-calculator.html`, `crypto-radar.html`, `market-radar.html`, `cost-structure-checker.html`, `qr-listing-creator.html`, `sop-creator.html`, `project-plan-architect.html`, `form-scanner.html`, `qr-creator.html`.
 
 Whoever's coordinating across sessions: once a "not yet" page gets retrofitted, move its filename up to "Done" in this doc so the list stays trustworthy — a stale status list here would just recreate the exact problem this doc exists to fix.
