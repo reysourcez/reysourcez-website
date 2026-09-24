@@ -62,6 +62,10 @@ const PROMPTS = {
     + (p.current ? ' Revise and improve this draft rather than starting over: "' + p.current + '"' : ''),
   'suggest-risks-opportunities': (p) => 'List exactly 3 realistic risks or opportunities (ISO clause 6.1) for a management system at "' + (p.orgName || 'this organization')
     + '" covering: ' + (p.standards || 'general ISO management-system requirements') + '. Short, plain-language statements, no explanations.',
+  'refine-checklist-question': (p) => 'Improve this ISO internal-audit checklist question for the clause "' + (p.clauseLabel || 'this clause')
+    + '", for an audit at "' + (p.orgName || 'this organization') + '" covering: ' + (p.standards || 'general ISO management-system requirements')
+    + '. Keep it to one sentence, specific and checkable by an auditor against real evidence.'
+    + (p.current ? ' Current draft to improve: "' + p.current + '"' : ''),
 };
 
 // Same defensive shape as pm-assist-worker.js's extractGeminiText — an

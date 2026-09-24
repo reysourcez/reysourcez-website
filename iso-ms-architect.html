@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reysourcez Enterprise — ISO Management System Architect</title>
-<meta name="description" content="Answer a few questions per ISO management-system clause and get a structured management system summary you can print or save as PDF. Covers ISO 9001, 14001, 45001 and 27001 on ISO's shared Harmonized Structure. Nothing is saved automatically.">
+<meta name="description" content="Answer a few questions per ISO management-system clause and get a structured management system summary, plus audit plans and checklists for your internal and external audits. Covers ISO 9001, 14001, 45001 and 27001 on ISO's shared Harmonized Structure. Nothing is saved automatically.">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -17,13 +17,12 @@
      the fallback block below exists. Delete the fallback block once this file lives
      in the repo. -->
 <link rel="stylesheet" href="styles.css?v=15">
-<!-- Per SITE_CONFIG_STANDARD.md: these two are the first script tags on any NEW
-     page, before this page's own script. site-config.js supplies isoStandards
-     (falls back to the literal object below if the tag is missing); nav-config.js
-     renders the .nav-dropdown-menu below, so it's left empty here rather than
-     hand-listed the way project-plan-architect.html still does (that page just
-     hasn't been retrofitted yet — this is a new page, so it gets the standard from
-     day one). -->
+<!-- Per NAV_RETROFIT_HOWTO.md / SITE_CONFIG_STANDARD.md: these two are the FIRST
+     script tags on the page, before this page's own script. Copied in exactly as
+     given, not rewritten from this session — see that doc's "don't write your own
+     version of either" note. site-config.js supplies isoStandards (falls back to
+     the literal object below if the tag is missing); nav-config.js renders the
+     .nav-dropdown-menu below, so it's left empty here per step 2 of the retrofit. -->
 <script src="site-config.js?v=1" defer></script>
 <script src="nav-config.js?v=1" defer></script>
 <style>
@@ -100,11 +99,8 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--accent); outlin
    the SECOND near-identical tabbed-wizard-with-repeat-rows
    pattern on the site (project-plan-architect.html's .ppa-* was
    the first) — worth centralizing into one shared class family
-   in styles.css now that there are two instances, rather than
-   letting a third copy appear later. Flagged in
-   ISO_MS_ARCHITECT_STANDARD.md rather than done here, since
-   centralizing would mean also touching project-plan-architect.html
-   and that wasn't asked for in this pass.
+   in styles.css now that there are two instances. Flagged in
+   ISO_MS_ARCHITECT_STANDARD.md rather than done here.
    ============================================================ */
 .isoa-panel{padding:2rem 0;}
 .isoa-progress{font-size:.85rem;color:var(--muted);margin-top:.35rem;}
@@ -128,20 +124,36 @@ fieldset.isoa-fieldset legend{font-size:.85rem;font-weight:600;margin-bottom:.35
 .isoa-std-checks{display:flex;flex-wrap:wrap;gap:1rem;}
 .isoa-std-checks label{display:flex;align-items:center;gap:.4rem;font-weight:500;cursor:pointer;}
 .isoa-note{font-size:.85rem;color:var(--muted);background:var(--paper);border-left:3px solid var(--accent);border-radius:6px;padding:.6rem .8rem;margin:.75rem 0;}
-.isoa-repeat-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;border-top:1px dashed var(--line);padding-top:.85rem;margin-top:.85rem;}
+.isoa-repeat-row{display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-start;border-top:1px dashed var(--line);padding-top:.85rem;margin-top:.85rem;}
 .isoa-repeat-row:first-of-type{border-top:none;padding-top:0;margin-top:0;}
 .isoa-repeat-row>div{flex:1 1 140px;}
 .isoa-repeat-row select{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
+.isoa-repeat-row input[type=text]{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
 .isoa-remove-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:.4rem .5rem;line-height:1;}
 .isoa-add-btn{margin-top:.75rem;}
 .isoa-soa-card{border:1px dashed var(--line);border-radius:10px;padding:1.1rem;margin-top:1rem;background:var(--paper);}
 .isoa-doc h2{font-size:1.15rem;border-bottom:2px solid var(--accent);padding-bottom:.3rem;margin-top:1.75rem;}
+.isoa-doc h3{font-size:1rem;margin-top:1.1rem;}
 .isoa-doc table{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.9rem;}
 .isoa-doc th,.isoa-doc td{border:1px solid var(--line);padding:.5rem;text-align:left;vertical-align:top;}
 .isoa-doc ul{margin:.4rem 0;padding-left:1.2rem;}
+.isoa-doc hr{border:none;border-top:1px dashed var(--line);margin:1.5rem 0;}
 .isoa-empty{color:var(--muted);font-style:italic;}
+/* ---- Audit Plan cards (Audits tab) ---- */
+.isoa-audit-card{border:1px solid var(--line);border-radius:10px;padding:1.25rem;margin-top:1.25rem;background:var(--paper);}
+.isoa-audit-card:first-of-type{margin-top:0;}
+.isoa-audit-card-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.9rem;}
+.isoa-audit-card .audit-title{font:inherit;font-weight:600;font-size:1.05rem;border:none;border-bottom:2px dashed var(--line);background:transparent;padding:.3rem .1rem;flex:1;}
+.isoa-audit-card .audit-title:focus-visible{outline:none;border-bottom-color:var(--accent);}
+.isoa-criteria-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.4rem .8rem;font-size:.85rem;margin:.5rem 0 1rem;max-height:260px;overflow-y:auto;padding:.7rem;border:1px solid var(--line);border-radius:8px;background:var(--surface);}
+.isoa-criteria-list label{display:flex;align-items:flex-start;gap:.4rem;cursor:pointer;}
+.audit-checklist-row .cl-label{font-weight:600;font-size:.82rem;margin-bottom:.3rem;}
+.audit-checklist-row textarea.cl-question{width:100%;font:inherit;font-size:.88rem;min-height:3.2rem;padding:.5rem .6rem;border:1px solid var(--line);border-radius:8px;background:#fff;resize:vertical;}
+.audit-checklist-row input.cl-evidence{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
+.audit-checklist-row select.cl-result{width:100%;font:inherit;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;background:#fff;}
 @media print{
   .no-print{display:none!important;}
+  .isoa-remove-btn{display:none!important;}
   body{background:#fff;}
   .isoa-panel{padding:0;}
 }
@@ -177,7 +189,7 @@ Reysourcez Enterprise
 <div class="wrap">
 <span class="eyebrow">Free tool · nothing saved automatically</span>
 <h1>ISO Management System Architect</h1>
-<p class="lead">Work through Context, Leadership, Planning, Support, Operation, Performance Evaluation and Improvement, and get a structured management system summary you can print or save as PDF. Built on ISO's Harmonized Structure — the shared clause framework behind 9001, 14001, 45001, 27001 and more — not a generic form.</p>
+<p class="lead">Work through Context, Leadership, Planning, Support, Operation, Performance Evaluation and Improvement, plan and run your internal and external audits, and get a structured summary you can print or save as PDF. Built on ISO's Harmonized Structure — the shared clause framework behind 9001, 14001, 45001, 27001 and more — not a generic form.</p>
 <p class="isoa-progress" id="isoa-progress"></p>
 </div>
 </section>
@@ -206,6 +218,7 @@ Reysourcez Enterprise
 <button type="button" class="isoa-tab" data-step="support">Support</button>
 <button type="button" class="isoa-tab" data-step="operation">Operation</button>
 <button type="button" class="isoa-tab" data-step="performance">Performance</button>
+<button type="button" class="isoa-tab" data-step="audits">Audits</button>
 <button type="button" class="isoa-tab" data-step="improvement">Improvement</button>
 <button type="button" class="isoa-tab" data-step="document">📄 Document</button>
 </div>
@@ -323,7 +336,16 @@ Reysourcez Enterprise
 <h3 style="font-size:1rem;margin-top:1.5rem;">Certification &amp; external audits<span class="tooltip-icon" data-tooltip="Not a clause 9 requirement itself, but the practical companion to it — your certification body's Stage 1/2, surveillance and recertification audits, or audits of suppliers.">?</span></h3>
 <div id="perf-audits-external"></div>
 <button type="button" class="btn btn-primary isoa-add-btn no-print" data-add="perf-audits-external" data-tpl="auditExternal">+ Add external audit</button>
-<label class="isoa-field" style="margin-top:1.5rem;"><span class="label-text">9.3 Management review<span class="tooltip-icon" data-tooltip="Inputs typically considered: audit results, customer feedback, process performance, nonconformities, and opportunities for improvement.">?</span></span><textarea id="perf-mgmt-review"></textarea></label>
+<p class="isoa-note">This is the year-level schedule — which audits happen, how often, who does them. For the detailed plan and checklist for one specific audit, use the new <strong>Audits</strong> tab.</p>
+<label class="isoa-field" style="margin-top:1rem;"><span class="label-text">9.3 Management review<span class="tooltip-icon" data-tooltip="Inputs typically considered: audit results, customer feedback, process performance, nonconformities, and opportunities for improvement.">?</span></span><textarea id="perf-mgmt-review"></textarea></label>
+</div>
+
+<!-- ============ AUDITS (Audit Plans & Checklists) ============ -->
+<div class="isoa-card" id="step-audits" data-panel hidden>
+<h2>Audit Plans &amp; Checklists</h2>
+<p class="isoa-note">This is the per-audit layer, for internal audits (clause 9.2) and external/certification audits alike: objectives, scope, criteria, schedule, an auto-generated checklist, and the documents to request — for ONE specific audit. The simple audit log on the Performance tab is the year-level schedule; this is where you actually plan and run each one.</p>
+<div id="audits-container"></div>
+<button type="button" class="btn btn-primary isoa-add-btn no-print" id="add-audit-btn">+ Add audit</button>
 </div>
 
 <!-- ============ IMPROVEMENT (Clause 10) ============ -->
@@ -358,36 +380,34 @@ Reysourcez Enterprise
 <script src="nav-dropdown.js?v=1" defer></script>
 <!--
   ============================================================
-  v0.1 — PREVIEW / CONCEPT BUILD, same status as
-  project-plan-architect.html's own v0.3: inline for easy
-  previewing; a real drop-in version would split the script below
-  into iso-ms-architect.js, matching the site's pattern.
+  v0.2 — PREVIEW / CONCEPT BUILD, same status as
+  project-plan-architect.html's own v0.3.
 
-  Design choices worth knowing about (full detail in
-  ISO_MS_ARCHITECT_STANDARD.md):
-  - Standard-selector supports BOTH modes at once (single dropdown
-    OR multi checkboxes) rather than picking one — both feed the
-    same getSelectedStandards() array, so nothing downstream cares
-    which mode was used.
-  - Clause 8 renders one field per DE-DUPLICATED topic across
-    selected standards (e.g. picking both 14001 and 45001 shows
-    "Emergency preparedness & response" once, tagged with both
-    codes, not twice).
-  - Annex A (27001) intentionally stops at the 4 theme names
-    rather than listing all 93 controls — those control titles are
-    ISO/IEC's own copyrighted text; work the actual list from the
-    standard itself.
-  - Audit log is split into Internal (clause 9.2, required) and
-    Certification & external (not itself a clause 9 requirement,
-    but the practical companion most businesses preparing for
-    certification also want to track).
+  v0.2 changes: added the Audits tab — per-audit Plan (objectives,
+  scope, criteria, schedule, team) plus an auto-generated Checklist
+  and a "documents to request" list, built from a static
+  CLAUSE_AUDIT_BANK question/document bank so it works fully without
+  the AI Worker. One new Worker kind (refine-checklist-question)
+  added for an optional ✨ per-question refine.
+
+  Full design rationale in ISO_MS_ARCHITECT_STANDARD.md:
+  - Standard-selector supports BOTH single-dropdown and multi-
+    checkbox modes at once, both feeding the same
+    getSelectedStandards() array.
+  - Clause 8 (and now the Audits criteria list) renders one item
+    per DE-DUPLICATED topic across selected standards.
+  - Annex A intentionally stops at the 4 theme names, not all 93
+    controls — those titles are ISO/IEC's own copyrighted text.
+  - Audit log is split Internal (clause 9.2) vs Certification &
+    external (not itself a clause 9 requirement, but the practical
+    companion most businesses preparing for certification want).
   ============================================================
 -->
 <script>
 const RZ_ISOA_CONFIG = {
   totalCategoriesPlanned: 7, // Context, Leadership, Planning, Support, Operation, Performance Evaluation, Improvement
   storageKey: "rz_isoa_draft_v1",
-  aiAssistEndpoint: "https://iso.reysourcez-ent.workers.dev/", // paste your deployed iso-assist-worker.js URL here to turn on the ✨ buttons — blank = they explain themselves instead of failing silently
+  aiAssistEndpoint: "", // paste your deployed iso-assist-worker.js URL here to turn on the ✨ buttons — blank = they explain themselves instead of failing silently
 };
 
 // Same "config, not code" pattern as guideRatios in site-config.js — see
@@ -415,6 +435,49 @@ const ISO_STANDARDS = (typeof RZ_SITE_CONFIG !== 'undefined' && RZ_SITE_CONFIG.i
   },
 };
 
+// Local to this page, not site-config.js — this is audit-question content
+// specific to this one tool, not a cross-tool business number like
+// guideRatios or isoStandards, so it doesn't belong in the shared config
+// file (see ISO_MS_ARCHITECT_STANDARD.md). Every question/document here is
+// generic, original phrasing — not copied from any specific certification
+// body's proprietary checklist. Keys for the standard-specific clause 8
+// topics are the EXACT same strings as ISO_STANDARDS' clause8 arrays, so
+// this bank and the Operation tab's own de-duplication stay in sync.
+const CLAUSE_AUDIT_BANK = {
+  'ctx-internal': { label: '4.1 Internal issues', question: 'Can you show how internal issues (culture, capability, performance) are identified and reviewed?' },
+  'ctx-external': { label: '4.1 External issues', question: 'Can you show how external issues (market, legal, regulatory) are identified and reviewed?' },
+  'ctx-climate': { label: '4.1 Climate change relevance', question: 'Has climate change been assessed as a relevant issue, and is that assessment documented?', document: 'Climate change assessment notes' },
+  'ctx-parties': { label: '4.2 Interested parties', question: 'Is the interested-parties list current, and how is it kept up to date?', document: 'Interested parties register' },
+  'ctx-scope': { label: '4.3 Scope', question: 'Does the documented scope match what is actually being audited today? Are exclusions justified?', document: 'Scope statement' },
+  'lead-commitment': { label: '5.1 Leadership commitment', question: 'How does top management demonstrate active involvement — reviews, resourcing decisions, communication?' },
+  'lead-policy': { label: '5.2 Policy', question: 'Is the policy communicated, understood, and available to relevant parties?', document: 'Policy document(s)' },
+  'lead-roles': { label: '5.3 Roles & responsibilities', question: 'Do people know their assigned roles and responsibilities? Sample-check a few employees.', document: 'Org chart / responsibility matrix' },
+  'plan-risks': { label: '6.1 Risks & opportunities', question: 'Is the register current? Sample a few — are actions proportionate and tracked to completion?', document: 'Risk & opportunity register' },
+  'plan-objectives': { label: '6.2 Objectives', question: 'Are objectives measurable, and is progress against them actually being tracked?', document: 'Objectives tracker' },
+  'sup-resources': { label: '7.1 Resources', question: 'Are the people, equipment and infrastructure identified as needed actually in place?' },
+  'sup-competence': { label: '7.2 Competence', question: 'Sample employee records — is competence evidence on file for their role?', document: 'Training / competence records' },
+  'sup-awareness': { label: '7.3 Awareness', question: 'Ask staff directly: do they know the policy, their role in it, and what happens if requirements are not met?' },
+  'sup-comms': { label: '7.4 Communication', question: 'Is the communication plan being followed? Check evidence of the last scheduled communication.', document: 'Communication log' },
+  'sup-docs': { label: '7.5 Documented information', question: 'Sample a few documents — are they controlled (version, approval, accessible) as described?', document: 'Document control register' },
+  'op8-general': { label: '8.1 Operational planning & control (general)', question: 'Are operating procedures actually being followed? Observe if possible, not just interview.', document: 'Operating procedures / work instructions' },
+  'perf-monitor': { label: '9.1 Monitoring & measurement', question: 'Is data actually being collected on the schedule stated? Sample records against the plan.', document: 'Monitoring & measurement records' },
+  'perf-audits': { label: '9.2 Internal audit programme', question: 'Is the audit programme on schedule? Were previous findings closed out?', document: 'Previous internal audit reports' },
+  'perf-review': { label: '9.3 Management review', question: 'Review the last minutes — were all required inputs covered, and were decisions tracked to completion?', document: 'Management review minutes' },
+  'improvement': { label: '10. Nonconformity & improvement', question: 'Sample a closed nonconformity — was root cause analysis done, and was the fix verified as effective?', document: 'Nonconformity & corrective action log' },
+  'Requirements for products & services': { label: '8.2 Requirements for products & services', question: 'Pick a recent order — was the requirements review done and recorded before it was accepted?' },
+  'Design & development': { label: '8.3 Design & development', question: 'Sample a design project — were review, verification and validation actually carried out and recorded?', document: 'Design review / verification / validation records' },
+  'Control of externally provided processes': { label: '8.4 Control of externally provided processes', question: 'Sample a supplier — was it evaluated before use, and is its performance still being monitored?', document: 'Approved supplier list & evaluation records' },
+  'Production & service provision': { label: '8.5 Production & service provision', question: 'Observe a process in action — does it match the documented method, with records kept?', document: 'Work orders / production records' },
+  'Release of products & services': { label: '8.6 Release of products & services', question: 'Sample a release record — was it approved by the right person before it went out?', document: 'Release / inspection records' },
+  'Control of nonconforming outputs': { label: '8.7 Control of nonconforming outputs', question: 'Find a recent nonconforming item — was it identified, controlled and dispositioned correctly?', document: 'Nonconforming-output log' },
+  'Emergency preparedness & response': { label: '8.2 Emergency preparedness & response', question: 'Ask to see the last emergency drill or test — did it happen on schedule, with lessons captured?', document: 'Emergency drill / test records' },
+  'Eliminating hazards & reducing OH&S risk': { label: '8.1.2 Eliminating hazards & reducing OH&S risk', question: 'Sample a hazard on the register — has a control actually been implemented, and is it still effective?', document: 'Hazard register / risk assessments' },
+  'Management of change': { label: '8.1.3 Management of change', question: 'Pick a recent change (equipment, process, staffing) — was a management-of-change review done first?', document: 'Change request / approval records' },
+  'Procurement': { label: '8.1.4 Procurement', question: 'Sample a recent purchase — were the relevant requirements specified to the supplier in writing?', document: 'Purchase orders with specified requirements' },
+  'Information security risk assessment': { label: '8.2 Information security risk assessment', question: 'Is the risk assessment current, and does it cover the assets actually in scope?', document: 'Risk assessment report' },
+  'Information security risk treatment': { label: '8.3 Information security risk treatment', question: 'Sample a treated risk — is the chosen control actually implemented, not just planned?', document: 'Statement of Applicability & treatment plan' },
+};
+
 let rzInitialized = false;
 function init() {
   if (rzInitialized) return;
@@ -438,10 +501,16 @@ function init() {
     auditInternal: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Area / process audited"></div><div><input type="text" placeholder="Frequency"></div><div><input type="text" placeholder="Auditor"></div><div><input type="date"></div><div><input type="text" placeholder="Findings / status"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
     auditExternal: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Certification body / auditor"></div><div><select><option>Stage 1</option><option>Stage 2 (Initial certification)</option><option>Surveillance</option><option>Recertification</option><option>Supplier / second-party</option><option>Other</option></select></div><div><input type="date"></div><div><input type="text" placeholder="Outcome / status"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
     nc: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Nonconformity description"></div><div><input type="text" placeholder="Root cause"></div><div><input type="text" placeholder="Corrective action"></div><div><select><option>Open</option><option>In progress</option><option>Closed</option></select></div><div><input type="text" placeholder="Owner"></div><div><input type="date"></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
+    auditDoc: () => `<div class="isoa-repeat-row"><div><input type="text" placeholder="Document name"></div><div><input type="text" placeholder="Requested from"></div><div><select><option>Not requested</option><option>Requested</option><option>Received</option><option>Reviewed</option></select></div><button type="button" class="isoa-remove-btn" aria-label="Remove">&times;</button></div>`,
   };
 
-  function addRow(containerId, tpl, ph, prefill) {
-    const container = document.getElementById(containerId);
+  // Accepts either a container element OR the id of one — the original
+  // top-level repeat sections (ctx-parties, lead-roles, ...) pass an id;
+  // the new per-audit-card doc list passes the element directly, since
+  // multiple audit cards can exist and none of their internals carry a
+  // unique id.
+  function addRow(container, tpl, ph, prefill) {
+    const el = typeof container === 'string' ? document.getElementById(container) : container;
     const wrapper = document.createElement('div');
     wrapper.innerHTML = templates[tpl](ph);
     const row = wrapper.firstElementChild;
@@ -450,7 +519,7 @@ function init() {
       const fields = row.querySelectorAll('input, select');
       fields.forEach((f, i) => { if (prefill[i] !== undefined) f.value = prefill[i]; });
     }
-    container.appendChild(row);
+    el.appendChild(row);
     return row;
   }
 
@@ -530,20 +599,161 @@ function init() {
     Object.keys(preserved).forEach(id => { const el = document.getElementById(id); if (el && preserved[id]) el.value = preserved[id]; });
   }
 
-  function toggleStdModeUI() {
-    const modeEl = document.querySelector('input[name="std-mode"]:checked');
-    const mode = modeEl ? modeEl.value : 'single';
-    document.getElementById('std-single-wrap').hidden = mode !== 'single';
-    document.getElementById('std-multi-wrap').hidden = mode !== 'multi';
-    renderPolicyFields();
-    renderOperationTab();
-    updateProgress();
+  // ---- Audits tab: per-audit Plan + Checklist + Documents ----
+  function getAuditCriteriaOptions() {
+    const core = ['ctx-internal','ctx-external','ctx-climate','ctx-parties','ctx-scope','lead-commitment','lead-policy','lead-roles','plan-risks','plan-objectives','sup-resources','sup-competence','sup-awareness','sup-comms','sup-docs','op8-general','perf-monitor','perf-audits','perf-review','improvement'];
+    const selected = getSelectedStandards();
+    const seen = new Set();
+    const dynamicKeys = [];
+    selected.forEach(code => {
+      const std = ISO_STANDARDS[code];
+      if (!std || !std.clause8) return;
+      std.clause8.forEach(topic => { if (!seen.has(topic)) { seen.add(topic); dynamicKeys.push(topic); } });
+    });
+    return core.concat(dynamicKeys).filter(k => CLAUSE_AUDIT_BANK[k]).map(k => ({ key: k, label: CLAUSE_AUDIT_BANK[k].label }));
   }
-  document.querySelectorAll('input[name="std-mode"]').forEach(r => r.addEventListener('change', toggleStdModeUI));
-  document.getElementById('std-single').addEventListener('change', toggleStdModeUI);
-  document.querySelectorAll('.std-checkbox').forEach(cb => cb.addEventListener('change', () => { renderPolicyFields(); renderOperationTab(); updateProgress(); }));
 
-  // seed one empty row per repeatable section
+  function renderCriteriaList(card) {
+    const options = getAuditCriteriaOptions();
+    const list = card.querySelector('.isoa-criteria-list');
+    const checkedKeys = new Set(Array.from(list.querySelectorAll('.audit-criterion:checked')).map(cb => cb.dataset.clause));
+    list.innerHTML = options.map(o =>
+      `<label><input type="checkbox" class="audit-criterion" data-clause="${escapeHtml(o.key)}" ${checkedKeys.has(o.key) ? 'checked' : ''}> ${escapeHtml(o.label)}</label>`
+    ).join('');
+  }
+
+  function refreshAllAuditCriteriaLists() {
+    document.querySelectorAll('.isoa-audit-card').forEach(card => renderCriteriaList(card));
+  }
+
+  function addChecklistRow(card, clauseKey, question, evidence, result) {
+    const info = CLAUSE_AUDIT_BANK[clauseKey] || { label: clauseKey };
+    const wrap = card.querySelector('.audit-checklist-wrap');
+    const rowWrapper = document.createElement('div');
+    rowWrapper.innerHTML = `<div class="audit-checklist-row isoa-repeat-row" data-clause-key="${escapeHtml(clauseKey)}">
+      <div style="flex:2 1 260px;">
+        <div class="cl-label">${escapeHtml(info.label)}</div>
+        <div style="display:flex;gap:.4rem;align-items:flex-start;">
+          <textarea class="cl-question"></textarea>
+          <button type="button" class="isoa-ai-btn cl-ai-btn no-print" title="Refine with AI" style="padding:.5rem .6rem;flex-shrink:0;">\u2728</button>
+        </div>
+      </div>
+      <div style="flex:1 1 160px;"><input type="text" class="cl-evidence" placeholder="Evidence seen"></div>
+      <div style="flex:1 1 150px;">
+        <select class="cl-result">
+          <option>Not yet audited</option>
+          <option>Conforming</option>
+          <option>Nonconformity</option>
+          <option>Observation</option>
+          <option>Not applicable</option>
+        </select>
+      </div>
+      <button type="button" class="isoa-remove-btn cl-remove-btn" aria-label="Remove">&times;</button>
+    </div>`;
+    const row = rowWrapper.firstElementChild;
+    row.querySelector('.cl-question').value = question || '';
+    row.querySelector('.cl-evidence').value = evidence || '';
+    if (result) row.querySelector('.cl-result').value = result;
+    row.querySelector('.cl-remove-btn').addEventListener('click', () => row.remove());
+    wrap.appendChild(row);
+    return row;
+  }
+
+  function generateAuditChecklist(card) {
+    const checked = Array.from(card.querySelectorAll('.audit-criterion:checked')).map(cb => cb.dataset.clause);
+    if (!checked.length) {
+      alert('Check at least one clause under "Criteria" first.');
+      return;
+    }
+    const existingKeys = new Set(Array.from(card.querySelectorAll('.audit-checklist-row')).map(r => r.dataset.clauseKey));
+    const docsWrap = card.querySelector('.audit-docs-wrap');
+    const docNamesAlready = new Set(Array.from(docsWrap.querySelectorAll('.isoa-repeat-row input[type=text]')).map(i => i.value.trim().toLowerCase()).filter(Boolean));
+    checked.forEach(key => {
+      const info = CLAUSE_AUDIT_BANK[key];
+      if (!info) return;
+      if (!existingKeys.has(key)) {
+        addChecklistRow(card, key, info.question, '', 'Not yet audited');
+      }
+      if (info.document && !docNamesAlready.has(info.document.toLowerCase())) {
+        addRow(docsWrap, 'auditDoc', '', [info.document, '', 'Not requested']);
+        docNamesAlready.add(info.document.toLowerCase());
+      }
+    });
+  }
+
+  function addAuditCard(prefill) {
+    const container = document.getElementById('audits-container');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<div class="isoa-audit-card">
+      <div class="isoa-audit-card-head">
+        <input type="text" class="audit-title" placeholder="Audit name / reference (e.g. Q1 2027 Internal Audit \u2014 Production)">
+        <button type="button" class="isoa-remove-btn audit-remove-btn no-print" aria-label="Remove audit">&times;</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+        <label class="isoa-field"><span class="label-text">Type</span>
+          <select class="audit-type">
+            <option>Internal</option>
+            <option>External — Stage 1</option>
+            <option>External — Stage 2 (Initial certification)</option>
+            <option>External — Surveillance</option>
+            <option>External — Recertification</option>
+            <option>External — Supplier / second-party</option>
+          </select>
+        </label>
+        <label class="isoa-field"><span class="label-text">Date</span><input type="date" class="audit-date"></label>
+        <label class="isoa-field"><span class="label-text">Method</span>
+          <select class="audit-method"><option>On-site</option><option>Remote</option><option>Hybrid</option></select>
+        </label>
+        <label class="isoa-field"><span class="label-text">Lead auditor</span><input type="text" class="audit-lead"></label>
+      </div>
+      <label class="isoa-field"><span class="label-text">Objectives</span><textarea class="audit-objectives"></textarea></label>
+      <label class="isoa-field"><span class="label-text">Scope</span><textarea class="audit-scope"></textarea></label>
+      <label class="isoa-field"><span class="label-text">Other team members / auditee contact</span><input type="text" class="audit-team"></label>
+      <h3 style="font-size:.95rem;">Criteria — which clauses does this audit cover?</h3>
+      <div class="isoa-criteria-list"></div>
+      <div class="no-print" style="margin:.5rem 0 1rem;">
+        <button type="button" class="btn btn-secondary audit-generate-btn">Generate checklist &amp; document list from selected criteria</button>
+      </div>
+      <div class="audit-checklist-wrap"></div>
+      <h4 style="font-size:.9rem;margin-top:1.25rem;">Documents to request</h4>
+      <div class="audit-docs-wrap"></div>
+      <button type="button" class="btn btn-primary isoa-add-btn no-print audit-add-doc-btn" style="font-size:.8rem;">+ Add document</button>
+    </div>`;
+    const card = wrapper.firstElementChild;
+    card.querySelector('.audit-remove-btn').addEventListener('click', () => card.remove());
+    card.querySelector('.audit-generate-btn').addEventListener('click', () => generateAuditChecklist(card));
+    card.querySelector('.audit-add-doc-btn').addEventListener('click', () => addRow(card.querySelector('.audit-docs-wrap'), 'auditDoc'));
+    renderCriteriaList(card);
+    container.appendChild(card);
+
+    if (prefill) {
+      if (prefill.title) card.querySelector('.audit-title').value = prefill.title;
+      if (prefill.type) card.querySelector('.audit-type').value = prefill.type;
+      if (prefill.date) card.querySelector('.audit-date').value = prefill.date;
+      if (prefill.method) card.querySelector('.audit-method').value = prefill.method;
+      if (prefill.lead) card.querySelector('.audit-lead').value = prefill.lead;
+      if (prefill.objectives) card.querySelector('.audit-objectives').value = prefill.objectives;
+      if (prefill.scope) card.querySelector('.audit-scope').value = prefill.scope;
+      if (prefill.team) card.querySelector('.audit-team').value = prefill.team;
+      if (prefill.criteria && prefill.criteria.length) {
+        prefill.criteria.forEach(key => {
+          const cb = card.querySelector('.audit-criterion[data-clause="' + CSS.escape(key) + '"]');
+          if (cb) cb.checked = true;
+        });
+      }
+      if (prefill.checklist && prefill.checklist.length) {
+        prefill.checklist.forEach(row => addChecklistRow(card, row.clause, row.question, row.evidence, row.result));
+      }
+      if (prefill.docs && prefill.docs.length) {
+        prefill.docs.forEach(d => addRow(card.querySelector('.audit-docs-wrap'), 'auditDoc', '', d));
+      }
+    }
+    return card;
+  }
+
+  document.getElementById('add-audit-btn').addEventListener('click', () => addAuditCard());
+
+  // seed one empty row per repeatable section, and one blank audit card
   addRow('ctx-parties', 'interestedParty');
   addRow('lead-roles', 'role');
   addRow('plan-risks', 'risk');
@@ -554,8 +764,23 @@ function init() {
   addRow('perf-audits-internal', 'auditInternal');
   addRow('perf-audits-external', 'auditExternal');
   addRow('imp-nc-log', 'nc');
+  addAuditCard();
   renderPolicyFields();
   renderOperationTab();
+
+  function toggleStdModeUI() {
+    const modeEl = document.querySelector('input[name="std-mode"]:checked');
+    const mode = modeEl ? modeEl.value : 'single';
+    document.getElementById('std-single-wrap').hidden = mode !== 'single';
+    document.getElementById('std-multi-wrap').hidden = mode !== 'multi';
+    renderPolicyFields();
+    renderOperationTab();
+    refreshAllAuditCriteriaLists();
+    updateProgress();
+  }
+  document.querySelectorAll('input[name="std-mode"]').forEach(r => r.addEventListener('change', toggleStdModeUI));
+  document.getElementById('std-single').addEventListener('change', toggleStdModeUI);
+  document.querySelectorAll('.std-checkbox').forEach(cb => cb.addEventListener('change', () => { renderPolicyFields(); renderOperationTab(); refreshAllAuditCriteriaLists(); updateProgress(); }));
 
   // ---- save / resume / backup ----
   function safeStorage(action) {
@@ -572,6 +797,37 @@ function init() {
     return Array.from(document.querySelectorAll('#' + containerId + ' .isoa-repeat-row')).map(r =>
       Array.from(r.querySelectorAll('input, select')).map(el => el.value)
     ).filter(row => row.some(v => v && v.trim() !== ''));
+  }
+
+  function collectAudits() {
+    return Array.from(document.querySelectorAll('.isoa-audit-card')).map(card => ({
+      title: card.querySelector('.audit-title').value,
+      type: card.querySelector('.audit-type').value,
+      date: card.querySelector('.audit-date').value,
+      method: card.querySelector('.audit-method').value,
+      lead: card.querySelector('.audit-lead').value,
+      objectives: card.querySelector('.audit-objectives').value,
+      scope: card.querySelector('.audit-scope').value,
+      team: card.querySelector('.audit-team').value,
+      criteria: Array.from(card.querySelectorAll('.audit-criterion:checked')).map(cb => cb.dataset.clause),
+      checklist: Array.from(card.querySelectorAll('.audit-checklist-row')).map(r => ({
+        clause: r.dataset.clauseKey,
+        question: r.querySelector('.cl-question').value,
+        evidence: r.querySelector('.cl-evidence').value,
+        result: r.querySelector('.cl-result').value,
+      })),
+      docs: Array.from(card.querySelectorAll('.audit-docs-wrap .isoa-repeat-row')).map(r => {
+        const inputs = r.querySelectorAll('input');
+        const sel = r.querySelector('select');
+        return [inputs[0] ? inputs[0].value : '', inputs[1] ? inputs[1].value : '', sel ? sel.value : ''];
+      }),
+    }));
+  }
+
+  function applyAudits(list) {
+    document.getElementById('audits-container').innerHTML = '';
+    (list || []).forEach(a => addAuditCard(a));
+    if (!list || !list.length) addAuditCard();
   }
 
   function collectState() {
@@ -603,6 +859,7 @@ function init() {
         'perf-audits-external': mixedRows('perf-audits-external'),
         'imp-nc-log': mixedRows('imp-nc-log'),
       },
+      audits: collectAudits(),
     };
   }
 
@@ -631,6 +888,7 @@ function init() {
     clearRepeats('perf-audits-external'); (r['perf-audits-external'] && r['perf-audits-external'].length ? r['perf-audits-external'] : [[]]).forEach(v => addRow('perf-audits-external','auditExternal','',v));
     clearRepeats('imp-nc-log'); (r['imp-nc-log'] && r['imp-nc-log'].length ? r['imp-nc-log'] : [[]]).forEach(v => addRow('imp-nc-log','nc','',v));
 
+    applyAudits(state.audits);
     updateProgress();
   }
 
@@ -691,12 +949,18 @@ function init() {
   }
 
   // ---- AI assist (optional — every tab works fully without this) ----
-  // Event delegation, not per-button binding: policy buttons are created
-  // dynamically by renderPolicyFields(), so they wouldn't exist yet for a
-  // one-time querySelectorAll().forEach() the way project-plan-architect.html
-  // does it — this pattern would be worth backporting there too if it ever
-  // grows dynamic AI buttons.
+  // Two delegated branches: per-checklist-row refine (.cl-ai-btn, dynamic,
+  // no unique id — resolved via closest()) and everything else (.isoa-ai-btn,
+  // resolved via a target id). project-plan-architect.html's one-time
+  // querySelectorAll().forEach() binding wouldn't work for either of these
+  // since both kinds of button are created after page load.
   document.addEventListener('click', (e) => {
+    const clBtn = e.target.closest('.cl-ai-btn');
+    if (clBtn) {
+      const row = clBtn.closest('.audit-checklist-row');
+      refineChecklistQuestion(row.querySelector('.cl-question'), row.querySelector('.cl-label').textContent, clBtn);
+      return;
+    }
     const btn = e.target.closest('.isoa-ai-btn');
     if (!btn) return;
     callISOAssist(btn.dataset.aiKind, btn.dataset.aiTarget, btn);
@@ -738,6 +1002,33 @@ function init() {
     }
   }
 
+  async function refineChecklistQuestion(questionEl, clauseLabel, btn) {
+    if (!RZ_ISOA_CONFIG.aiAssistEndpoint) {
+      alert("AI assist isn't wired up yet — deploy iso-assist-worker.js, then paste its URL into RZ_ISOA_CONFIG.aiAssistEndpoint near the top of this file.");
+      return;
+    }
+    const selected = getSelectedStandards();
+    const standardsLabel = selected.map(c => ISO_STANDARDS[c] ? ISO_STANDARDS[c].name : '').filter(Boolean).join(', ');
+    try {
+      const res = await fetch(RZ_ISOA_CONFIG.aiAssistEndpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          kind: 'refine-checklist-question',
+          orgName: val('org-name'),
+          standards: standardsLabel,
+          clauseLabel,
+          current: questionEl.value || '',
+        }),
+      });
+      if (!res.ok) throw new Error('Worker returned ' + res.status);
+      const data = await res.json();
+      if (data.suggestion) questionEl.value = data.suggestion;
+    } catch (err) {
+      alert("Couldn't reach the AI assist Worker — check it's deployed and the endpoint URL is correct.");
+    }
+  }
+
   // ---- tab switching ----
   const tabs = document.querySelectorAll('.isoa-tab[data-step]');
   const panels = document.querySelectorAll('[data-panel]');
@@ -757,7 +1048,7 @@ function init() {
     let touched = 0;
     filled.forEach(f => { if (f.value && f.value.trim() !== '') touched++; });
     document.getElementById('isoa-progress').textContent =
-      touched > 0 ? `In progress — ${touched} fields filled across ${RZ_ISOA_CONFIG.totalCategoriesPlanned} clauses` : '';
+      touched > 0 ? `In progress — ${touched} fields filled` : '';
   }
   document.addEventListener('input', updateProgress);
   updateProgress();
@@ -771,6 +1062,24 @@ function init() {
       const value = textareaEl ? textareaEl.value.trim() : '';
       return `<p><strong>${escapeHtml(label)}:</strong> ${value ? escapeHtml(value) : '<span class="isoa-empty">Not entered yet.</span>'}</p>`;
     }).join('');
+  }
+
+  function auditCardToHtml(a) {
+    const critLabels = (a.criteria || []).map(k => CLAUSE_AUDIT_BANK[k] ? CLAUSE_AUDIT_BANK[k].label : k);
+    const checklistHtml = (a.checklist && a.checklist.length)
+      ? `<table><tr><th>Clause</th><th>Question</th><th>Evidence</th><th>Result</th></tr>${a.checklist.map(c => `<tr><td>${escapeHtml((CLAUSE_AUDIT_BANK[c.clause] || {}).label || c.clause)}</td><td>${escapeHtml(c.question || '')}</td><td>${escapeHtml(c.evidence || '')||'—'}</td><td>${c.result}</td></tr>`).join('')}</table>`
+      : '<p class="isoa-empty">No checklist generated yet.</p>';
+    const docsHtml = (a.docs && a.docs.length)
+      ? `<table><tr><th>Document</th><th>Requested from</th><th>Status</th></tr>${a.docs.map(d => `<tr><td>${escapeHtml(d[0] || '')}</td><td>${escapeHtml(d[1] || '')||'—'}</td><td>${d[2]}</td></tr>`).join('')}</table>`
+      : '<p class="isoa-empty">None listed yet.</p>';
+    return `<h3>${escapeHtml(a.title || 'Untitled audit')}</h3>
+      <p><strong>Type:</strong> ${escapeHtml(a.type)} &nbsp; <strong>Date:</strong> ${a.date || '—'} &nbsp; <strong>Method:</strong> ${escapeHtml(a.method)}</p>
+      <p><strong>Lead auditor:</strong> ${escapeHtml(a.lead) || '—'} &nbsp; <strong>Other team / auditee contact:</strong> ${escapeHtml(a.team) || '—'}</p>
+      <p><strong>Objectives:</strong> ${escapeHtml(a.objectives) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Scope:</strong> ${escapeHtml(a.scope) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+      <p><strong>Criteria:</strong> ${critLabels.length ? escapeHtml(critLabels.join(', ')) : '<span class="isoa-empty">None selected.</span>'}</p>
+      <p><strong>Checklist</strong></p>${checklistHtml}
+      <p><strong>Documents to request</strong></p>${docsHtml}`;
   }
 
   function renderDocument() {
@@ -816,6 +1125,8 @@ function init() {
       return desc ? [desc, texts[1] ? texts[1].value.trim() : '', texts[2] ? texts[2].value.trim() : '', sel ? sel.value : '', texts[3] ? texts[3].value.trim() : '', dateEl ? dateEl.value : ''] : null;
     }).filter(Boolean);
 
+    const audits = collectAudits();
+
     document.getElementById('isoa-doc').innerHTML = `
       <h1 style="margin-bottom:0;">${escapeHtml(val('org-name') || 'Untitled Organization')}</h1>
       <p class="isoa-empty" style="margin-top:.2rem;">Management System Documentation — drafted ${new Date().toLocaleDateString()}</p>
@@ -859,11 +1170,14 @@ function init() {
       <h2>9. Performance Evaluation</h2>
       <p><strong>Monitoring &amp; measurement</strong></p>
       ${monitorRows.length ? `<table><tr><th>What</th><th>Method</th><th>Frequency</th><th>Responsible</th></tr>${monitorRows.map(m => `<tr><td>${escapeHtml(m[0]||'')}</td><td>${escapeHtml(m[1]||'—')}</td><td>${escapeHtml(m[2]||'—')}</td><td>${escapeHtml(m[3]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
-      <p><strong>Internal audits</strong></p>
+      <p><strong>Internal audits (schedule)</strong></p>
       ${auditIntRows.length ? `<table><tr><th>Area</th><th>Frequency</th><th>Auditor</th><th>Last completed</th><th>Findings/status</th></tr>${auditIntRows.map(a => `<tr><td>${escapeHtml(a[0]||'')}</td><td>${escapeHtml(a[1]||'—')}</td><td>${escapeHtml(a[2]||'—')}</td><td>${a[3]||'—'}</td><td>${escapeHtml(a[4]||'—')}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
-      <p><strong>Certification &amp; external audits</strong></p>
+      <p><strong>Certification &amp; external audits (schedule)</strong></p>
       ${auditExtRows.length ? `<table><tr><th>Body/auditor</th><th>Type</th><th>Date</th><th>Outcome/status</th></tr>${auditExtRows.map(a => `<tr><td>${escapeHtml(a[0])}</td><td>${a[1]}</td><td>${a[2]||'—'}</td><td>${escapeHtml(a[3])}</td></tr>`).join('')}</table>` : '<p class="isoa-empty">None entered yet.</p>'}
       <p><strong>Management review:</strong> ${escapeHtml(val('perf-mgmt-review')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
+
+      <h2>Audit Plans &amp; Checklists</h2>
+      ${audits.length ? audits.map(auditCardToHtml).join('<hr>') : '<p class="isoa-empty">No audits created yet.</p>'}
 
       <h2>10. Improvement</h2>
       <p><strong>Nonconformity &amp; corrective action process:</strong> ${escapeHtml(val('imp-nc-process')) || '<span class="isoa-empty">Not entered yet.</span>'}</p>
