@@ -48,7 +48,7 @@
    construction rather than by luck.
    ============================================================ */
 
-console.info('[Cost Structure Checker] script build: 2026-09-21-v1.3');
+console.info('[Cost Structure Checker] script build: 2026-09-24-v1.5');
 
 /* ================= CONFIG =================
    Everything a layperson might want to retune without reading
@@ -218,6 +218,177 @@ function updatePctTotal() {
     el.textContent = `Total entered: ${sum.toFixed(1)}%` + (enteredCount < 4 ? ' (still missing ' + (4 - enteredCount) + ' \u2014 fine to leave blank)' : (Math.abs(sum - 100) > 2 ? ' \u2014 doesn\u2019t quite add up to 100%, worth double-checking' : ''));
     el.classList.toggle('is-off', enteredCount === 4 && Math.abs(sum - 100) > 2);
   }
+}
+
+/* ================= CROSS-TOOL SYNC \u2014 live broadcast + file import
+   (2026-09-22 v1.4 file-import; 2026-09-24 v1.5 adds live costing-sync.js,
+   per Treasurer: CSC should be able to pick up what it needs from either
+   path) =================
+   ONE function applies a payload regardless of where it came from \u2014
+   handleSyncPayload() below \u2014 matching CROSS_TOOL_IMPORT_STANDARD.md's
+   own rule (re-confirmed directly against that file this session, not
+   just recalled) that a file importer must hand off to the exact
+   function a page's live sync already uses, never a second parallel set
+   of field-mapping. importDataFile() (file) and initSync()/rzListen()
+   (live) both just get a payload to handleSyncPayload() one way or
+   another.
+
+   Menu Calculator is the only source actually wired to something so
+   far: payloads carry {source: 'menu-calculator', blockId,
+   costPerPortion, costBufferPct, sellingPrice, dishName} \u2014 re-confirmed
+   this session directly against CROSS_TOOL_IMPORT_STANDARD.md's own
+   worked example (its exact `handleSyncPayload({ source:
+   'menu-calculator', blockId: b.blockId, ... })` line). The session
+   building Menu Calculator's own export/broadcast confirmed (via
+   Treasurer) that it's participating. If that shape ever changes,
+   handleSyncPayload() below is the one function that needs updating to
+   match.
+
+   NOT re-verified this session \u2014 menu-calculator.js, costing-sync.js,
+   interactive-costing-analysis.js, margin-audit-calculator.js and
+   styles.css weren't available to check directly here: the exact
+   name/behaviour of rzListen() in costing-sync.js, and whether other
+   pages' own live-sync code really does use a Map keyed by blockId the
+   same way this does. Both are built to the pattern
+   CROSS_TOOL_IMPORT_STANDARD.md itself describes, and initSync() below
+   fails safe (silently does nothing) if rzListen isn't actually a
+   function by that name \u2014 a naming mismatch means live sync just
+   doesn't activate, not a broken page. Worth a real check against those
+   files' current content next time they're available.
+
+   Every dish this page has ever heard about (live or from a file) is
+   kept in syncedMenuBlocks, keyed by blockId, so a later update for the
+   same dish overwrites rather than duplicates. Ingredients % is then
+   recomputed from the FULL current set on every update: the plain
+   (UNWEIGHTED) average of (costPerPortion \u00f7 sellingPrice) \u00d7 100 across
+   every known dish with both a cost and a price. Unweighted because
+   nothing in this shape carries a sales-volume field to weight by \u2014
+   same known limitation as v1.4, now just applied across live + file
+   sources together rather than one file at a time. Treat the result as
+   a reasonable starting point, not a precise blended food cost % \u2014 the
+   field stays a normal editable input throughout, a markSynced() badge
+   on its label says where the number came from, and a real blended
+   number can always overwrite it by hand. costBufferPct is still read
+   but deliberately NOT folded into the calculation, for the same reason
+   as v1.4: it's Menu Calculator's own pricing-side buffer, not confirmed
+   to mean the same thing as a true cost inflator.
+
+   Edge case worth knowing about, not specially solved here: if Menu
+   Calculator's blockId counter restarts in a fresh session, a stale
+   imported file's IDs could collide with a new live session's IDs for a
+   *different* dish. The field staying editable is the escape hatch.
+
+   Overhead & Manpower's own export/broadcast (source ===
+   'overhead-manpower-calculator', {overheadMonthly, manpowerMonthly}) \u2014
+   also re-confirmed this session against CROSS_TOOL_IMPORT_STANDARD.md's
+   worked example \u2014 is recognised by importDataFile() below but
+   deliberately NOT actioned: RM/month figures, no revenue number on
+   this page to convert with. A file import says so explicitly; a live
+   payload for it is silently no-op'd (no user click to attach a status
+   message to). See the KIV list for what unlocking this would need. */
+
+const syncedMenuBlocks = new Map();
+
+// Small "synced from X" badge next to a field's label, so a number that
+// arrived live or from an import doesn't look like a manual guess. Uses
+// its own page-scoped .csc-synced-badge class (defined in this page's
+// own <style> block) rather than assuming a shared component exists
+// elsewhere on the site \u2014 styles.css wasn't available to check against
+// this session, so this doesn't guess at its class names. Doesn't lock
+// the field \u2014 manual edits still work after.
+function markSynced(labelSelector, sourceLabel) {
+  const label = document.querySelector(labelSelector);
+  if (!label) return;
+  let badge = label.querySelector('.csc-synced-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'csc-synced-badge';
+    label.appendChild(badge);
+  }
+  badge.textContent = '\u2190 ' + sourceLabel;
+}
+
+function recomputeIngredientsFromSyncedMenu() {
+  const rates = [];
+  syncedMenuBlocks.forEach((b) => {
+    if (isFinite(b.costPerPortion) && isFinite(b.sellingPrice) && b.sellingPrice > 0) {
+      rates.push((b.costPerPortion / b.sellingPrice) * 100);
+    }
+  });
+  if (!rates.length) return;
+  const avg = rates.reduce((sum, r) => sum + r, 0) / rates.length;
+  document.getElementById('csc-pct-ingredients').value = avg.toFixed(1);
+  updatePctTotal();
+  renderCategoryCards();
+  renderStructureComparison();
+  renderActionPlan();
+  const dishWord = rates.length === 1 ? 'dish' : 'dishes';
+  markSynced('#csc-pct-ingredients-label', `Menu Calculator (${rates.length} ${dishWord}, avg. food cost %)`);
+}
+
+// The one function both live sync (via rzListen, see initSync()) and
+// file import (via importDataFile()) call \u2014 per CROSS_TOOL_IMPORT_
+// STANDARD.md, field-mapping lives here exactly once.
+function handleSyncPayload(data) {
+  if (!data) return;
+  if (data.source === 'menu-calculator' && typeof data.costPerPortion === 'number') {
+    const blockId = (typeof data.blockId === 'string' && data.blockId) ? data.blockId : ('menu-calculator-unkeyed-' + (syncedMenuBlocks.size + 1));
+    syncedMenuBlocks.set(blockId, {
+      costPerPortion: data.costPerPortion,
+      sellingPrice: typeof data.sellingPrice === 'number' ? data.sellingPrice : null,
+      dishName: data.dishName || 'Untitled Menu Item',
+      costBufferPct: typeof data.costBufferPct === 'number' ? data.costBufferPct : 0,
+    });
+    recomputeIngredientsFromSyncedMenu();
+  }
+  // data.source === 'overhead-manpower-calculator': recognised, not
+  // actionable yet (see file header comment) \u2014 silently ignored for a
+  // live payload; importDataFile() below gives the file-import path its
+  // own honest explanation instead, since that path has a status line
+  // to write to and a user action that triggered it.
+}
+
+function initSync() {
+  if (typeof rzListen !== 'function') return; // costing-sync.js missing/reshaped \u2014 everything else on this page still works without it
+  rzListen(handleSyncPayload);
+}
+
+function importDataFile(file) {
+  const status = document.getElementById('csc-import-status');
+  status.textContent = 'Reading file\u2026';
+  status.classList.remove('is-error');
+  const reader = new FileReader();
+  reader.onerror = () => {
+    status.textContent = 'Couldn\u2019t read that file.';
+    status.classList.add('is-error');
+  };
+  reader.onload = () => {
+    let data;
+    try { data = JSON.parse(reader.result); }
+    catch (e) {
+      status.textContent = 'Couldn\u2019t read that file \u2014 is it a JSON export from another tool on this site?';
+      status.classList.add('is-error');
+      return;
+    }
+
+    if (data && data.rzExportType === 'menu-calculator' && Array.isArray(data.blocks)) {
+      data.blocks.forEach((b) => {
+        handleSyncPayload({ source: 'menu-calculator', blockId: b.blockId, costPerPortion: b.costPerPortion, costBufferPct: b.costBufferPct, sellingPrice: b.sellingPrice, dishName: b.dishName });
+      });
+      const usable = Array.from(syncedMenuBlocks.values()).filter((b) => isFinite(b.costPerPortion) && isFinite(b.sellingPrice) && b.sellingPrice > 0).length;
+      status.textContent = usable
+        ? `Ingredients % updated from ${usable} dish${usable === 1 ? '' : 'es'} now known (unweighted average food cost %, no sales-volume data to weight by \u2014 adjust by hand if you know your real blended number).`
+        : 'That file doesn\u2019t have any dishes with both a cost and a selling price to work out a food cost % from.';
+      status.classList.toggle('is-error', !usable);
+    } else if (data && data.rzExportType === 'overhead-manpower-calculator') {
+      status.textContent = 'That\u2019s a valid Overhead & Manpower export, but this page can\u2019t use it yet \u2014 it\u2019s RM/month figures, not a % of revenue, and there\u2019s no revenue number here to convert with. Enter Overhead %/Manpower % by hand for now.';
+      status.classList.add('is-error');
+    } else {
+      status.textContent = 'Unrecognised file \u2014 right now this only reads a Menu Calculator export (the "Export data" button on that page).';
+      status.classList.add('is-error');
+    }
+  };
+  reader.readAsText(file);
 }
 
 /* ================= STRUCTURE PIE (ported \u2014 generic pie math, reused
@@ -805,6 +976,18 @@ function init() {
       });
     });
     document.getElementById('csc-guide-venue-select').addEventListener('change', renderStructureComparison);
+  });
+
+  safeInit('cross-tool import', () => {
+    document.getElementById('csc-import-btn').addEventListener('click', () => document.getElementById('csc-import-file').click());
+    document.getElementById('csc-import-file').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) importDataFile(e.target.files[0]);
+      e.target.value = ''; // clear so importing the same filename twice in a row still fires 'change'
+    });
+  });
+
+  safeInit('cross-tool live sync', () => {
+    initSync();
   });
 
   safeInit('wastage tabs', () => {

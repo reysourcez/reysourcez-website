@@ -34,6 +34,12 @@
     .csc-pct-total { font-size: 0.85rem; color: var(--muted); margin: 4px 0 22px; }
     .csc-pct-total.is-off { color: #C0392B; font-weight: 600; }
 
+    /* ---- Cross-tool sync: file import (v1.4) + live costing-sync.js (v1.5) ---- */
+    .csc-import-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 0 22px; }
+    .csc-import-status { font-size: 0.85rem; color: var(--muted); }
+    .csc-import-status.is-error { color: #C0392B; font-weight: 600; }
+    .csc-synced-badge { display: inline-block; font-size: 0.72rem; font-weight: 600; color: #1F6F5C; background: #E4F1EC; padding: 2px 8px; border-radius: 10px; margin-left: 8px; white-space: nowrap; }
+
     /* ---- Diagnostic category cards ---- */
     .csc-category-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 8px; }
     .csc-category-card {
@@ -208,29 +214,15 @@
         <li><a href="services.html">Services</a></li>
         <li class="nav-dropdown">
           <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
-          <!-- 10-item canonical list, per NAV_ORDER_STANDARD.md's
-               2026-09-14 reconciliation entry. Rental Calculator (built
-               2026-09-08/11) already had position 8 reserved for it in
-               that doc; Market Radar and this page are moved out of that
-               same doc's "reserved, not yet built" paragraph into the
-               numbered list now that both actually exist. See that
-               entry for the divergent-copy issue this fixes (a separate
-               branch of the same doc had Market Radar at 8 with no
-               knowledge Rental Calculator existed at all). Other pages'
-               copies of this dropdown aren't patched yet \u2014 central
-               reconciliation pass, same as every prior tool addition. -->
-          <ul class="nav-dropdown-menu">
-            <li><a href="menu-calculator.html">Menu Calculator</a></li>
-            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-            <li><a href="printing-calculator.html">Printing Calculator</a></li>
-            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
-            <li><a href="food-worth-calculator.html">Food Worth</a></li>
-            <li><a href="crypto-radar.html">Crypto Radar</a></li>
-            <li><a href="rental-calculator.html">Rental Calculator</a></li>
-            <li><a href="market-radar.html">Market Radar</a></li>
-            <li><a href="cost-structure-checker.html" aria-current="page">Cost Structure Checker</a></li>
-          </ul>
+          <!-- Retrofitted to nav-config.js per NAV_RETROFIT_HOWTO.md (2026-09-24) \u2014
+               this list used to be hand-typed here (see COST_STRUCTURE_CHECKER_NOTES.md's
+               version history for the 2026-09-14 reconciliation that last fixed it by
+               hand). nav-config.js now overwrites this <ul> on every load, so it's left
+               empty rather than carrying a hand-typed list that's dead weight at best and,
+               per the HOWTO, exactly what gets copied into the next new page by mistake at
+               worst. Add, remove, or rename a tool in nav-config.js itself, once \u2014 not
+               here. -->
+          <ul class="nav-dropdown-menu"><!-- populated by nav-config.js --></ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
       </ul>
@@ -269,12 +261,32 @@
           <h2>Your numbers <span class="toggle-hint">(optional)</span></h2>
           <p class="structure-note">Know your real percentages? Enter them and the categories below will auto-suggest which ones are worth a closer look. Don't know them yet? Skip straight to "Which cost area is giving you trouble?" below — you don't need any of this to start ticking causes.</p>
           <div class="csc-pct-row">
-            <label class="csc-pct-field">Ingredients % <input type="number" id="csc-pct-ingredients" inputmode="decimal" min="0" max="100" step="0.1" placeholder="e.g. 42"></label>
+            <label class="csc-pct-field" id="csc-pct-ingredients-label">Ingredients % <input type="number" id="csc-pct-ingredients" inputmode="decimal" min="0" max="100" step="0.1" placeholder="e.g. 42"></label>
             <label class="csc-pct-field">Overhead % <input type="number" id="csc-pct-overhead" inputmode="decimal" min="0" max="100" step="0.1" placeholder="e.g. 20"></label>
             <label class="csc-pct-field">Manpower % <input type="number" id="csc-pct-manpower" inputmode="decimal" min="0" max="100" step="0.1" placeholder="e.g. 25"></label>
             <label class="csc-pct-field">Margin % <input type="number" id="csc-pct-margin" inputmode="decimal" min="0" max="100" step="0.1" placeholder="e.g. 13"></label>
           </div>
           <p class="csc-pct-total" id="csc-pct-total"></p>
+
+          <!-- Cross-tool sync (2026-09-22 v1.4 file import; 2026-09-24 v1.5 adds
+               live costing-sync.js) — per CROSS_TOOL_IMPORT_STANDARD.md: one file
+               input, auto-detecting type from rzExportType, handing off to the same
+               handleSyncPayload() a live broadcast also calls (see the <script>
+               tags above for costing-sync.js, and handleSyncPayload()'s own comment
+               in cost-structure-checker.js for what it computes and why). Ingredients
+               % can now fill in either without the button below being touched at all,
+               if Menu Calculator happens to be open live in another tab — the button
+               and file input stay for the no-live-tab case. Only Menu Calculator is
+               wired to anything so far; COST_STRUCTURE_CHECKER_NOTES.md's KIV list
+               has what this deliberately doesn't do yet (an Overhead & Manpower
+               export/broadcast is recognised but not actionable without a revenue
+               figure on this page; the fuller Margin Analysis / Costing Analysis
+               %-mix broadcast is separate, still-unbuilt work). -->
+          <div class="csc-import-row no-print">
+            <button type="button" id="csc-import-btn" class="btn btn-secondary">Import from Menu Calculator</button>
+            <input type="file" id="csc-import-file" accept="application/json" hidden>
+            <span class="csc-import-status" id="csc-import-status" aria-live="polite"></span>
+          </div>
 
           <div class="structure-layout">
             <div class="structure-info">
@@ -495,8 +507,11 @@
        KIV list for why: there's nothing upstream to listen to until Margin
        Analysis / Interactive Costing Analysis broadcast their own computed
        cost-structure mix, which neither currently does. -->
+  <script src="site-config.js?v=1" defer></script>
+  <script src="nav-config.js?v=1" defer></script>
+  <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="cost-structure-checker-content.js?v=2" defer></script>
-  <script src="cost-structure-checker.js?v=3" defer></script>
+  <script src="cost-structure-checker.js?v=5" defer></script>
 </body>
 </html>

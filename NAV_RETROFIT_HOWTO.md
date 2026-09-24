@@ -33,8 +33,8 @@ Open the page, click "Business Analysis." It should list every current tool with
 
 ## Status across the site (as of 2026-09-24)
 
-**Done:** `index.html`, `about.html`, `services.html`, `contact.html`, `menu-calculator.html`, `interactive-costing-analysis.html`.
+**Done:** `index.html`, `about.html`, `services.html`, `contact.html`, `menu-calculator.html`, `interactive-costing-analysis.html`, `cost-structure-checker.html` (2026-09-24 — see `COST_STRUCTURE_CHECKER_NOTES.md`'s v1.5 entry; `site-config.js`/`nav-config.js` weren't available to inspect directly this session, so the two `<script>` references trust they already exist on the deployed site, same as they do for the six pages already listed here).
 
-**Not yet — if this is your page, do the retrofit above before anything else:** `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html`, `food-worth-calculator.html`, `crypto-radar.html`, `rental-calculator.html`, `market-radar.html`, `cost-structure-checker.html`, `qr-listing-creator.html`, `sop-creator.html`, `project-plan-architect.html`, `form-scanner.html`, `qr-creator.html`.
+**Not yet — if this is your page, do the retrofit above before anything else:** `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html`, `food-worth-calculator.html`, `crypto-radar.html`, `rental-calculator.html`, `market-radar.html`, `qr-listing-creator.html`, `sop-creator.html`, `project-plan-architect.html`, `form-scanner.html`, `qr-creator.html`.
 
 Whoever's coordinating across sessions: once a "not yet" page gets retrofitted, move its filename up to "Done" in this doc so the list stays trustworthy — a stale status list here would just recreate the exact problem this doc exists to fix.
