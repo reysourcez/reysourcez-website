@@ -1,6 +1,10 @@
-/* QR Listing Creator — customer page themes (order-themes.js) — VERSION 1.3 (2026-09-24)
+/* QR Listing Creator — customer page themes (order-themes.js) — VERSION 1.4 (2026-09-25)
    10 food-app-inspired looks + the test dropdown. "Inspired by" = rough colour/layout approximations, not those apps'
-   logos, fonts or assets — rename them to generic names before real customers see them.
+   logos, fonts or assets. v1.4: this file is now also loaded on the SELLER page (qr-listing-creator.html), purely
+   to read OrderThemes.list for its Theme picker — everything below the OrderThemes assignment only runs where
+   #ord-app exists (the customer page), so the seller dashboard's own colours/session storage are never touched.
+   Visible names are generic everywhere now (the "from" brand attribution is kept in this data only as an
+   internal note for whoever edits this file — it's never rendered to anyone).
    c = [page bg, card surface, ink, accent, text-on-accent]; r = corner radius px; a = layout switches
    (cards grid|row|wide, cart bar|pill, nav pills|tabs); head = coloured header bar; x = extra CSS variables;
    f = Google Fonts family string; d / b = display / body font. */
@@ -54,7 +58,11 @@
       Object.keys(t.x || {}).forEach((k) => set(k, t.x[k]));
     }
     loadFonts(t);
-    try { sessionStorage.setItem('ord-theme', t.id); } catch (e) {}
+    // Scoped per business (v1.6) so one seller's theme never leaks into another business's page in the
+    // same browser tab session — computed inline so apply() behaves safely regardless of which page calls
+    // it (the seller page's own Preview button never calls apply() itself, but this keeps it safe if that
+    // ever changes).
+    try { sessionStorage.setItem('ord-theme-' + (new URLSearchParams(location.search).get('biz') || ''), t.id); } catch (e) {}
     try { // keep a ?theme= link in step with the dropdown so a refresh stays put
       const u = new URL(location.href);
       if (u.searchParams.has('theme')) { u.searchParams.set('theme', t.id); history.replaceState(null, '', u); }
@@ -63,16 +71,23 @@
     if (sel) sel.value = t.id;
   }
 
+  // Every page that loads this file gets window.OrderThemes (the seller page's Settings tab reads
+  // OrderThemes.list to build its Theme dropdown, never calling apply()). Everything below this line is
+  // the CUSTOMER PAGE's own auto-apply + test dropdown, and only runs where #ord-app exists — the seller
+  // dashboard must never have its own colours or session storage touched by a customer-page default. (v1.6)
+  window.OrderThemes = { list: T, apply: apply };
+  if (!document.getElementById('ord-app')) return;
+
   const qs = new URLSearchParams(location.search);
   let saved = null;
-  try { saved = sessionStorage.getItem('ord-theme'); } catch (e) {}
+  try { saved = sessionStorage.getItem('ord-theme-' + (qs.get('biz') || '')); } catch (e) {} // scoped per business (v1.6)
   apply([qs.get('theme'), saved, CFG.defaultTheme].find((v) => v && T.some((t) => t.id === v)) || 'classic');
 
   const box = document.getElementById('ord-theme-test');
   const flag = qs.get('themetest'); // ?themetest=1 forces the dropdown on, =0 forces it off
   if (box && flag !== '0' && (CFG.themeTestMode || flag === '1')) {
     const sel = box.querySelector('select');
-    T.forEach((t) => sel.add(new Option(t.n + (t.from ? ' \u2014 ' + t.from : ''), t.id)));
+    T.forEach((t) => sel.add(new Option(t.n, t.id))); // generic name only — no brand attribution shown (v1.6)
     sel.value = root.dataset.theme;
     sel.addEventListener('change', () => apply(sel.value));
     box.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
@@ -81,5 +96,4 @@
     }));
     box.hidden = false;
   }
-  window.OrderThemes = { list: T, apply: apply };
 })();

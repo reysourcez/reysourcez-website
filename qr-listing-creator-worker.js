@@ -1,7 +1,8 @@
 /* ============================================================
    QR Listing Creator — ordering backend (Cloudflare Worker + D1)
-   VERSION 1.5 (2026-09-24) — v1.5: private product Cost (seller-only). Base v1.1: security + correctness pass, floor plans.
-   Full change list and API notes: QLC_HANDOFF_v1.1.md (v1.5: QLC_HANDOFF_v1.5_ADDENDUM.md)
+   VERSION 1.6 (2026-09-25) — v1.6: Worker now enforces the same floor-plan table cap the seller page shows;
+   order lines snapshot each product's cost at order time; per-business Theme + Ad banner (new columns).
+   Full change list and API notes: QLC_HANDOFF_v1.1.md (v1.5: QLC_HANDOFF_v1.5_ADDENDUM.md; v1.6: QLC_HANDOFF_v1.6_ADDENDUM.md)
    ------------------------------------------------------------
    Deploys separately from GitHub Pages, same pattern as every other
    *-worker.js on this site — holds nothing secret this time (no API
@@ -66,6 +67,15 @@
         order.js AND the connect-src line of the security policy at
         the top of order.html (three places, all the same URL).
 
+   UPGRADING TO v1.6 (Theme + Ad banner) — D1 Console, once, then paste this file into the Worker as usual:
+          ALTER TABLE businesses ADD COLUMN theme TEXT;
+          ALTER TABLE businesses ADD COLUMN ads TEXT;
+        (Skip either one you already have — if you created the tables from THIS version of the file, both are
+        already there.) Until they run, menus, orders, tables/video/PWP settings all work as normal; only
+        saving a Theme or Ad banner is refused, with a message saying exactly which line to run.
+        The floor-plan table cap (seller page already showed it; the Worker now enforces it too) and the
+        cost snapshot on each order line need no new column — nothing to run for those two.
+
    UPGRADING TO v1.5 (private product Cost) — D1 Console, once, then paste this file into the Worker as usual:
           ALTER TABLE products ADD COLUMN cost REAL;
         (Skip it if you created the tables from THIS version of the file.) Until it runs, menus and orders work as
@@ -93,6 +103,8 @@
      pwp_offer_product_id TEXT,
      pwp_offer_price REAL,
      floor_plan TEXT,
+     theme TEXT,
+     ads TEXT,
      created_at TEXT NOT NULL DEFAULT (datetime('now'))
    );
    CREATE TABLE products (
@@ -134,10 +146,10 @@
    X-Admin-Key header; ?key=Y is still accepted for pages cached from
    before v1.1 and should be removed later):
      POST   /setup                     { name, vertical, tableCount } -> { businessId, adminKey }
-     GET    /catalog?biz=X             -> { business{..., hasFloorPlan}, products }  (+ each product's private cost when X-Admin-Key is sent)
+     GET    /catalog?biz=X             -> { business{..., hasFloorPlan, theme, ads}, products }  (+ each product's private cost when X-Admin-Key is sent)
      POST   /catalog?biz=X             { product fields; id = update }   -> { id }   (owner)
      DELETE /catalog?biz=X&id=Z        -> { ok }                          (owner)
-     POST   /business?biz=X            { settings fields }            -> { ok, settings }  (owner)
+     POST   /business?biz=X            { settings fields; theme, ads optional } -> { ok, settings, warning? }  (owner)
      GET    /floorplan?biz=X           -> { plan | null }
      POST   /floorplan?biz=X           { plan }  (null / empty clears)  -> { ok, plan }  (owner)
      POST   /order?biz=X               { orderType, items, ... }      -> { orderId, items, adjustments, subtotal }
@@ -153,6 +165,9 @@ const CODE_TRIES = 6;        // re-rolls when a short order / listing code is al
 const HASH_PREFIX = 'h1:';   // marks an admin key that is stored as a SHA-256 hash, not plain text
 const PLAN_W = 640;          // floor plan canvas — must match W / H in floor-plan.js
 const PLAN_H = 400;
+// Keep this in lock-step with the id list in order-themes.js's own T array (v1.6) — the Worker can't load
+// that file (separate deploy target), so the ids are mirrored here just for validation.
+const ALLOWED_THEMES = ['classic', 'ubereats', 'doordash', 'grab', 'foodpanda', 'shopeefood', 'deliveroo', 'noirgold', 'starbucks', 'neo', 'aurora'];
 
 function corsHeaders(origin) {
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -232,16 +247,19 @@ const coord = (v, max) => Math.round(clamp(Number(v) || 0, 0, max));
 
 // The floor plan the seller draws. Everything is re-built from known fields with hard limits, so what
 // gets stored is always a small, well-formed drawing no matter what the browser sent. An empty drawing
-// counts as "no floor plan".
+// counts as "no floor plan". The "Number of tables" setting is enforced by the caller (handleSaveFloorPlan),
+// not here, so a plan over the limit is rejected with a clear error rather than silently trimmed.
 function cleanFloorPlan(plan) {
   if (!plan || typeof plan !== 'object') return null;
   const walls = (Array.isArray(plan.walls) ? plan.walls : []).slice(0, 300).map((w) => ({
     x1: coord(w && w.x1, PLAN_W), y1: coord(w && w.y1, PLAN_H), x2: coord(w && w.x2, PLAN_W), y2: coord(w && w.y2, PLAN_H),
   })).filter((w) => w.x1 !== w.x2 || w.y1 !== w.y2);
 
+  const limit = 200;
   const tables = [];
   const seen = new Set();
   for (const t of (Array.isArray(plan.tables) ? plan.tables : []).slice(0, 200)) {
+    if (tables.length >= limit) break;
     const n = cleanLabel(t && t.n, 8);
     if (!n || seen.has(n.toLowerCase())) continue; // a table name appears once
     seen.add(n.toLowerCase());
@@ -252,6 +270,29 @@ function cleanFloorPlan(plan) {
   const cashiers = marks(plan.cashiers);
   if (!walls.length && !tables.length && !doors.length && !cashiers.length) return null;
   return { v: 1, walls, tables, doors, cashiers };
+}
+
+// Same allow-list order.js's own safeAdUrl() uses on the way out: an https:// link, or a same-site
+// relative path — never javascript:, data: or anything else. '' = not clickable. (v1.6)
+function cleanAdUrl(v) {
+  const s = cleanText(v, 300);
+  return /^(https:\/\/|(?!\/\/)[\w.\/-]+$)/i.test(s) ? s : '';
+}
+// A seller's own ad slides (Settings tab). bg/fg aren't exposed in that editor yet (order-look.css already
+// falls back to a nice gradient derived from the theme's accent colour when they're blank), but are still
+// accepted here in case a future editor sets them. (v1.6)
+function cleanAdSlides(slides) {
+  if (!Array.isArray(slides)) return null;
+  const out = slides.slice(0, 6).map((s) => ({
+    title: cleanText(s && s.title, 60),
+    text: cleanText(s && s.text, 140),
+    cta: cleanText(s && s.cta, 30),
+    url: cleanAdUrl(s && s.url),
+    emoji: cleanText(s && s.emoji, 8),
+    bg: cleanText(s && s.bg, 200),
+    fg: cleanText(s && s.fg, 40),
+  })).filter((s) => s.title || s.text);
+  return out.length ? out : null;
 }
 
 /* ---------- admin key: stored as a hash, checked without leaking timing ---------- */
@@ -301,6 +342,28 @@ async function floorPlanExists(env, bizId) {
     return !!row;
   } catch (e) {
     return false;
+  }
+}
+
+/* ---------- theme + ad banner storage (theme / ads columns added by the one-line v1.6 upgrade) ---------- */
+
+// Each read is its own try/catch, kept separate from the main business SELECT in handleGetCatalog, so a
+// database that has not run the v1.6 upgrade yet still returns everything else about the business — only
+// these two come back empty until the ALTER TABLE lines are run. (v1.6)
+async function readTheme(env, bizId) {
+  try {
+    const row = await env.DB.prepare('SELECT theme FROM businesses WHERE id = ?').bind(bizId).first();
+    return (row && row.theme) || null;
+  } catch (e) {
+    return null; // column not added yet: customer page falls back to its own default
+  }
+}
+async function readAds(env, bizId) {
+  try {
+    const row = await env.DB.prepare('SELECT ads FROM businesses WHERE id = ?').bind(bizId).first();
+    return row && row.ads ? safeParse(row.ads) : null;
+  } catch (e) {
+    return null; // column not added yet: customer page falls back to the site-wide default ads
   }
 }
 
@@ -357,6 +420,8 @@ async function handleGetCatalog(env, bizId, origin, owner) {
       videoBannerUrl: business.video_banner_url, pwpTriggerProductId: business.pwp_trigger_product_id,
       pwpOfferProductId: business.pwp_offer_product_id, pwpOfferPrice: business.pwp_offer_price,
       hasFloorPlan: await floorPlanExists(env, bizId),
+      theme: await readTheme(env, bizId),   // (v1.6) null = seller hasn't picked one; customer page uses its own default
+      ads: await readAds(env, bizId),        // (v1.6) null = no seller-set slides; customer page falls back to the shared default ads
     },
     products,
   }, 200, origin);
@@ -459,10 +524,36 @@ async function handleUpdateBusiness(env, bizId, key, body, origin) {
     WHERE id=?
   `).bind(videoBannerUrl || null, tableCount, trigger, offer, offerPrice, bizId).run();
 
+  // Theme and ad slides each live in their own column (added by the one-time v1.6 upgrade) and are saved in
+  // their own UPDATEs, separate from the block above — so a database that has not been upgraded yet still
+  // saves table count, video and PWP normally; only these two are refused, each with a message saying
+  // exactly what to run. Both are optional: a seller page that doesn't send them (an older cached page)
+  // leaves whatever is already saved untouched. (v1.6)
+  const theme = body.theme !== undefined ? (ALLOWED_THEMES.includes(body.theme) ? body.theme : 'classic') : undefined;
+  const ads = body.ads !== undefined ? cleanAdSlides(body.ads) : undefined;
+  const warnings = [];
+  if (theme !== undefined) {
+    try {
+      await env.DB.prepare('UPDATE businesses SET theme = ? WHERE id = ?').bind(theme, bizId).run();
+    } catch (err) {
+      if (/no such column/i.test(String(err && err.message))) warnings.push('Theme needs the one-time update:  ALTER TABLE businesses ADD COLUMN theme TEXT;');
+      else throw err;
+    }
+  }
+  if (ads !== undefined) {
+    try {
+      await env.DB.prepare('UPDATE businesses SET ads = ? WHERE id = ?').bind(ads ? JSON.stringify(ads) : null, bizId).run();
+    } catch (err) {
+      if (/no such column/i.test(String(err && err.message))) warnings.push('Ad banner needs the one-time update:  ALTER TABLE businesses ADD COLUMN ads TEXT;');
+      else throw err;
+    }
+  }
+
   // Echo what was really saved so the seller page never drifts from the database.
-  return json({ ok: true, settings: {
+  return json({ ok: true, warning: warnings.length ? warnings.join(' ') : undefined, settings: {
     tableCount, videoBannerUrl: videoBannerUrl || null,
     pwpTriggerProductId: trigger, pwpOfferProductId: offer, pwpOfferPrice: offerPrice,
+    theme, ads,
   } }, 200, origin);
 }
 
@@ -475,6 +566,18 @@ async function handleGetFloorPlan(env, bizId, origin) {
 async function handleSaveFloorPlan(env, bizId, key, body, origin) {
   if (!(await requireOwner(env, bizId, key))) return json({ error: 'Not authorized for this business.' }, 403, origin);
   const plan = cleanFloorPlan(body.plan); // null (nothing drawn) clears the floor plan
+  // The Worker now enforces the same "Number of tables" cap the seller page's own fpSave() already checks
+  // before it will even call this endpoint (v1.4) — before, only that front-end check existed, so an old
+  // cached page or a hand-built request could still save more tables than the setting allows. Rejecting
+  // (rather than quietly keeping only the first few) matches fpSave()'s own refusal, and the "too detailed"
+  // rejection two lines below. (v1.6)
+  if (plan && plan.tables.length) {
+    const bizRow = await env.DB.prepare('SELECT table_count FROM businesses WHERE id = ?').bind(bizId).first();
+    const tableLimit = Math.max(0, Math.min(200, (bizRow && bizRow.table_count) || 0));
+    if (plan.tables.length > tableLimit) {
+      return json({ error: 'That plan has more tables than "Number of tables" in Settings allows (' + tableLimit + '). Remove some, or raise the setting, then save again.' }, 400, origin);
+    }
+  }
   const text = plan ? JSON.stringify(plan) : null;
   if (text && text.length > 60000) return json({ error: 'That floor plan is too detailed — remove some walls and save again.' }, 400, origin);
   try {
@@ -516,11 +619,22 @@ async function handleOrder(env, bizId, body, origin) {
   }
 
   // One query for every product in the cart (a Free-plan Worker is capped at 50 D1 queries per request).
+  // cost is selected too, so it can be snapshotted onto each line below (v1.6) — a database that has not
+  // run the v1.5 cost upgrade yet just falls back to the query without it, same as everywhere else cost is read.
   const ids = [...new Set(items.map((i) => String((i && i.productId) || '')).filter(Boolean))];
-  const { results } = ids.length
-    ? await env.DB.prepare(`SELECT id, name, price, type, combo_groups FROM products WHERE business_id = ? AND is_active = 1 AND id IN (${ids.map(() => '?').join(',')})`)
-        .bind(bizId, ...ids).all()
-    : { results: [] };
+  let results;
+  if (!ids.length) {
+    results = [];
+  } else {
+    try {
+      ({ results } = await env.DB.prepare(`SELECT id, name, price, type, combo_groups, cost FROM products WHERE business_id = ? AND is_active = 1 AND id IN (${ids.map(() => '?').join(',')})`)
+        .bind(bizId, ...ids).all());
+    } catch (err) {
+      if (!/no such column/i.test(String(err && err.message))) throw err;
+      ({ results } = await env.DB.prepare(`SELECT id, name, price, type, combo_groups FROM products WHERE business_id = ? AND is_active = 1 AND id IN (${ids.map(() => '?').join(',')})`)
+        .bind(bizId, ...ids).all());
+    }
+  }
   const byId = new Map((results || []).map((p) => [p.id, p]));
 
   const priced = [];
@@ -550,7 +664,9 @@ async function handleOrder(env, bizId, body, origin) {
     const unitSen = toSen(product.price) + optionsSen;
     const lineSen = unitSen * qty;
     subtotalSen += lineSen;
-    priced.push({ productId: product.id, name: product.name, qty, unitPrice: fromSen(unitSen), lineTotal: fromSen(lineSen), selectedOptions });
+    // Cost is snapshotted at order time, not recomputed later — so a cost edit tomorrow never rewrites
+    // today's margin history. null when the product has no cost set (or the database predates v1.5). (v1.6)
+    priced.push({ productId: product.id, name: product.name, qty, unitPrice: fromSen(unitSen), lineTotal: fromSen(lineSen), selectedOptions, unitCost: product.cost != null ? product.cost : null });
   }
   if (!priced.length) return json({ error: 'None of those items are available anymore — please refresh the menu.' }, 400, origin);
 

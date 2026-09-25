@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- QR Listing Creator, seller page. VERSION 1.5 (2026-09-24). Adds private product Cost + Orders analytics on top of the v1.4 product tabs. Notes: QLC_HANDOFF_v1.5_ADDENDUM.md (base: v1.1) -->
+<!-- QR Listing Creator, seller page. VERSION 1.6 (2026-09-25). Adds a per-listing Theme picker + Ad banner editor to Settings, on top of v1.5's Cost + Orders analytics. Notes: QLC_HANDOFF_v1.6_ADDENDUM.md (base: v1.5) -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -66,6 +66,8 @@
     .qlc-combo-option-row input[type="text"] { flex: 1; }
     .qlc-combo-option-row input[type="number"] { width: 90px; }
     .qlc-row-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    /* Ad banner slide rows (v1.6) — same treatment as .qlc-combo-group-row, own name since it's an unrelated feature. */
+    .qlc-ad-row { background: var(--paper); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
 
     .qlc-qr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 18px; }
     .qlc-qr-card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; text-align: center; background: var(--surface); }
@@ -270,6 +272,17 @@
             <label>Number of tables <span class="toggle-hint">QR codes + most tables the floor plan can hold</span><input type="number" id="qlc-set-tables" min="0" max="200"></label>
             <label>Video banner URL <span class="toggle-hint">short, muted, looping clip</span><input type="text" id="qlc-set-video" placeholder="https://…"></label>
           </div>
+
+          <h3 style="font-size:1.05rem;">Look &amp; feel<span class="tooltip-icon" data-tooltip="Changes how your ordering page looks to customers — colours, card style, fonts. This dashboard doesn't change.">?</span></h3>
+          <div class="qlc-field-grid" style="margin-bottom:12px;">
+            <label>Theme <select id="qlc-set-theme"></select></label>
+          </div>
+          <div class="calc-actions no-print" style="margin-bottom:24px;"><button type="button" class="btn btn-secondary" id="qlc-preview-theme">Preview on the ordering page</button></div>
+
+          <h3 style="font-size:1.05rem;">Ad banner<span class="tooltip-icon" data-tooltip="A rotating banner near the top of your ordering page, up to 6 slides. Leave it empty to show Reysourcez's own default slides instead.">?</span></h3>
+          <div id="qlc-ad-list"></div>
+          <div class="calc-actions no-print" style="margin-bottom:24px;"><button type="button" class="btn btn-secondary" id="qlc-add-ad">+ Add slide</button></div>
+
           <h3 style="font-size:1.05rem;">Purchase-with-purchase<span class="tooltip-icon" data-tooltip="When the trigger item is in the cart, the offer item is nudged as a cheap add-on — one rule for now.">?</span></h3>
           <div class="qlc-field-grid">
             <label>If cart has&hellip; <select id="qlc-pwp-trigger"></select></label>
@@ -315,6 +328,7 @@
   <script src="nav-config.js?v=1" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="floor-plan.js?v=2" defer></script>
-  <script src="qr-listing-creator.js?v=4" defer></script>
+  <script src="order-themes.js?v=2" defer></script>
+  <script src="qr-listing-creator.js?v=5" defer></script>
 </body>
 </html>

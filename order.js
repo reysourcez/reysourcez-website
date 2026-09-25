@@ -1,6 +1,8 @@
 /* ============================================================
    QR Listing Creator — customer ordering page (order.js)
-   VERSION 1.3 (2026-09-24) — customer-page UI round: themes, ads banner, Top picks look, shop-layout table switch. Notes: QLC_HANDOFF_v1.3_ADDENDUM.md (v1.1 base: QLC_HANDOFF_v1.1.md)
+   VERSION 1.4 (2026-09-25) — v1.4: applies the seller's own Theme choice (Settings tab) once the catalog
+   loads, and shows the seller's own ad slides when they've set any (falls back to the shared default
+   otherwise). Notes: QLC_HANDOFF_v1.6_ADDENDUM.md (v1.3 base: QLC_HANDOFF_v1.3_ADDENDUM.md, v1.1 base: QLC_HANDOFF_v1.1.md)
    Vanilla JS, no build step. Talks to qr-listing-creator-worker.js
    over a small JSON API — see that file's own header for the full
    contract. Nothing here decides the REAL total; the Worker
@@ -280,8 +282,11 @@ function renderPicks() {
   wireProductCards(row);
 }
 
-/* ================= ADS BANNER (v1.3) =================
-   Slides come from order-config.js. Text is escaped; a link must be https:// or a page on this site. */
+/* ================= ADS BANNER (v1.3, per-business slides v1.6) =================
+   Slides come from the seller's own Settings tab (state.business.ads) when they've set any; otherwise the
+   shared defaults in order-config.js. Text is escaped; a link must be https:// or a page on this site.
+   Note: saving zero slides looks the same as never having set any (both fall back to the shared default) —
+   there's no separate "no ads at all for this listing" switch yet. */
 let adTimer = null;
 function safeAdUrl(u) {
   u = String(u || '').trim();
@@ -290,7 +295,8 @@ function safeAdUrl(u) {
 function renderAds() {
   const cfg = (window.ORDER_CONFIG || {}).ads || {};
   const box = document.getElementById('ord-ad');
-  const slides = cfg.enabled ? (cfg.slides || []).slice(0, 6) : [];
+  const bizSlides = state.business.ads; // seller-managed slides (Settings tab), take priority when present (v1.6)
+  const slides = cfg.enabled ? ((bizSlides && bizSlides.length ? bizSlides : cfg.slides) || []).slice(0, 6) : [];
   box.hidden = !slides.length;
   if (!slides.length) return;
   box.innerHTML = '<div class="ord-ad-track">' + slides.map((s) => {
@@ -772,6 +778,11 @@ async function start() {
     return;
   }
   syncCartWithCatalog();
+  // The seller's own theme choice (Settings tab) is the real per-listing look; an explicit ?theme= link
+  // (support/testing) still wins over it. order-themes.js already applied its best guess synchronously at
+  // script-load time (so there's no flash of the wrong look before this fetch resolves) — this just swaps
+  // in the seller's actual saved choice now that it's known. (v1.6)
+  if (window.OrderThemes && state.business.theme && !params.get('theme')) OrderThemes.apply(state.business.theme);
   state.orderType = pickInitialOrderType();
   document.getElementById('ord-loading').hidden = true;
   document.getElementById('ord-app').hidden = false;

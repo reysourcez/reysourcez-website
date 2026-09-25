@@ -1,15 +1,15 @@
 /* ============================================================
    QR Listing Creator — seller-facing setup & management (qr-listing-creator.js)
-   VERSION 1.5 (2026-09-24) — v1.5: private product Cost + Orders analytics (on top of v1.4 product tabs). Notes: QLC_HANDOFF_v1.5_ADDENDUM.md (base: v1.1)
+   VERSION 1.6 (2026-09-25) — v1.6: Theme picker + Ad banner editor (Settings tab); order-line cost snapshot
+   feeds the profit view so margins reflect what a product cost when it actually sold. Notes: QLC_HANDOFF_v1.6_ADDENDUM.md (base: v1.5)
    Vanilla JS, no build step. Talks to the same Worker as order.js —
    see qr-listing-creator-worker.js's own header for the full API
    contract. This file owns everything a seller does: set up a
    listing, manage products/combos/sets, generate table QR codes,
-   set the purchase-with-purchase rule and video banner, and see the
-   raw order list. Full analytics (trends, bestsellers, the
-   Star/Plowhorse/Puzzle/Dog breakdown Margin Analysis already has)
-   is a deliberate KIV — see the Orders tab's own note — it needs
-   real order history to mean anything.
+   set the purchase-with-purchase rule, video banner, ordering-page
+   theme and ad banner (v1.6), and see the raw order list plus the
+   Orders-tab analytics (trends, bestsellers, the Star/Plowhorse/
+   Puzzle/Dog breakdown) built in v1.5.
 
    AUTH, HONESTLY: no login system exists anywhere on this site yet.
    A business is "owned" by whoever holds its admin key, saved to
@@ -477,10 +477,60 @@ function renderPwpOptions() {
 function renderSettings() {
   document.getElementById('qlc-set-tables').value = business.tableCount || 0;
   document.getElementById('qlc-set-video').value = business.videoBannerUrl || '';
+  renderThemeOptions(); // (v1.6)
+  renderAdSlides();     // (v1.6)
   renderPwpOptions();
   document.getElementById('qlc-pwp-trigger').value = business.pwpTriggerProductId || '';
   document.getElementById('qlc-pwp-offer').value = business.pwpOfferProductId || '';
   document.getElementById('qlc-pwp-price').value = business.pwpOfferPrice != null ? business.pwpOfferPrice : '';
+}
+
+// The list of choices comes from order-themes.js's own OrderThemes.list (loaded on this page too, purely for
+// its data — the customer-page auto-apply/session logic in that file is guarded off on this page), so the
+// seller picker and the customer page it controls can never drift out of step with each other. (v1.6)
+function renderThemeOptions() {
+  const sel = document.getElementById('qlc-set-theme');
+  if (!sel) return;
+  const list = (window.OrderThemes && window.OrderThemes.list) || [{ id: 'classic', n: 'Classic (Reysourcez)' }];
+  sel.innerHTML = list.map((t) => `<option value="${escapeHTML(t.id)}">${escapeHTML(t.n)}</option>`).join('');
+  sel.value = business.theme || 'classic';
+}
+
+// A rotating ad slide, matching what order.js's renderAds() will show. bg/fg aren't editable here yet —
+// left blank, the customer page's own CSS falls back to a gradient in the theme's accent colour. (v1.6)
+function adSlideHTML(s, i) {
+  s = s || { title: '', text: '', cta: '', url: '' };
+  return `
+    <div class="qlc-ad-row" data-i="${i}">
+      <div class="qlc-field-grid">
+        <label>Headline <input type="text" class="qlc-ad-title" maxlength="60" placeholder="e.g. Try our new set" value="${escapeHTML(s.title || '')}"></label>
+        <label>Body text <input type="text" class="qlc-ad-text" maxlength="140" placeholder="A short line under the headline" value="${escapeHTML(s.text || '')}"></label>
+        <label>Button label <span class="toggle-hint">optional</span><input type="text" class="qlc-ad-cta" maxlength="30" placeholder="e.g. Order now" value="${escapeHTML(s.cta || '')}"></label>
+        <label>Link <span class="toggle-hint">optional &mdash; https://&hellip; or leave blank</span><input type="text" class="qlc-ad-url" maxlength="300" value="${escapeHTML(s.url || '')}"></label>
+      </div>
+      <div class="qlc-row-actions"><button type="button" class="btn btn-secondary qlc-remove-ad">Remove slide</button></div>
+    </div>`;
+}
+function renderAdSlides() {
+  const list = document.getElementById('qlc-ad-list');
+  if (!list) return;
+  const slides = (business.ads && business.ads.length) ? business.ads : [];
+  list.innerHTML = slides.map(adSlideHTML).join('');
+  wireAdRemovers();
+}
+function wireAdRemovers() {
+  document.querySelectorAll('.qlc-remove-ad').forEach((btn) => {
+    btn.onclick = () => btn.closest('.qlc-ad-row').remove();
+  });
+}
+// Reads whatever is currently in the ad-slide rows (typed but not yet saved included) for saveSettings() to send.
+function readAdSlides() {
+  return Array.from(document.querySelectorAll('#qlc-ad-list .qlc-ad-row')).map((row) => ({
+    title: row.querySelector('.qlc-ad-title').value.trim(),
+    text: row.querySelector('.qlc-ad-text').value.trim(),
+    cta: row.querySelector('.qlc-ad-cta').value.trim(),
+    url: row.querySelector('.qlc-ad-url').value.trim(),
+  })).filter((s) => s.title || s.text);
 }
 
 async function saveSettings() {
@@ -493,6 +543,8 @@ async function saveSettings() {
       body: JSON.stringify({
         tableCount: num(document.getElementById('qlc-set-tables'), 0),
         videoBannerUrl: document.getElementById('qlc-set-video').value.trim(),
+        theme: document.getElementById('qlc-set-theme').value,   // (v1.6)
+        ads: readAdSlides(),                                      // (v1.6)
         pwpTriggerProductId: document.getElementById('qlc-pwp-trigger').value || null,
         pwpOfferProductId: document.getElementById('qlc-pwp-offer').value || null,
         pwpOfferPrice: document.getElementById('qlc-pwp-price').value,
@@ -504,20 +556,25 @@ async function saveSettings() {
     renderSettings();
     renderTables();
     fpUpdateInfo();
-    statusEl.textContent = 'Saved';
-    statusEl.className = 'qlc-status is-ok';
+    // A missing theme/ads column shows as a warning (v1.6), same pattern as a missing Cost column on Products.
+    statusEl.textContent = data.warning || 'Saved';
+    statusEl.className = 'qlc-status ' + (data.warning ? 'is-error' : 'is-ok');
   } catch (err) {
     statusEl.textContent = err.message;
     statusEl.className = 'qlc-status is-error';
   }
 }
 
-/* ================= ORDERS ANALYTICS (v1.5) =================
+/* ================= ORDERS ANALYTICS (v1.5, cost-snapshot blend v1.6) =================
    Worked out here in the browser from the latest 500 orders the Worker returns (the last 30 days are shown) plus each
    product's private Cost, which only the owner's key ever receives. Menu engineering = the Kasavana & Smith method: an
    item is "popular" when its share of units sold is at least 70% of an even share (0.7 / number of items) and
    "profitable" when its margin per unit (average selling price - cost) is at least the units-weighted average margin.
-   Item revenue is before purchase-with-purchase discounts; the revenue total is after them. */
+   Item revenue is before purchase-with-purchase discounts; the revenue total is after them.
+   Cost, per item: orders placed since the v1.6 Worker upgrade carry the product's cost AT THAT TIME on each line
+   (unitCost) — margins use the average of that wherever any exists for the item in this window. Orders placed
+   before the upgrade have no unitCost, so they (and any product with no sales yet) fall back to today's cost,
+   exactly like v1.5 did for everything. */
 let lastOrders = null;
 const CLASSES = {
   star: ['Star', 'Popular and profitable: keep it and feature it'],
@@ -548,17 +605,22 @@ function computeAnalytics(orders, prods) {
     day.sen += sen; day.n += 1; orderCount += 1; revenueSen += sen;
     for (const l of o.items || []) {
       const key = l.productId || l.name;
-      const it = items.get(key) || { name: l.name, units: 0, sen: 0 };
-      it.units += Number(l.qty) || 0;
+      const it = items.get(key) || { name: l.name, units: 0, sen: 0, costSen: 0, costedUnits: 0 };
+      const qty = Number(l.qty) || 0;
+      it.units += qty;
       it.sen += Math.round((Number(l.lineTotal) || 0) * 100);
+      // unitCost is only present on lines placed after the v1.6 Worker upgrade (v1.6).
+      if (l.unitCost != null && isFinite(l.unitCost)) { it.costSen += Math.round(l.unitCost * 100) * qty; it.costedUnits += qty; }
       items.set(key, it);
     }
   }
   const best = Array.from(items.values()).sort((a, b) => b.units - a.units || b.sen - a.sen).slice(0, 5);
   const costed = prods.filter((p) => p.cost != null && isFinite(p.cost)).map((p) => {
-    const s = items.get(p.id) || { units: 0, sen: 0 };
+    const s = items.get(p.id) || { units: 0, sen: 0, costSen: 0, costedUnits: 0 };
     const avgSen = s.units ? s.sen / s.units : Math.round(p.price * 100);
-    const costSen = Math.round(p.cost * 100);
+    // Prefer the cost actually snapshotted on sold lines; fall back to today's cost for pre-upgrade
+    // orders or when nothing sold in the window yet. (v1.6)
+    const costSen = s.costedUnits > 0 ? Math.round(s.costSen / s.costedUnits) : Math.round(p.cost * 100);
     return { name: p.name, units: s.units, avgSen, costSen, cmSen: avgSen - costSen, cls: '' };
   });
   const totalUnits = costed.reduce((t, c) => t + c.units, 0);
@@ -922,6 +984,19 @@ function init() {
     document.getElementById('qlc-manage').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }));
   document.getElementById('qlc-save-settings').addEventListener('click', saveSettings);
+  document.getElementById('qlc-preview-theme').addEventListener('click', () => {
+    // Opens the ordering page in a new tab with whatever theme is currently selected (even if unsaved),
+    // so the seller can try one before committing to it. (v1.6)
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '') + 'order.html';
+    const sel = document.getElementById('qlc-set-theme').value;
+    window.open(base + '?biz=' + encodeURIComponent(session.bizId) + '&theme=' + encodeURIComponent(sel), '_blank', 'noopener');
+  });
+  document.getElementById('qlc-add-ad').addEventListener('click', () => {
+    const list = document.getElementById('qlc-ad-list');
+    if (list.children.length >= 6) { alert('Up to 6 slides.'); return; }
+    list.insertAdjacentHTML('beforeend', adSlideHTML(null, list.children.length));
+    wireAdRemovers();
+  });
   document.getElementById('qlc-refresh-orders').addEventListener('click', () => renderOrders());
   document.getElementById('qlc-copy-link').addEventListener('click', copyAdminLink);
   document.getElementById('qlc-show-key').addEventListener('click', showKeyBanner);
