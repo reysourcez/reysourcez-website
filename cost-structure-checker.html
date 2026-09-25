@@ -435,6 +435,7 @@
                 <div class="calc-actions no-print">
                   <button type="button" id="csc-add-wastage-row" class="btn btn-primary">+ Add ingredient</button>
                   <button type="button" id="csc-reset-wastage" class="btn btn-secondary">Reset tracker</button>
+                  <button type="button" id="csc-wastage-export" class="btn btn-secondary">Export data</button>
                   <button type="button" id="csc-wt-print" class="btn btn-secondary">Save this tracker as PDF</button>
                 </div>
               </div>
@@ -503,15 +504,21 @@
     <button type="button" id="csc-back-to-top" class="csc-quick-nav-btn">&uarr; Top</button>
   </div>
 
-  <!-- No costing-sync.js on this page yet — see COST_STRUCTURE_CHECKER_NOTES.md's
-       KIV list for why: there's nothing upstream to listen to until Margin
-       Analysis / Interactive Costing Analysis broadcast their own computed
-       cost-structure mix, which neither currently does. -->
+  <!-- costing-sync.js (added v1.5, 2026-09-24) now does double duty: the
+       live Menu-Calculator-\u2192-Ingredients-% listener it was added for
+       (initSync()/rzListen(), see COST_STRUCTURE_CHECKER_NOTES.md), and, as
+       of v1.6, the outbound rzBroadcast() the Wastage & Par-Level Tracker
+       uses to share measured Wastage % with Menu Calculator \u2014 see
+       WASTAGE_SYNC_STANDARD.md / WASTAGE_SYNC_STANDARD_REPLY.md. This
+       comment used to say costing-sync.js wasn't loaded on this page at
+       all; that stopped being true in v1.5 and the comment just hadn't
+       caught up. -->
   <script src="site-config.js?v=1" defer></script>
   <script src="nav-config.js?v=1" defer></script>
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="cost-structure-checker-content.js?v=2" defer></script>
-  <script src="cost-structure-checker.js?v=5" defer></script>
+  <script src="wastage-calc.js?v=1" defer></script>
+  <script src="cost-structure-checker.js?v=6" defer></script>
 </body>
 </html>

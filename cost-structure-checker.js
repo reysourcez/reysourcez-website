@@ -48,7 +48,7 @@
    construction rather than by luck.
    ============================================================ */
 
-console.info('[Cost Structure Checker] script build: 2026-09-24-v1.5');
+console.info('[Cost Structure Checker] script build: 2026-09-25-v1.6');
 
 /* ================= CONFIG =================
    Everything a layperson might want to retune without reading
@@ -83,6 +83,14 @@ const USAGE_STORAGE_KEY = 'csc-usage';
 // steps. Tool works completely without this; only the "Get your
 // AI action plan" button needs it.
 const WORKER_ENDPOINT = 'https://cost-structure-checker-proxy.reysourcez-ent.workers.dev/';
+
+// Payload tag for the Wastage & Par-Level Tracker's own broadcast/export —
+// see WASTAGE_SYNC_STANDARD.md and WASTAGE_SYNC_STANDARD_REPLY.md. Specific
+// rather than the plain page slug ('cost-structure-checker') since this only
+// ever carries the Tracker's rows, not the diagnostic/causes side of the
+// page — a second, different export from this page later (a saved Action
+// Plan, say) shouldn't have to collide with or rename around this one.
+const WASTAGE_EXPORT_TYPE = 'cost-structure-checker-wastage';
 
 /* ================= SHARED UTILITIES ================= */
 
@@ -698,6 +706,12 @@ function updateFormRef() {
 
 let wastageRowIdCounter = 0;
 
+// Cache of the current, on-screen wastage rows worth sharing with another
+// tool (name + a real computed wastagePct) — refreshed on every
+// recalcWastageTracker() pass, read by both broadcastWastageRows() and the
+// "Export data" button so neither has to re-derive the table a second time.
+let lastWastageRows = [];
+
 function createWastageRow() {
   wastageRowIdCounter++;
   const tbody = document.getElementById('csc-wastage-rows');
@@ -727,6 +741,13 @@ function recalcWastageTracker() {
   const leadTime = num(document.getElementById('csc-wastage-lead-time'), DEFAULT_LEAD_TIME_DAYS);
   const safety = num(document.getElementById('csc-wastage-safety-buffer'), DEFAULT_SAFETY_BUFFER_DAYS);
 
+  // Rows worth sharing with Menu Calculator this pass — name plus a real
+  // computed wastagePct only (per WASTAGE_SYNC_STANDARD_REPLY.md: a row
+  // with no expected usage entered has nothing to broadcast yet). Cached
+  // into lastWastageRows so "Export data" reads exactly what's on screen
+  // without re-deriving this loop a second time.
+  const broadcastRows = [];
+
   document.querySelectorAll('#csc-wastage-rows > tr').forEach((tr) => {
     const opening = num(tr.querySelector('.csc-wr-opening'));
     const purchased = num(tr.querySelector('.csc-wr-purchased'));
@@ -735,16 +756,16 @@ function recalcWastageTracker() {
     const hasExpected = expectedInput.value !== '' && isFinite(parseFloat(expectedInput.value)) && parseFloat(expectedInput.value) >= 0;
     const expected = hasExpected ? parseFloat(expectedInput.value) : 0;
 
-    // Clamped at 0 \u2014 a negative "consumed" only ever means a
-    // counting mistake (closing stock entered higher than opening
-    // + purchased), not a real negative quantity, so this is
-    // defensive the same way food-worth-proxy-worker.js's price
-    // range sanitizer is: coerce rather than trust the raw input.
-    const consumed = Math.max(0, opening + purchased - closing);
-    const wastageQty = hasExpected ? Math.max(0, consumed - expected) : null;
-    const wastagePct = (hasExpected && consumed > 0) ? (wastageQty / consumed) * 100 : null;
-    const avgDaily = periodDays > 0 ? consumed / periodDays : 0;
-    const suggestedPar = avgDaily * (leadTime + safety);
+    // Formula moved to wastage-calc.js (rzComputeWastage) in v1.6 —
+    // required, not guarded, since CSC ships and load-orders this file
+    // itself (same as cost-structure-checker-content.js already is),
+    // unlike costing-sync.js, which is a genuine cross-tool optional
+    // dependency. See wastage-calc.js's own header for that reasoning.
+    const { consumed, wastageQty, wastagePct, avgDaily, suggestedPar } = rzComputeWastage({
+      opening, purchased, closing,
+      expected: hasExpected ? expected : undefined,
+      periodDays, leadTimeDays: leadTime, safetyBufferDays: safety,
+    });
 
     const unit = tr.querySelector('.csc-wr-unit').value.trim() || 'units';
     tr.querySelector('.csc-wr-consumed').textContent = consumed.toFixed(1) + ' ' + unit;
@@ -754,7 +775,29 @@ function recalcWastageTracker() {
     wastageCell.classList.toggle('is-loss', wastagePct != null && wastagePct >= 10);
     tr.querySelector('.csc-wr-avg').textContent = avgDaily.toFixed(2) + ' ' + unit + '/day';
     tr.querySelector('.csc-wr-par').textContent = suggestedPar.toFixed(1) + ' ' + unit;
+
+    const ingredientName = tr.querySelector('.csc-wr-name').value.trim();
+    if (ingredientName && wastagePct != null) {
+      broadcastRows.push({
+        ingredientName, unit,
+        wastagePct: Math.round(wastagePct * 10) / 10,
+        suggestedPar: Math.round(suggestedPar * 10) / 10,
+      });
+    }
   });
+
+  lastWastageRows = broadcastRows;
+  broadcastWastageRows(broadcastRows);
+}
+
+// Fires on every recalcWastageTracker() pass, per WASTAGE_SYNC_STANDARD_REPLY.md.
+// rzBroadcast()'s exact name/shape in costing-sync.js isn't independently
+// confirmed on this side — same caveat as rzListen() in initSync() below —
+// so this is guarded the same way: a naming mismatch means CSC silently
+// doesn't broadcast rather than breaking the page.
+function broadcastWastageRows(rows) {
+  if (typeof rzBroadcast !== 'function') return;
+  rzBroadcast({ source: 'cost-structure-checker', wastageRows: rows });
 }
 
 function resetWastageTracker() {
@@ -764,6 +807,23 @@ function resetWastageTracker() {
   wastageRowIdCounter = 0;
   createWastageRow();
   recalcWastageTracker();
+}
+
+// "Export data" — same rzExportType-tagged .json shape as every other
+// tool's own export button on this site (see WASTAGE_SYNC_STANDARD_REPLY.md).
+// Reads lastWastageRows rather than re-deriving the table, since
+// recalcWastageTracker() already refreshes it on every keystroke.
+function exportWastageData() {
+  const payload = { rzExportType: WASTAGE_EXPORT_TYPE, wastageRows: lastWastageRows };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cost-structure-checker-wastage-export.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* ================= ACTION PLAN (deterministic) ================= */
@@ -1012,6 +1072,7 @@ function init() {
   safeInit('wastage & par-level tracker', () => {
     document.getElementById('csc-add-wastage-row').addEventListener('click', () => { createWastageRow(); recalcWastageTracker(); });
     document.getElementById('csc-reset-wastage').addEventListener('click', resetWastageTracker);
+    document.getElementById('csc-wastage-export').addEventListener('click', exportWastageData);
     document.getElementById('csc-wt-print').addEventListener('click', () => printSection('csc-print-scope-tracker'));
     ['csc-wastage-period-days', 'csc-wastage-lead-time', 'csc-wastage-safety-buffer'].forEach((id) => {
       document.getElementById(id).addEventListener('input', recalcWastageTracker);
