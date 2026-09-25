@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Form Scanner</title>
-  <meta name="description" content="Photograph a paper form or upload a PDF and get back a straight, clean, genuinely fillable PDF at the same size and orientation as the source — not just an OCR text dump. Free tool, nothing saved on our side.">
+  <meta name="description" content="Photograph or upload a paper form and get back a straight, cleanly laid out, genuinely fillable PDF — not just an OCR text dump. Free tool, nothing saved on our side.">
 
   <link rel="icon" href="favicon.ico" sizes="32x32">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -17,29 +17,41 @@
 
   <link rel="stylesheet" href="styles.css?v=19">
 
-  <!-- Page-specific styles only \u2014 everything reusable (buttons, .calc-panel,
-       .calc-intro, .result-card, .tooltip-icon, --accent, etc.) comes from
-       styles.css as-is, per AI_BUILD_BRIEF.md. fs- prefixed classes
-       throughout so nothing here collides with another tool's page-scoped
-       classes \u2014 same convention as the rest of this file. -->
+  <!-- Page-specific styles only — everything reusable (buttons, .calc-panel,
+       .calc-intro, .tooltip-icon, --accent, etc.) comes from styles.css as-is,
+       per AI_BUILD_BRIEF.md. fs- prefixed throughout so nothing here collides
+       with another tool's page-scoped classes.
+
+       v6.0 (2026-09-24): rebuilt on a layout-spec engine (bands > columns >
+       cells > coded items) instead of the old fixed header/table/signature
+       schema, specifically so the rebuilt form follows the SOURCE's actual
+       structure (arbitrary side-by-side columns, boxed sub-sections, mixed
+       tables) instead of flattening everything into that fixed shape. Also:
+       a real two-column layout on wide screens (left = scanner, right =
+       detected-structure preview, instead of that space sitting empty and
+       the preview living far below the fold); a single updateFileCard()
+       path so the file-name/description card can never go stale when the
+       source is swapped (old bug: switching from a PDF to a photo left the
+       previous file's card showing); and a PDF metadata read (page count +
+       exact page size in mm) shown immediately on upload, since pdf-lib can
+       read that instantly but can't rasterise a thumbnail — a full page
+       thumbnail would need pdf.js from a CDN, and its current version/build
+       format couldn't be verified from this environment (no network access
+       here to test it), so it was left out rather than shipped unverified;
+       worth adding in a session that can load and test it live. Full
+       write-up: FORM_SCANNER_HANDOFF.md. -->
   <style>
-    .fs-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; background: var(--surface); max-width: 480px; }
-    .fs-upload-zone.has-image { border-style: solid; padding: 20px; }
-    .fs-preview-img { max-width: 100%; max-height: 320px; border-radius: 8px; display: block; margin: 0 0 14px; }
-    .fs-pdf-preview { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); margin: 0 0 14px; }
-    .fs-pdf-preview svg { flex-shrink: 0; color: var(--accent); }
-    /* Bug fix, 2026-09-23: the two unconditional `display` rules above
-       have the same CSS specificity as the browser's own built-in
-       [hidden] { display: none } rule, and load later \u2014 so they were
-       silently winning, and toggling .hidden in JS stopped actually
-       hiding either element. A stale photo preview could stay on
-       screen after switching to a new PDF upload even though the scan
-       itself was reading the new file correctly. This rule is more
-       specific (class + attribute) so it always wins regardless of
-       source order. */
-    .fs-preview-img[hidden], .fs-pdf-preview[hidden] { display: none; }
-    .fs-pdf-filename { font-weight: 600; font-size: 0.92rem; color: var(--text); word-break: break-all; margin: 0; }
-    .fs-pdf-sub { font-size: 0.8rem; color: var(--muted); margin: 2px 0 0; }
+    .fs-layout { display: block; }
+    .fs-col-left { max-width: 480px; }
+    .fs-col-right { margin-top: 28px; }
+
+    .fs-upload-zone { border: 2px dashed var(--line); border-radius: 10px; padding: 32px; background: var(--surface); }
+    .fs-upload-zone.has-file { border-style: solid; padding: 20px; }
+    .fs-preview-img { max-width: 100%; max-height: 320px; border-radius: 8px; display: block; margin: 0 0 14px; background: var(--paper); }
+    .fs-pdf-card { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); margin: 0 0 14px; }
+    .fs-pdf-card svg { flex-shrink: 0; }
+    .fs-pdf-card-name { font-weight: 600; font-size: 0.92rem; word-break: break-all; }
+    .fs-pdf-card-meta { font-size: 0.82rem; color: var(--muted); margin-top: 2px; }
     .fs-upload-row { display: flex; flex-direction: column; gap: 10px; }
     .fs-upload-row > .btn { display: flex; width: 100%; align-items: center; justify-content: center; cursor: pointer; }
     .fs-note {
@@ -48,56 +60,46 @@
       resize: vertical; min-height: 56px; box-sizing: border-box;
     }
     .fs-note:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    .fs-color-toggle-row {
-      display: flex; align-items: flex-start; gap: 8px; margin-top: 12px;
-      font-size: 0.88rem; color: var(--text); cursor: pointer;
-    }
-    .fs-color-toggle-row input[type="checkbox"] { width: 17px; height: 17px; margin-top: 1px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
-    .fs-color-toggle-row span { color: var(--muted); }
+
+    .fs-option-row { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 0.88rem; color: var(--text); cursor: pointer; }
+    .fs-option-row input { width: 17px; height: 17px; flex-shrink: 0; margin-top: 2px; cursor: pointer; accent-color: var(--accent); }
+    .fs-option-hint { display: block; font-weight: 400; color: var(--muted); margin-top: 1px; }
+
     .fs-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 14px; }
     .fs-status.is-error { color: #C0392B; font-weight: 600; }
+    .fs-status.is-warn { color: #96731A; font-weight: 600; }
 
-    .fs-scope-note { background: var(--paper); border-left: 3px solid var(--accent); border-radius: 6px; padding: 12px 16px; font-size: 0.88rem; color: var(--muted); margin: 18px 0 0; max-width: 640px; }
+    .fs-scope-note { background: var(--paper); border-left: 3px solid var(--accent); border-radius: 6px; padding: 12px 16px; font-size: 0.88rem; color: var(--muted); margin: 18px 0 0; }
     .fs-scope-note strong { color: var(--text); }
 
-    /* Detected-structure preview \u2014 a plain-English readout of exactly
-       what will end up in the PDF, shown BEFORE download so a wrong
-       column header, missed field, or unwanted output size is obvious
-       immediately rather than only discovered after opening the file.
-       Deliberately read-only in this version. */
-    .fs-preview-title { font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 2px; }
-    .fs-preview-subtitle { font-size: 0.85rem; color: var(--muted); margin: 0 0 6px; }
+    /* Detected-structure preview — a plain-English readout of exactly what
+       will end up in the PDF, band by band, shown BEFORE download so a
+       misread label or column is obvious immediately. Read-only in this
+       version — see FORM_SCANNER_HANDOFF.md for making it editable later. */
+    .fs-results-placeholder { border: 1px dashed var(--line); border-radius: 10px; padding: 28px 24px; text-align: center; color: var(--muted); font-size: 0.92rem; }
+    .fs-preview-title { font-family: var(--font-display); font-size: 1.3rem; margin: 0 0 4px; }
     .fs-preview-ref { font-size: 0.82rem; color: var(--muted); font-family: "IBM Plex Mono", monospace; margin: 0 0 6px; }
-    .fs-preview-geometry {
-      display: inline-block; font-size: 0.8rem; font-weight: 600; color: var(--accent-dark);
-      background: var(--accent-soft); padding: 4px 10px; border-radius: 999px; margin: 0 0 20px;
-    }
-    .fs-preview-group { margin-bottom: 20px; }
-    .fs-preview-group:last-child { margin-bottom: 0; }
-    .fs-preview-group h3 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 10px; font-family: var(--font-body); font-weight: 600; }
-    .fs-field-tags { display: flex; flex-wrap: wrap; gap: 8px; }
-    .fs-field-tag { display: inline-flex; align-items: center; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 0.85rem; font-weight: 500; color: var(--text); }
-    .fs-field-tag.is-multiline::after { content: " \u2261"; color: var(--muted); }
+    .fs-preview-page { font-size: 0.82rem; color: var(--muted); margin: 0 0 18px; }
+    .fs-band { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); margin-bottom: 10px; }
+    .fs-band:last-child { margin-bottom: 0; }
+    .fs-band-cols { display: grid; gap: 14px; }
+    .fs-band-col-items { display: flex; flex-direction: column; gap: 5px; }
+    .fs-item { font-size: 0.85rem; color: var(--text); line-height: 1.5; }
+    .fs-item.is-t { color: var(--muted); font-style: italic; }
+    .fs-item.is-hr { color: var(--line); border-top: 1px dashed var(--line); margin: 3px 0; height: 0; }
+    .fs-item-blank { color: var(--accent-dark); }
+    .fs-table-meta { font-size: 0.85rem; color: var(--muted); }
+    .fs-table-meta strong { color: var(--text); font-weight: 600; }
+    .fs-table-rowcount { color: var(--accent-dark); font-weight: 600; }
 
-    .fs-table-card { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); margin-bottom: 10px; }
-    .fs-table-card:last-child { margin-bottom: 0; }
-    .fs-table-card-title { font-weight: 600; font-size: 0.92rem; margin: 0 0 8px; }
-    .fs-table-groups { font-size: 0.78rem; color: var(--accent-dark); margin: 0 0 4px; }
-    .fs-table-cols { font-size: 0.85rem; color: var(--muted); margin: 0 0 4px; }
-    .fs-table-rows { font-size: 0.8rem; color: var(--accent-dark); font-weight: 600; margin: 0; }
-
-    .fs-sig-card { display: inline-flex; flex-direction: column; gap: 4px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; background: var(--surface); margin: 0 10px 10px 0; }
-    .fs-sig-card-title { font-weight: 600; font-size: 0.88rem; }
-    .fs-sig-card-fields { font-size: 0.82rem; color: var(--muted); }
-
-    .fs-footnotes-list { margin: 0; padding-left: 20px; font-size: 0.85rem; color: var(--muted); }
-    .fs-footnotes-list li { margin-bottom: 4px; }
-
-    .fs-download-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 24px; align-items: center; }
+    .fs-download-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 20px; align-items: center; }
     .fs-rescan-hint { font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
+    .fs-warn-list { font-size: 0.85rem; color: #96731A; margin: 10px 0 0; padding-left: 20px; }
 
-    @media (max-width: 800px) {
-      .fs-upload-zone { max-width: none; }
+    @media (min-width: 801px) {
+      .fs-layout { display: grid; grid-template-columns: minmax(360px, 480px) 1fr; gap: 40px; align-items: start; }
+      .fs-col-left { max-width: none; }
+      .fs-col-right { margin-top: 0; }
     }
   </style>
 </head>
@@ -132,79 +134,77 @@
     <section class="calc-intro">
       <div class="wrap">
         <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
-        <h1>Form Scanner</h1>
-        <p class="lead">Photograph a paper form \u2014 crooked, at an angle, whatever \u2014 or upload a PDF, and get back a clean, genuinely fillable PDF at the <strong>same size and orientation as your source</strong> by default. Not an OCR text dump: an actual usable digital version of the form, ready to type into.</p>
+        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.0 — 2026-09-24" title="v6.0 — 2026-09-24" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.0</span></h1>
+        <p class="lead">Photograph or upload a paper form — crooked, at an angle, whatever — and get back a straight, cleanly laid out PDF with real fillable fields, following the source form's own structure. Not an OCR text dump: an actual usable digital version, ready to type into.</p>
       </div>
     </section>
 
-    <!-- ============ UPLOAD ============ -->
     <section class="calc-panel">
       <div class="wrap">
-        <div class="fs-upload-zone" id="fs-upload-zone">
-          <img class="fs-preview-img" id="fs-preview-img" alt="" hidden>
-          <div class="fs-pdf-preview" id="fs-pdf-preview" hidden>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
-            <div>
-              <p class="fs-pdf-filename" id="fs-pdf-filename"></p>
-              <p class="fs-pdf-sub">PDF ready for analysis</p>
+        <div class="fs-layout">
+
+          <!-- ============ LEFT: UPLOAD & CONTROLS ============ -->
+          <div class="fs-col-left">
+            <div class="fs-upload-zone" id="fs-upload-zone">
+              <img class="fs-preview-img" id="fs-preview-img" alt="" hidden>
+              <div class="fs-pdf-card" id="fs-pdf-card" hidden>
+                <svg width="30" height="36" viewBox="0 0 30 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                  <path d="M2 2h18l8 8v24a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+                  <path d="M20 2v8h8" fill="none" stroke="var(--accent)" stroke-width="1.5"/>
+                </svg>
+                <div>
+                  <div class="fs-pdf-card-name" id="fs-pdf-card-name"></div>
+                  <div class="fs-pdf-card-meta" id="fs-pdf-card-meta"></div>
+                </div>
+              </div>
+
+              <div class="fs-upload-row no-print">
+                <label class="btn btn-secondary" style="cursor:pointer;">Choose a photo or PDF<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" class="sr-only" id="fs-photo-input"></label>
+              </div>
+
+              <textarea class="fs-note" id="fs-note" maxlength="500" placeholder="Optional — structure guidance (ignore the letterhead, it's two pages) and/or an output request (make this A5 landscape, use a serif font, bigger text)"></textarea>
+
+              <label class="fs-option-row">
+                <input type="checkbox" id="fs-shade">
+                <span>Shade fillable fields with a light tint<span class="fs-option-hint">Unchecked = colourless, best for printing. Either way, Chrome and Edge's own PDF viewer highlights every fillable field on screen by default — that's the browser, not this file, and it won't show when printed or in Acrobat with highlighting off.</span></span>
+              </label>
+
+              <label class="fs-option-row">
+                <input type="checkbox" id="fs-precise">
+                <span>More thorough reading (slower)<span class="fs-option-hint">Uses a stronger model — worth it for a dense or unusually laid-out form.</span></span>
+              </label>
+            </div>
+
+            <div class="calc-actions no-print">
+              <button type="button" class="btn btn-primary" id="fs-scan-btn" disabled>Scan this form</button>
+            </div>
+            <p class="fs-status no-print" id="fs-status" role="status" aria-live="polite"></p>
+
+            <p class="fs-scope-note">Built for <strong>printed or typed forms</strong> with labelled fields and tables — registers, checklists, intake sheets, payment vouchers, and similar. It reconstructs the blank template (not any handwriting already on the page) following the source's own layout — its columns, boxed sections and tables — so the result is a form you can reuse and fill in digitally. Dense handwriting, long prose, and heavily designed layouts aren't what this is built for yet.</p>
+          </div>
+
+          <!-- ============ RIGHT: DETECTED-STRUCTURE PREVIEW ============ -->
+          <div class="fs-col-right">
+            <div class="fs-results-placeholder no-print" id="fs-results-placeholder">
+              Choose a photo or PDF and scan it — the fields, tables and sign-off blocks this tool detects will be listed here first, so you can check they match the original before downloading.
+            </div>
+
+            <div id="fs-results-section" hidden>
+              <div class="fs-preview-title" id="fs-preview-title">Untitled form</div>
+              <p class="fs-preview-ref" id="fs-preview-ref"></p>
+              <p class="fs-preview-page" id="fs-preview-page"></p>
+
+              <div id="fs-bands"></div>
+              <ul class="fs-warn-list" id="fs-warn-list" hidden></ul>
+
+              <div class="fs-download-row no-print">
+                <button type="button" class="btn btn-primary" id="fs-download-btn">Download fillable PDF</button>
+              </div>
+              <p class="fs-rescan-hint no-print">Something off? Retake the photo straighter or closer — or add a note above about what to fix — and scan again. There's no limit on retries within today's usage cap.</p>
             </div>
           </div>
-          <div class="fs-upload-row no-print">
-            <label class="btn btn-secondary" style="cursor:pointer;">Choose a photo or PDF<input type="file" accept="image/*,application/pdf" class="sr-only" id="fs-photo-input"></label>
-          </div>
-          <textarea class="fs-note" id="fs-note" placeholder="Optional &mdash; structure guidance (ignore the letterhead, it's two pages) and/or an output request (make this A5 landscape, use a serif font, bigger text)."></textarea>
-          <label class="fs-color-toggle-row" for="fs-color-toggle">
-            <input type="checkbox" id="fs-color-toggle">
-            <span>Shade fillable fields with a light tint (unchecked = colorless, best for printing)</span>
-          </label>
+
         </div>
-
-        <div class="calc-actions no-print">
-          <button type="button" class="btn btn-primary" id="fs-scan-btn" disabled>Scan this form</button>
-        </div>
-        <p class="fs-status no-print" id="fs-status" role="status" aria-live="polite"></p>
-
-        <p class="fs-scope-note">Built for <strong>printed or typed forms</strong> with labelled fields and tables — registers, checklists, vouchers, intake sheets, and similar. It reconstructs the blank template (not any handwriting already on the page) at your source file's own size and orientation unless your note asks for something different. Messier documents — dense handwriting, long prose, heavily designed layouts — aren't what this is built for yet.</p>
-      </div>
-    </section>
-
-    <!-- ============ RESULTS ============ -->
-    <section class="calc-panel" id="fs-results-section" hidden>
-      <div class="wrap">
-        <div class="fs-preview-title" id="fs-preview-title">Untitled form</div>
-        <p class="fs-preview-subtitle" id="fs-preview-subtitle" hidden></p>
-        <p class="fs-preview-ref" id="fs-preview-ref"></p>
-        <div class="fs-preview-geometry" id="fs-preview-geometry"></div>
-
-        <div class="fs-preview-group" id="fs-header-fields-group" hidden>
-          <h3>Fields</h3>
-          <div class="fs-field-tags" id="fs-header-fields"></div>
-        </div>
-
-        <div class="fs-preview-group" id="fs-tables-group" hidden>
-          <h3>Tables</h3>
-          <div id="fs-tables"></div>
-        </div>
-
-        <div class="fs-preview-group" id="fs-reference-tables-group" hidden>
-          <h3>Reference tables (printed, not fillable)</h3>
-          <div id="fs-reference-tables"></div>
-        </div>
-
-        <div class="fs-preview-group" id="fs-signatures-group" hidden>
-          <h3>Sign-off blocks</h3>
-          <div id="fs-signatures"></div>
-        </div>
-
-        <div class="fs-preview-group" id="fs-footnotes-group" hidden>
-          <h3>Footnotes</h3>
-          <ul class="fs-footnotes-list" id="fs-footnotes"></ul>
-        </div>
-
-        <div class="fs-download-row no-print">
-          <button type="button" class="btn btn-primary" id="fs-download-btn">Download fillable PDF</button>
-        </div>
-        <p class="fs-rescan-hint no-print">Something off? Retake the photo straighter or closer (or try a clearer PDF page) and scan again — there's no limit on retries within today's usage cap. Want a different size, orientation, or font? Add a note above and rescan.</p>
       </div>
     </section>
 
@@ -216,18 +216,16 @@
     </div>
   </footer>
 
-  <!-- site-config.js / nav-config.js load first, per SITE_CONFIG_STANDARD.md's
-       retrofit checklist \u2014 nav-config.js renders the dropdown above from
-       RZ_NAV_PAGES, replacing this page's old hand-written 10-item list. -->
-  <script src="site-config.js?v=1" defer></script>
-  <script src="nav-config.js?v=1" defer></script>
-
-  <!-- pdf-lib builds the actual fillable PDF entirely in the browser \u2014
-       nothing about the finished file ever touches our server, matching
-       the rest of this site's "nothing saved on our side" rule. Pinned
+  <!-- pdf-lib builds the actual fillable PDF entirely in the browser, and also
+       reads an uploaded PDF's own page count/size for the preview card above
+       — nothing about the source file or the finished PDF ever touches our
+       server, matching this site's "nothing saved on our side" rule. Pinned
        version, loaded from cdnjs per this site's existing convention. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+  <script src="site-config.js?v=1" defer></script>
+  <script src="nav-config.js?v=1" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="form-scanner.js?v=2" defer></script>
+  <script src="form-scanner-engine.js?v=1" defer></script>
+  <script src="form-scanner.js?v=1" defer></script>
 </body>
 </html>

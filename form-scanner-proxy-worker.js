@@ -1,501 +1,297 @@
 /* ============================================================
    Form Scanner — Gemini proxy (Cloudflare Worker)
-   ------------------------------------------------------------
-   Same job as every other *-proxy-worker.js on this site (see
-   food-worth-proxy-worker.js, menu-calculator-proxy-worker.js):
-   this file does NOT go in the reysourcez GitHub Pages repo's
-   deployed site — it deploys separately, to Cloudflare Workers,
-   and its only job is holding the real Gemini API key server-side
-   (an encrypted Worker secret, set in the Cloudflare dashboard,
-   never written in this file) so form-scanner.js and every visitor
-   never see it.
-
-   2026-09-22 rebuild — what changed and why (full reasoning in
-   FORM_SCANNER_CHANGE_NOTES.md):
-     - Endpoint/model verified against current Gemini docs this
-       round (ai.google.dev, fetched 2026-09-22). generateContent
-       is explicitly still Google's own recommended path for
-       production ("remains fully supported... we will continue
-       to actively develop and maintain it") even though the newer
-       Interactions API is GA — so this file deliberately stays on
-       generateContent, same as every sibling worker on this site.
-       gemini-flash-lite-latest is confirmed as a real, current,
-       auto-updating "-latest" alias (Google's own docs give
-       gemini-flash-latest as the worked example of this exact
-       naming pattern), so it's kept as-is rather than hardcoding
-       a dated model string that Google's own deprecation schedule
-       (e.g. gemini-2.5-flash-lite shutting down Oct 16 2026) would
-       eventually break.
-     - This replaces a separate "v4.3 default best" worker a
-       different AI (Gemini) produced. That version worked for
-       structure-reading, but regressed a few things vs. this
-       site's established pattern because it didn't have this
-       site's docs in context: CORS fell back to '*' instead of
-       the safer first-allowed-origin; thinkingConfig was dropped
-       (the exact fix that was needed once already, see the
-       food-worth-proxy-worker.js 2026-09-08 note below); and the
-       "recognized" flag was trusted at face value instead of
-       being re-derived from whether anything was actually
-       extracted. All three are restored here.
-
-   WHAT THIS ENDPOINT DOES: takes one photo OR one page of a PDF of
-   a printed/typed form and asks Gemini to describe its BLANK
-   TEMPLATE structure — title, header fields (with column position
-   and optional checkbox-style choices), every table (columns,
-   optional two-row grouped headers, estimated relative column
-   widths, blank row count), any pre-filled reference/lookup table,
-   signature/sign-off blocks (with column position), footnotes, and
-   a best-effort page orientation/size guess — as structured JSON.
-   It does not transcribe handwriting or any values already filled
-   in; the goal is a reusable blank template, not a copy of one
-   filled-in instance. It also reads the note the person typed (if
-   any) for an explicit request to change the OUTPUT page size,
-   orientation, font, or text scale, and returns that separately as
-   render_directives so form-scanner.js can apply it on top of
-   whatever size/orientation it already detected from the source
-   file itself. form-scanner.js then builds an actual fillable PDF
-   from that JSON entirely in the visitor's browser (via pdf-lib) —
-   this Worker never sees or stores the resulting PDF, and the
-   source photo/PDF page is never written to disk anywhere.
-
-   Contract with the browser:
-     Browser sends  -> { image: "<base64>", mime_type: "image/jpeg"
-                          | "application/pdf", note?: "optional
-                          short text — structure guidance AND/OR an
-                          explicit ask like 'make this A5 landscape,
-                          bigger font'" }
-     Worker returns -> { recognized, orientation, page_size_guess,
-                          title, subtitles, reference_code,
-                          header_fields: [{label, column, multiline,
-                          options}], tables: [{section_title,
-                          column_groups, columns, columns_width_pct,
-                          blank_row_count}], reference_tables:
-                          [{title, columns, rows}], signature_blocks:
-                          [{heading, column, fields}], footnotes,
-                          amount_in_words_label, render_directives:
-                          {page_size, orientation, font_family,
-                          font_scale_pct} }
-                        or  { error: "..." }
-
-   Real Gemini request/response shape below (endpoint
-   v1beta/models/{model}:generateContent, model in the URL path,
-   body { contents:[{parts:[...]}], generationConfig:{...} },
-   response candidates[0].content.parts[0].text) — copied from
-   food-worth-proxy-worker.js's own 2026-09-08 fix, not the earlier
-   fabricated /v1beta/interactions shape that fix replaced. If this
-   ever starts failing with a "missing request type"-style error
-   again, that fabricated shape is the first thing to rule out —
-   confirmed again this round (2026-09-22) against Google's current
-   docs, see the note above.
-
-   DEPLOY STEPS (Cloudflare dashboard, no local tooling needed):
-     1. dash.cloudflare.com -> Workers & Pages -> your EXISTING
-        form-scanner-proxy Worker (same one already deployed — this
-        file replaces what's pasted into its "Edit code" view, the
-        *.workers.dev URL and PROXY_ENDPOINT in form-scanner.js do
-        NOT change).
-     2. Edit code -> select all -> paste this file's contents ->
-        Deploy.
-     3. Settings -> Variables and Secrets -> confirm GEMINI_API_KEY
-        is still set (Type: Secret). No change needed if it's
-        already there from the previous deploy.
-     4. Confirm ALLOWED_ORIGINS below still matches your domain(s).
+   Version: v6.0 (2026-09-24) — returns a LAYOUT SPEC (bands > columns > cells > items)
+   Deploys to Cloudflare Workers (NOT to GitHub Pages). Holds the Gemini key as the
+   encrypted secret GEMINI_API_KEY. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
+   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise" }
+   Response: the spec (see FORM_SCHEMA) + _meta, or { error }
    ============================================================ */
 
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
 
-const GEMINI_MODEL = 'gemini-flash-lite-latest'; // verified 2026-09-22 — see header note; matches every sibling worker on this site
+// Model per tier. Aliases hot-swap to newer releases; pin a version here if results ever drift.
+const MODELS = {
+  fast: 'gemini-flash-lite-latest',   // default, cheapest
+  precise: 'gemini-3.8-flash',        // "High-accuracy scan" tick box (GA; supports thinking levels low/medium/high)
+};
+const THINKING_LEVEL = 'low';         // layout reading gains little from deep thinking
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
-function buildGeminiUrl(model) {
-  return `${GEMINI_API_BASE}/${model}:generateContent`;
-}
+const MAX_BASE64_CHARS = 20 * 1024 * 1024;      // ~15 MB file
+const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+const UPSTREAM_TIMEOUT_MS = 55000;
 
-// Flat-ish schema on purpose, same reasoning as the original: a
-// fully generic nested "blocks" tree is less reliable for the model
-// to fill in correctly. This round adds a few new fields to close
-// the biggest fidelity gaps (grouped table headers, relative column
-// widths, more than two signature/header columns, a distinct
-// "reference table" shape for pre-filled lookup grids) WITHOUT going
-// fully generic — every new field is optional and the sanitizer
-// below falls back cleanly when the model omits or garbles one, so
-// a richer schema never becomes an all-or-nothing risk. Per project
-// history, an earlier round that pushed further toward "more output
-// formats" in one go stopped scanning reliably and was abandoned —
-// this round deliberately stays short of that line.
+/* ---------------- response schema (kept small: strings carry the item codes) ---------------- */
+const S = (description) => ({ type: 'string', description });
+const N = (description) => ({ type: 'number', description });
+const I = (description) => ({ type: 'integer', description });
+const B = (description) => ({ type: 'boolean', description });
+
+const CELL = {
+  type: 'object',
+  properties: {
+    col: I('1-based number of the column this cell belongs to'),
+    height_pct: N('share of that column height; the cells of one column add up to 100'),
+    boxed: B('a border is drawn around this cell'),
+    fill: S('"none", or #RRGGBB when the cell has a coloured background'),
+    items: { type: 'array', items: { type: 'string' }, description: 'coded items, top to bottom (see item codes in the instructions)' },
+  },
+  required: ['col', 'height_pct', 'items'],
+};
+
+const TABLE = {
+  type: 'object',
+  properties: {
+    width_pct: N('table width as % of the band width (100 = full width)'),
+    columns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          header: S('printed column heading, exactly as printed'),
+          width_pct: N('share of the table width; columns add up to 100'),
+          align: S('left, center or right (text alignment of the cells)'),
+          fill: S('heading background #RRGGBB, or none'),
+        },
+        required: ['header', 'width_pct'],
+      },
+    },
+    header_groups: {
+      type: 'array',
+      description: 'headings that span several columns, drawn above the column headings',
+      items: {
+        type: 'object',
+        properties: { text: S('printed text'), from_column: I('first column, 1-based'), span: I('number of columns'), fill: S('#RRGGBB or none') },
+        required: ['text', 'from_column', 'span'],
+      },
+    },
+    header_fill: S('default heading background #RRGGBB, e.g. #D9D9D9, or none'),
+    static_rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'rows that are already printed: one string per column, "" for an empty cell' },
+    blank_rows: I('number of empty rows to fill in'),
+    numbered: B('first column is pre-numbered 1. 2. 3.'),
+    total_label: S('printed label of a total row, e.g. JUMLAH (RM); empty if no total row'),
+    total_span: I('how many columns the total label spans, from the left'),
+    fillable: B('false for reference tables that are only to be read'),
+  },
+  required: ['columns'],
+};
+
+const BAND = {
+  type: 'object',
+  properties: {
+    kind: S('"cells" for normal bands, "table" for a ruled grid table'),
+    height_pct: N('share of the total height of all bands; all bands add up to 100'),
+    gap: S('whitespace above the band: none, small, medium or large'),
+    boxed: B('a rectangle outline is drawn around the whole band'),
+    col_widths_pct: { type: 'array', items: { type: 'number' }, description: 'kind cells: widths of the side-by-side columns, left to right, adding up to 100' },
+    cells: { type: 'array', items: CELL, description: 'kind cells: the cells, column 1 first (top to bottom), then column 2, ...' },
+    table: TABLE,
+  },
+  required: ['kind', 'height_pct'],
+};
+
 const FORM_SCHEMA = {
   type: 'object',
   properties: {
-    recognized: {
-      type: 'boolean',
-      description: 'True if the image/PDF page clearly shows a printed or typed form, register, or worksheet with fillable areas. False for a blank page, a photo unrelated to any document, or plain prose with no fields or tables.',
-    },
-    orientation: {
-      type: 'string',
-      enum: ['portrait', 'landscape'],
-      description: 'The natural reading orientation of the form CONTENT itself — which way the title and body text actually run — regardless of how the photo happened to be framed or rotated.',
-    },
-    page_size_guess: {
-      type: 'string',
-      enum: ['A3', 'A4', 'A5', 'Letter', 'Legal', 'unsure'],
-      description: 'Best-effort guess at the original paper size, judged from typical proportions, margin size, and how dense/compact the layout is. Only meaningful when the source is a PHOTO — if the source is a real PDF the app already knows its exact size and ignores this field. Use "unsure" rather than guessing if there is no confident signal either way.',
-    },
-    title: { type: 'string', description: 'The main heading printed on the document. Empty string if none.' },
-    subtitles: {
-      type: 'array',
-      items: { type: 'string' },
-      description: 'Sub-heading lines directly under the main title (e.g. an organisation name/address block). Empty array if none.',
-    },
-    reference_code: { type: 'string', description: 'A form/reference code printed on the document, e.g. "Lampiran 10" or "Form 27B". Empty string if none is visible.' },
-    header_fields: {
-      type: 'array',
-      description: 'Standalone label-and-blank fields that sit above any table, in reading order (e.g. "Name:", "Date:", "Department:").',
-      items: {
-        type: 'object',
-        properties: {
-          label: { type: 'string' },
-          column: { type: 'integer', description: 'REQUIRED, do not skip this even under time pressure: which vertical column this field visually sits in, left to right starting at 1. Check every field\u2019s horizontal position against the others near it, not just its reading order. This is very common on official forms \u2014 e.g. a payment-voucher header where "BAYAR KEPADA" on the left and "NO. BAUCAR" on the right both start at roughly the same height: those are column 1 and column 2, not two fields in one stacked list. Only use 1 for every field if the header is genuinely one single stacked column with nothing beside anything.' },
-          multiline: { type: 'boolean', description: 'True only if the blank space after this label is clearly taller than a single line (e.g. an address block).' },
-          options: { type: 'array', items: { type: 'string' }, description: 'Fill in ONLY when this field is really a set of tick/checkboxes rather than a blank to write in, e.g. a payment-method choice — one entry per choice, exactly as printed. Empty array for an ordinary blank field.' },
-        },
-        required: ['label', 'column', 'multiline'],
-      },
-    },
-    tables: {
-      type: 'array',
-      description: 'Every distinct table or ruled grid on the document, in reading order. A repeating "label + two or three blank columns" block counts as a table too, even without a conventional header row.',
-      items: {
-        type: 'object',
-        properties: {
-          section_title: { type: 'string', description: 'A heading printed directly above this table, if any. Empty string if the table has no heading of its own.' },
-          column_groups: {
-            type: 'array',
-            description: 'Fill in ONLY when the table has a genuine two-row header — a top row of wider group labels sitting over two or more of the columns below (e.g. one "TUNAI" label sitting over both a "Masuk" and a "Keluar" column). Leave this an empty array for an ordinary single-row header. The spans must add up to the total number of columns.',
-            items: {
-              type: 'object',
-              properties: {
-                label: { type: 'string' },
-                span: { type: 'integer', description: 'How many of the columns array entries, starting from where the previous group left off, this group label sits over.' },
-              },
-              required: ['label', 'span'],
-            },
-          },
-          columns: { type: 'array', items: { type: 'string' }, description: 'Column headers, left to right, exactly as printed. For a repeating label-plus-blank-columns block with no real header row, use the row label text itself as the one column header.' },
-          columns_width_pct: {
-            type: 'array',
-            items: { type: 'number' },
-            description: 'Your best estimate of each column\u2019s width as a percentage of the table\u2019s total width, left to right, matching the source layout (so a narrow "Bil." column and a wide "Description" column come out looking like the original rather than evenly split). Should have exactly one number per column and add up to roughly 100. Leave as an empty array if you have no real signal — the app will fall back to sizing columns by header text length.',
-          },
-          blank_row_count: { type: 'integer', description: 'How many empty rows are ruled below the header for the user to fill in. Count only genuinely blank rows, not a header row.' },
-        },
-        required: ['section_title', 'columns', 'blank_row_count'],
-      },
-    },
-    reference_tables: {
-      type: 'array',
-      description: 'A table that is printed REFERENCE information — already-filled lookup/threshold data the reader consults rather than a table meant to be filled in (e.g. "approval authority by amount"). Do not duplicate a table already listed above in tables. Empty array if none.',
-      items: {
-        type: 'object',
-        properties: {
-          title: { type: 'string' },
-          columns: { type: 'array', items: { type: 'string' } },
-          rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: 'Each inner array is one row of already-printed cell text, in the same column order as columns.' },
-        },
-        required: ['title', 'columns', 'rows'],
-      },
-    },
-    signature_blocks: {
-      type: 'array',
-      description: 'Sign-off areas such as "Prepared by" / "Approved by", each usually with its own Name/Position/Date-style fields.',
-      items: {
-        type: 'object',
-        properties: {
-          heading: { type: 'string', description: 'e.g. "Prepared by". Empty string if the block has no heading.' },
-          column: { type: 'integer', description: 'REQUIRED, do not skip this even under time pressure: which position, left to right starting at 1, this block sits in. Check each block\u2019s actual horizontal position against the others, not just the order you read them in \u2014 e.g. if "Disediakan oleh" sits on the left of the page and "Disemak dan diluluskan oleh" sits to its right at a similar height (even if there are two or three "Disemak" blocks stacked underneath each other on that same right side), that is column 1 for the first and column 2 for all of the others, not four blocks all in column 1. Only use 1 for every block if they are genuinely one single stacked column with nothing beside anything.' },
-          fields: { type: 'array', items: { type: 'string' }, description: 'e.g. ["Name", "Position", "Date"]' },
-        },
-        required: ['heading', 'column', 'fields'],
-      },
-    },
-    footnotes: { type: 'array', items: { type: 'string' }, description: 'Small printed note/instruction lines near the bottom of the page (not a signature field). Empty array if none.' },
-    amount_in_words_label: { type: 'string', description: 'If the form has one single emphasised line for writing an amount out in words (common on receipts/vouchers, e.g. "Ringgit Malaysia:"), its exact label. Empty string if the form has no such line.' },
-    render_directives: {
+    recognized: B('true when the image or PDF shows a printed or typed form, register or worksheet; false for anything else'),
+    title: S('main heading printed on the form (empty if none)'),
+    reference_code: S('form or annex code printed in a corner, e.g. Lampiran 6 [Ruj. 52 (a)] (empty if none)'),
+    page: {
       type: 'object',
-      description: 'ONLY set from an explicit request in the note the person typed when scanning — never from your own judgement about what "should" look better. If the note asks for none of these, or there is no note, every field here must be "auto" (or 100 for font_scale_pct) so the app keeps the source\u2019s own size/orientation/font by default.',
       properties: {
-        page_size: { type: 'string', enum: ['A3', 'A4', 'A5', 'Letter', 'Legal', 'auto'], description: '"auto" unless the note explicitly names a target size.' },
-        orientation: { type: 'string', enum: ['portrait', 'landscape', 'auto'], description: '"auto" unless the note explicitly asks for the other orientation.' },
-        font_family: { type: 'string', enum: ['helvetica', 'times', 'courier', 'auto'], description: '"auto" unless the note explicitly asks for a serif/typewriter/etc. look — "times" for a serif request, "courier" for a monospace/typewriter request.' },
-        font_scale_pct: { type: 'integer', description: '100 means unchanged. Only set another value (e.g. 115) if the note explicitly asks for bigger/smaller text.' },
+        size: S('paper size the form is printed on: A3, A4, A5, A6, Letter or Legal (A4 when unsure)'),
+        orientation: S('portrait or landscape'),
+        font: S('typeface family of the printed text: sans, serif or mono'),
+        margin_pct: N('left/right paper margin as % of the page width (2-12)'),
+        fill_pct: N('how much of the page height the bands occupy (40-100)'),
       },
-      required: ['page_size', 'orientation', 'font_family', 'font_scale_pct'],
+      required: ['size', 'orientation', 'font'],
     },
+    requested: {
+      type: 'object',
+      description: 'ONLY what the scanning person explicitly asked for in their note; otherwise none / 0',
+      properties: {
+        size: S('none, or A3, A4, A5, A6, Letter, Legal'),
+        orientation: S('none, portrait or landscape'),
+        font: S('none, sans, serif or mono'),
+        text_scale_pct: N('0 = not requested; 100 = normal size; 120 = bigger; 80 = smaller'),
+      },
+    },
+    frames: {
+      type: 'array',
+      description: 'big rectangles that enclose several consecutive bands',
+      items: { type: 'object', properties: { from_band: I('first band number, 1-based'), to_band: I('last band number, 1-based') }, required: ['from_band', 'to_band'] },
+    },
+    bands: { type: 'array', items: BAND },
   },
-  required: ['recognized', 'title', 'header_fields', 'tables', 'signature_blocks', 'render_directives'],
+  required: ['recognized', 'title', 'page', 'bands'],
 };
 
-const PROMPT = 'You are looking at either a photo or one PDF page of a printed or typed form, register, or worksheet \u2014 it may be photographed at a slight angle or with some skew; ignore that entirely and focus only on the printed content and layout structure. '
-  + 'Your job is to describe the BLANK TEMPLATE structure of this document so it can be rebuilt as a clean, straight, fillable digital form \u2014 not to transcribe any handwriting or values someone has already filled in, and not to correct or rephrase anything printed. '
-  + 'First decide whether this genuinely is a fillable form, worksheet, or register (recognized: true) or something else \u2014 a blank page, a photo unrelated to any document, or a passage of ordinary prose with no fields or tables (recognized: false). '
-  + 'If recognized, also read the page\u2019s own natural orientation (orientation) and, only if this is a photo rather than a real PDF page, your best guess at its original paper size (page_size_guess). '
-  + 'Identify: the main title; any subtitle/address lines under it; any form or reference code; every standalone header field in reading order, noting which column it sits in if the header genuinely has more than one and whether it is really a set of tick-box choices rather than a blank; every distinct table or ruled grid \u2014 including a repeating "label + two or three blank columns" block, which counts as a table even without a conventional header row \u2014 together with its column headers exactly as printed, a two-row grouped header if one genuinely exists, your best estimate of each column\u2019s relative width, and how many blank rows it has; any table that is already-printed reference/lookup information rather than something to fill in, as a separate reference table with its literal row text; any signature or sign-off blocks together with the field labels inside each one and which column position they sit in if more than one is arranged side by side; any small footnote lines near the bottom; and a single emphasised "amount in words" line if the form has one. '
-  + 'For every header field and every signature block, actively check its horizontal position against the others near it before deciding on column \u2014 this is not optional and defaulting everything to column 1 is a common mistake to avoid. Official forms very often place two or three things side by side: a payment-voucher header with one block of fields on the left and another block (often including tick-box choices like a payment method) on the right at the same height; two, three, or more separate sign-off blocks such as "Disediakan oleh" and one or more "Disemak dan diluluskan oleh" blocks arranged in columns rather than one long stacked list. Look at where each piece of text actually sits on the page, not just the order it would be read aloud in. '
-  + 'Read every label exactly as printed, in its original language. If a printed section heading sits directly above a table, attach it to that table as section_title rather than listing it separately. Keep strictly to what is visibly printed \u2014 do not invent fields, do not guess at values, and do not call a genuinely blank template unrecognized just because nothing has been filled in yet. '
-  + 'Finally, look at any note the person scanning this form added (it may be about the form\u2019s content, or it may be a request about the OUTPUT \u2014 a different paper size, a different orientation, a different font, or bigger/smaller text). Populate render_directives from that request ONLY if it explicitly asks for one of those things; otherwise leave every render_directives field at its default ("auto", or 100 for font_scale_pct) so the output matches the source by default.';
+/* ---------------- prompt ---------------- */
+const PROMPT = `You turn a photo or PDF of a printed form into a compact LAYOUT SPEC (JSON). An app redraws the form from it as a clean, straight, fillable PDF, so copy the form's real STRUCTURE exactly: the same rows, columns, cells, boxes, lines, labels and order. Never simplify, reorder, merge, regroup or invent anything.
 
+TEXT: copy every printed word exactly as printed (same language, spelling, capitals and punctuation such as " :"). Keep pre-printed text such as letterhead and organisation names. Leave out handwriting, stamps, signatures, scanner shadows and the photo background. If the copy is already filled in, describe the blank template. Lines drawn with dots or underscores after a label are blanks: use F, never transcribe the dots.
+
+STRUCTURE, top to bottom
+1. bands: cut the form into full-width horizontal bands in reading order. Give a band to every distinct block: a top-corner reference label, the title block, each group of fields, each table, each one-line row, the signature area, footnotes, each reference table.
+   height_pct = the band's share of the total height of all bands (adds up to 100). gap = whitespace above it (none/small/medium/large). boxed = true when a rectangle outline is drawn around the band. frames = one big rectangle around several consecutive bands, as {from_band,to_band} (1-based band numbers).
+2. kind "cells" (default): col_widths_pct lists the columns that sit side by side (adds up to 100; [100] for one full-width column; use an empty spacer column for blank margins). Each cell has col (its 1-based column), height_pct (its share of that column's height; the cells of one column add up to 100), boxed (a border around the cell) and fill ("none", or #RRGGBB for a coloured background). List the cells of column 1 first (top to bottom), then column 2, and so on. Content that sits left and right of each other MUST be in different columns; never put a left group and a right group in the same column. Use an empty cell (items []) for blank space above or below a box.
+3. Each cell has items, top to bottom, every item a short coded string  CODE[flags] text
+   T[..] text      printed text (not fillable)
+   F[..] label     a label followed by a blank to fill in (label may be empty for a bare line or box)
+   C[..] label :: option ; option _ ; option      tick boxes; "_" after an option = write-in line after it
+   HR[..]          decorative horizontal rule (not fillable)
+   SP[n]           empty stretchy space, n = 1 (small) to 5 (large); use it to leave room for signatures
+   flags, comma separated, all optional: b bold; i italic; xs sm md lg xl text size (md is normal);
+   left center right alignment; ul underline;
+   F only: line (default) | box | none = how the blank looks; wNN = blank width as % of the cell (w40); tall = multi-line blank that stretches; rl = right-align the label so labels line up with the blanks; ind = indent a label-less blank to line up with the other blanks;
+   C only: stack = options one under another (default is one row).
+   Signature block: T[b] heading, SP[3], F[line,w70] (signature line), then F[none] rows for Name / Position / Date.
+4. kind "table": a ruled grid with a heading row. table.columns = printed headings + width_pct (+ align, fill); header_groups = headings spanning several columns (from_column, span; 1-based); static_rows = rows that are already printed (one string per column, "" = empty cell); blank_rows = empty rows to fill in; total_label + total_span = a total row whose label spans the first N columns; numbered = first column is pre-numbered; fillable=false for reference tables that are only read; width_pct when the table is narrower than the band; header_fill / fill for coloured headings.
+
+PAGE: page.size and page.orientation = the paper the form is printed on (A4 portrait unless it clearly is not); page.font = sans, serif or mono; margin_pct and fill_pct as described in the schema.
+NOTE: the person may add a note. Only when it explicitly asks for a different paper size, orientation, font or text size, fill requested.*; otherwise leave requested as none / 0. Follow any other structural guidance in the note (for example "ignore the letterhead").
+If the image is not a form, return recognized=false, empty title, page A4 portrait sans and bands [].
+
+Tiny example of the SHAPE ONLY (never copy its content):
+{"recognized":true,"title":"LEAVE REQUEST","reference_code":"Form HR-2","page":{"size":"A4","orientation":"portrait","font":"sans","margin_pct":5,"fill_pct":60},"requested":{"size":"none","orientation":"none","font":"none","text_scale_pct":0},"frames":[{"from_band":1,"to_band":3}],"bands":[{"kind":"cells","height_pct":12,"boxed":false,"col_widths_pct":[100],"cells":[{"col":1,"height_pct":100,"items":["T[b,xl,center] LEAVE REQUEST","T[i,xs,center] (Company name)"]}]},{"kind":"cells","height_pct":30,"boxed":false,"col_widths_pct":[55,45],"cells":[{"col":1,"height_pct":100,"items":["F[box] Name","F[box] Department","F[box] Position"]},{"col":2,"height_pct":100,"items":["F[box] Date","C[stack] Type :: Annual ; Sick ; Other _"]}]},{"kind":"table","height_pct":30,"table":{"columns":[{"header":"No","width_pct":8,"align":"center"},{"header":"Date","width_pct":30},{"header":"Reason","width_pct":62}],"header_fill":"#D9D9D9","blank_rows":4,"numbered":true}},{"kind":"cells","height_pct":28,"boxed":true,"col_widths_pct":[50,50],"cells":[{"col":1,"height_pct":100,"boxed":true,"items":["T[b,sm] Requested by","SP[3]","F[line,w70]","F[none,sm] Name :","F[none,sm] Date :"]},{"col":2,"height_pct":100,"boxed":true,"items":["T[b,sm] Approved by","SP[3]","F[line,w70]","F[none,sm] Name :","F[none,sm] Date :"]}]}]}`;
+
+/* ---------------- helpers ---------------- */
 function corsHeaders(origin) {
-  // Falls back to the first allowed origin, not '*' \u2014 an
-  // unrecognised Origin should never get an open CORS grant.
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
     'Access-Control-Allow-Origin': allow,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
+    Vary: 'Origin',
   };
 }
-
-function json(body, status, origin) {
-  return new Response(JSON.stringify(body), {
-    status: status || 200,
-    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
-  });
+function jsonResponse(body, status, origin) {
+  return new Response(JSON.stringify(body), { status: status || 200, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' } });
 }
 
-const EMPTY_RESULT = {
-  recognized: false, orientation: 'portrait', page_size_guess: 'unsure',
-  title: '', subtitles: [], reference_code: '',
-  header_fields: [], tables: [], reference_tables: [], signature_blocks: [],
-  footnotes: [], amount_in_words_label: '',
-  render_directives: { page_size: 'auto', orientation: 'auto', font_family: 'auto', font_scale_pct: 100 },
-};
+/* Structural clean-up only (sizes, types). The browser does the semantic normalising. */
+const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+const numOrUndef = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : (typeof v === 'string' && v.trim() !== '' && Number.isFinite(+v) ? +v : undefined));
+const list = (v, n) => (Array.isArray(v) ? v.slice(0, n) : []);
 
-function cleanStr(str, maxLen) {
-  if (typeof str !== 'string') return '';
-  return str.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLen || 200);
-}
-function clampInt(val, min, max, fallback) {
-  const n = Math.round(Number(val));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.max(min, Math.min(max, n));
-}
-function sanitizeEnum(val, allowed, fallback) {
-  return allowed.includes(val) ? val : fallback;
-}
-
-// Defensive cleanup, same spirit as food-worth-proxy-worker.js's own
-// sanitizers \u2014 never trust field types/lengths/enums at face
-// value, and always return a shape the browser can render and build
-// a PDF from without any extra checks of its own. Every NEW field
-// this round has a safe fallback so a model response that gets one
-// of them wrong or omits it degrades gracefully rather than breaking
-// the whole scan.
-function sanitizeResult(raw) {
-  if (!raw || typeof raw !== 'object' || !raw.recognized) return { ...EMPTY_RESULT };
-
-  const headerFields = Array.isArray(raw.header_fields) ? raw.header_fields
-    .filter((f) => f && typeof f.label === 'string' && f.label.trim())
-    .map((f) => ({
-      label: cleanStr(f.label, 120),
-      column: clampInt(f.column, 1, 3, 1),
-      multiline: !!f.multiline,
-      options: Array.isArray(f.options) ? f.options.filter((o) => typeof o === 'string' && o.trim()).map((o) => cleanStr(o, 40)).slice(0, 8) : [],
-    }))
-    .slice(0, 24) : [];
-
-  const tables = Array.isArray(raw.tables) ? raw.tables
-    .filter((t) => t && Array.isArray(t.columns) && t.columns.length > 0)
-    .map((t) => {
-      const columns = t.columns.filter((c) => typeof c === 'string' && c.trim()).map((c) => cleanStr(c, 60)).slice(0, 15);
-      // columns_width_pct only kept if it genuinely matches the
-      // column count and roughly sums to 100 \u2014 otherwise the
-      // builder falls back to its own header-length heuristic, so a
-      // slightly-off model estimate can never distort the table.
-      let widths = Array.isArray(t.columns_width_pct) ? t.columns_width_pct.map((w) => Number(w)).filter((w) => Number.isFinite(w) && w > 0) : [];
-      if (widths.length !== columns.length) widths = [];
-      else {
-        const sum = widths.reduce((s, w) => s + w, 0);
-        if (sum < 60 || sum > 140) widths = [];
-      }
-      // column_groups only kept if every span is a positive integer
-      // and the spans add up to exactly the column count \u2014
-      // otherwise dropped so the table still renders with a normal
-      // single-row header instead of a broken/mismatched one.
-      let groups = Array.isArray(t.column_groups) ? t.column_groups
-        .filter((g) => g && typeof g.label === 'string' && g.label.trim())
-        .map((g) => ({ label: cleanStr(g.label, 60), span: clampInt(g.span, 1, 15, 1) }))
-        .slice(0, 8) : [];
-      if (groups.length) {
-        const spanSum = groups.reduce((s, g) => s + g.span, 0);
-        if (spanSum !== columns.length) groups = [];
-      }
-      return {
-        section_title: cleanStr(t.section_title, 120),
-        column_groups: groups,
-        columns,
-        columns_width_pct: widths,
-        blank_row_count: clampInt(t.blank_row_count, 1, 60, 1),
-      };
-    })
-    .filter((t) => t.columns.length > 0)
-    .slice(0, 10) : [];
-
-  const referenceTables = Array.isArray(raw.reference_tables) ? raw.reference_tables
-    .filter((rt) => rt && Array.isArray(rt.columns) && rt.columns.length > 0 && Array.isArray(rt.rows))
-    .map((rt) => ({
-      title: cleanStr(rt.title, 100),
-      columns: rt.columns.filter((c) => typeof c === 'string' && c.trim()).map((c) => cleanStr(c, 60)).slice(0, 10),
-      rows: rt.rows
-        .filter((r) => Array.isArray(r))
-        .map((r) => r.map((cell) => cleanStr(cell, 80)).slice(0, 10))
-        .slice(0, 20),
-    }))
-    .filter((rt) => rt.columns.length > 0 && rt.rows.length > 0)
-    .slice(0, 3) : [];
-
-  const signatureBlocks = Array.isArray(raw.signature_blocks) ? raw.signature_blocks
-    .filter((s) => s && Array.isArray(s.fields) && s.fields.length > 0)
-    .map((s) => ({
-      heading: cleanStr(s.heading, 80),
-      column: clampInt(s.column, 1, 4, 1),
-      fields: s.fields.filter((f) => typeof f === 'string' && f.trim()).map((f) => cleanStr(f, 40)).slice(0, 8),
-    }))
-    .filter((s) => s.fields.length > 0)
-    .slice(0, 8) : [];
-
-  const subtitles = Array.isArray(raw.subtitles) ? raw.subtitles.filter((s) => typeof s === 'string' && s.trim()).map((s) => cleanStr(s, 160)).slice(0, 5) : [];
-  const footnotes = Array.isArray(raw.footnotes) ? raw.footnotes.filter((f) => typeof f === 'string' && f.trim()).map((f) => cleanStr(f, 220)).slice(0, 10) : [];
-
-  // Belt-and-suspenders, same as the original: re-derive "did we
-  // actually get anything" from what was actually extracted, rather
-  // than trusting raw.recognized at face value.
-  const recognized = headerFields.length > 0 || tables.length > 0 || referenceTables.length > 0 || signatureBlocks.length > 0;
-  if (!recognized) return { ...EMPTY_RESULT };
-
-  const rd = raw.render_directives && typeof raw.render_directives === 'object' ? raw.render_directives : {};
-
+function sanitizeCell(c) {
+  if (!c || typeof c !== 'object') return null;
   return {
-    recognized: true,
-    orientation: sanitizeEnum(raw.orientation, ['portrait', 'landscape'], 'portrait'),
-    page_size_guess: sanitizeEnum(raw.page_size_guess, ['A3', 'A4', 'A5', 'Letter', 'Legal', 'unsure'], 'unsure'),
-    title: cleanStr(raw.title, 160),
-    subtitles,
-    reference_code: cleanStr(raw.reference_code, 60),
-    header_fields: headerFields,
-    tables,
-    reference_tables: referenceTables,
-    signature_blocks: signatureBlocks,
-    footnotes,
-    amount_in_words_label: cleanStr(raw.amount_in_words_label, 120),
-    render_directives: {
-      page_size: sanitizeEnum(rd.page_size, ['A3', 'A4', 'A5', 'Letter', 'Legal', 'auto'], 'auto'),
-      orientation: sanitizeEnum(rd.orientation, ['portrait', 'landscape', 'auto'], 'auto'),
-      font_family: sanitizeEnum(rd.font_family, ['helvetica', 'times', 'courier', 'auto'], 'auto'),
-      font_scale_pct: clampInt(rd.font_scale_pct, 70, 160, 100),
-    },
+    col: numOrUndef(c.col), height_pct: numOrUndef(c.height_pct), boxed: !!c.boxed, fill: str(c.fill, 12),
+    items: list(c.items, 60).filter((x) => typeof x === 'string').map((x) => x.slice(0, 500)),
+  };
+}
+function sanitizeTable(t) {
+  if (!t || typeof t !== 'object') return undefined;
+  return {
+    width_pct: numOrUndef(t.width_pct),
+    columns: list(t.columns, 24).map((c) => ({ header: str(c && c.header, 120), width_pct: numOrUndef(c && c.width_pct), align: str(c && c.align, 10), fill: str(c && c.fill, 12) })),
+    header_groups: list(t.header_groups, 12).map((g) => ({ text: str(g && g.text, 100), from_column: numOrUndef(g && g.from_column), span: numOrUndef(g && g.span), fill: str(g && g.fill, 12) })),
+    header_fill: str(t.header_fill, 12),
+    static_rows: list(t.static_rows, 60).map((r) => list(r, 24).map((x) => str(x, 200))),
+    blank_rows: numOrUndef(t.blank_rows), numbered: !!t.numbered, total_label: str(t.total_label, 100),
+    total_span: numOrUndef(t.total_span), fillable: t.fillable === undefined ? true : !!t.fillable,
+  };
+}
+function sanitizeSpec(raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  const pg = r.page && typeof r.page === 'object' ? r.page : {};
+  const rq = r.requested && typeof r.requested === 'object' ? r.requested : {};
+  return {
+    recognized: !!r.recognized,
+    title: str(r.title, 200), reference_code: str(r.reference_code, 100),
+    page: { size: str(pg.size, 10), orientation: str(pg.orientation, 12), font: str(pg.font, 8), margin_pct: numOrUndef(pg.margin_pct), fill_pct: numOrUndef(pg.fill_pct) },
+    requested: { size: str(rq.size, 10), orientation: str(rq.orientation, 12), font: str(rq.font, 8), text_scale_pct: numOrUndef(rq.text_scale_pct) },
+    frames: list(r.frames, 6).map((f) => ({ from_band: numOrUndef(f && f.from_band), to_band: numOrUndef(f && f.to_band) })),
+    bands: list(r.bands, 40).map((b) => {
+      if (!b || typeof b !== 'object') return null;
+      return {
+        kind: str(b.kind, 8), height_pct: numOrUndef(b.height_pct), gap: str(b.gap, 8), boxed: !!b.boxed,
+        col_widths_pct: list(b.col_widths_pct, 12).map(numOrUndef).filter((x) => x !== undefined),
+        cells: list(b.cells, 40).map(sanitizeCell).filter(Boolean),
+        table: sanitizeTable(b.table),
+      };
+    }).filter(Boolean),
   };
 }
 
-// Same extractGeminiText() walk as food-worth-proxy-worker.js:
-// candidates[0].content.parts[0].text, defensive at every level since
-// any of these can legitimately be missing (e.g. an empty candidates
-// array on a safety block) \u2014 this returns '' rather than throwing
-// either way.
-function extractGeminiText(data) {
-  const candidate = Array.isArray(data.candidates) ? data.candidates[0] : null;
-  const parts = candidate && candidate.content && Array.isArray(candidate.content.parts) ? candidate.content.parts : [];
-  const textPart = parts.find((p) => typeof p.text === 'string');
-  return textPart ? textPart.text : '';
+function extractText(data) {
+  const cand = Array.isArray(data.candidates) ? data.candidates[0] : null;
+  const parts = cand && cand.content && Array.isArray(cand.content.parts) ? cand.content.parts : [];
+  const p = parts.find((x) => typeof x.text === 'string');
+  return { text: p ? p.text : '', finish: cand && cand.finishReason, blocked: data.promptFeedback && data.promptFeedback.blockReason };
 }
 
-function extractResult(data) {
-  const raw = extractGeminiText(data).trim();
-  if (!raw) return { ...EMPTY_RESULT };
-  const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
+async function callGemini(env, model, parts, useSchema, useThinking) {
+  const generationConfig = { responseMimeType: 'application/json', maxOutputTokens: 16384 };
+  if (useSchema) generationConfig.responseSchema = FORM_SCHEMA;
+  if (useThinking) generationConfig.thinkingConfig = { thinkingLevel: THINKING_LEVEL };
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
   try {
-    return sanitizeResult(JSON.parse(cleaned));
-  } catch (e) {
-    return { ...EMPTY_RESULT };
-  }
+    return await fetch(`${GEMINI_API_BASE}/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+      body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+      signal: ctl.signal,
+    });
+  } finally { clearTimeout(timer); }
 }
 
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
-
-    // Top-level catch-all \u2014 a genuine improvement worth keeping
-    // from the Gemini-built v4.3 round: any unexpected throw still
-    // comes back as a clean JSON error instead of a bare 500 with no
-    // body the browser can't parse.
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders(origin) });
+    if (request.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405, origin);
     try {
-      if (request.method === 'OPTIONS') {
-        return new Response(null, { headers: corsHeaders(origin) });
-      }
-      if (request.method !== 'POST') {
-        return json({ error: 'Method not allowed' }, 405, origin);
-      }
-
       let body;
-      try { body = await request.json(); }
-      catch (e) { return json({ error: 'Invalid request body' }, 400, origin); }
+      try { body = await request.json(); } catch (e) { return jsonResponse({ error: 'Invalid request body.' }, 400, origin); }
+      if (typeof body.image !== 'string' || !body.image) return jsonResponse({ error: 'Attach a photo or PDF of the form first.' }, 400, origin);
+      if (body.image.length > MAX_BASE64_CHARS) return jsonResponse({ error: 'That file is too large. Try one under 15 MB.' }, 413, origin);
+      const mime = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
+      if (!ALLOWED_MIME.includes(mime)) return jsonResponse({ error: 'Unsupported file type. Use a JPG, PNG, WebP or PDF.' }, 415, origin);
+      if (!env.GEMINI_API_KEY) return jsonResponse({ error: 'The server is missing its GEMINI_API_KEY secret (Worker Settings > Variables and Secrets).' }, 500, origin);
 
-      const hasImage = typeof body.image === 'string' && body.image.length > 0;
-      if (!hasImage) {
-        return json({ error: 'Attach a photo or PDF page of the form first.' }, 400, origin);
+      const tier = body.tier === 'precise' ? 'precise' : 'fast';
+      const model = MODELS[tier];
+      const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : '';
+      // file first, instructions after it (Google's recommended order for a single image/PDF)
+      const parts = [{ inlineData: { mimeType: mime, data: body.image } }, { text: PROMPT }];
+      if (note) parts.push({ text: 'Note from the person scanning this form (follow it as described above): ' + note });
+
+      // attempt ladder: schema+thinking -> schema only -> plain JSON mode
+      let useSchema = true, useThinking = true, resp = null, fallback = '';
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try { resp = await callGemini(env, model, parts, useSchema, useThinking); }
+        catch (e) { return jsonResponse({ error: e && e.name === 'AbortError' ? 'The scan took too long. Try again, or use a smaller/clearer file.' : 'Could not reach Gemini. Try again.' }, 502, origin); }
+        if (resp.ok) break;
+        const errText = await resp.text();
+        console.error('[Form Scanner] Gemini', resp.status, model, errText.slice(0, 400));
+        if (resp.status === 400 && useThinking && /thinking/i.test(errText)) { useThinking = false; fallback += 'no-thinking '; continue; }
+        if (resp.status === 400 && useSchema && /schema|constraint|states|nesting|depth|too complex/i.test(errText)) { useSchema = false; fallback += 'no-schema '; continue; }
+        if ((resp.status === 429 || resp.status === 503) && attempt < 2) { await new Promise((r) => setTimeout(r, 1200)); continue; }
+        let msg = errText;
+        try { msg = (JSON.parse(errText).error || {}).message || errText; } catch (e) { /* keep raw */ }
+        const friendly = resp.status === 429 || resp.status === 503 ? 'Gemini is busy right now. Please try again in a moment.' : `Gemini error ${resp.status}: ${String(msg).slice(0, 300)}`;
+        return jsonResponse({ error: friendly }, resp.status, origin);
       }
-      const mimeType = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
-      const note = typeof body.note === 'string' ? body.note.trim().slice(0, 400) : '';
+      if (!resp || !resp.ok) return jsonResponse({ error: 'Gemini did not answer. Please try again.' }, 502, origin);
 
-      if (!env.GEMINI_API_KEY) {
-        return json({ error: 'Server is missing its Gemini key \u2014 add the GEMINI_API_KEY secret in this Worker\u2019s Settings.' }, 500, origin);
+      const data = await resp.json();
+      const { text, finish, blocked } = extractText(data);
+      if (blocked) return jsonResponse({ error: 'Gemini declined to read this file (' + blocked + '). Try a different photo.' }, 422, origin);
+      const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '');
+      let parsed;
+      try { parsed = JSON.parse(cleaned); }
+      catch (e) {
+        const why = finish === 'MAX_TOKENS' ? 'The form was too detailed to describe in one go. Try a closer photo of a simpler area, or scan again.' : 'Gemini returned an unreadable answer. Please scan again.';
+        return jsonResponse({ error: why }, 502, origin);
       }
-
-      const geminiParts = [{ text: PROMPT }];
-      if (note) geminiParts.push({ text: 'Note from the person scanning this: ' + note });
-      geminiParts.push({ inlineData: { mimeType, data: body.image } });
-
-      let geminiResp;
-      try {
-        geminiResp = await fetch(buildGeminiUrl(GEMINI_MODEL), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
-          body: JSON.stringify({
-            contents: [{ parts: geminiParts }],
-            generationConfig: {
-              // Restored from the original build \u2014 the Gemini
-              // v4.3 rebuild dropped this, which is the exact
-              // condition that already caused a slow/timed-out
-              // response once before (see food-worth-proxy-worker.js's
-              // 2026-09-08 fix). 3-series models default to thinking
-              // level "high" if this is left unset, which is
-              // unnecessary for a single structured-extraction call.
-              thinkingConfig: { thinkingLevel: 'low' },
-              responseMimeType: 'application/json',
-              responseSchema: FORM_SCHEMA,
-            },
-          }),
-        });
-      } catch (e) {
-        return json({ error: 'Could not reach Gemini. Try again.' }, 502, origin);
-      }
-
-      if (!geminiResp.ok) {
-        let detail = '';
-        try {
-          const errBody = await geminiResp.text();
-          try {
-            const errJson = JSON.parse(errBody);
-            detail = (errJson.error && errJson.error.message) || errBody;
-          } catch (e2) { detail = errBody; }
-        } catch (e) {}
-        detail = detail.slice(0, 500);
-        console.error('[Form Scanner Proxy] Gemini error', geminiResp.status, detail);
-        return json({ error: 'Gemini error ' + geminiResp.status + (detail ? ': ' + detail : '') }, geminiResp.status, origin);
-      }
-
-      const data = await geminiResp.json();
-      return json(extractResult(data), 200, origin);
+      const spec = sanitizeSpec(parsed);
+      spec._meta = { model, tier, fallback: fallback.trim() };
+      return jsonResponse(spec, 200, origin);
     } catch (err) {
-      console.error('[Form Scanner Proxy] Unhandled error', err && err.message);
-      return json({ error: 'Unexpected server error. Try again.' }, 500, origin);
+      return jsonResponse({ error: 'Unexpected server error: ' + (err && err.message ? err.message : 'unknown') }, 500, origin);
     }
   },
 };
