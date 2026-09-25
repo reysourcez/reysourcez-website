@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Market Radar page v1.5.0 (2026-09-20; page markup unchanged in v1.5.1) — pairs with market-radar.js v1.5.1 and market-radar-proxy-worker.js v1.5.1 -->
+<!-- Market Radar page v1.6.0 (2026-09-24) — mode-select screen (Market Analysis / Market Gap) and the Market Gap results panel added to markup this round — pairs with market-radar.js v1.6.0 and market-radar-proxy-worker.js v1.6.0 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -120,6 +120,27 @@
     .mr-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 10px; }
     .mr-status.is-error { color: #C0392B; font-weight: 600; }
 
+    /* Mode select — the two entry buttons, added when the page grew a second analysis type */
+    .mr-mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 6px; }
+    .mr-mode-card {
+      display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 20px;
+      border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer;
+      font-family: var(--font-body); color: var(--text);
+    }
+    .mr-mode-card:hover, .mr-mode-card:focus-visible { border-color: var(--accent); outline: none; }
+    .mr-mode-card strong { font-family: var(--font-display); font-size: 1.15rem; }
+    .mr-mode-card span { font-size: 0.9rem; color: var(--muted); line-height: 1.4; }
+
+    /* Market Gap results table */
+    .mr-gap-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .mr-gap-table th, .mr-gap-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
+    .mr-gap-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; }
+    .mr-gap-read { font-weight: 600; }
+    .mr-gap-read.is-gap { color: #C0392B; }
+    .mr-gap-read.is-thin { color: #B8860B; }
+    .mr-gap-read.is-oversupplied { color: var(--accent-dark); }
+    .mr-gap-read.is-adequate { color: var(--muted); font-weight: 500; }
+
     @media (max-width: 800px) {
       #mr-map { height: 360px; }
       .mr-controls-row { flex-direction: column; align-items: stretch; }
@@ -148,16 +169,7 @@
         <li><a href="services.html">Services</a></li>
         <li class="nav-dropdown">
           <button type="button" class="nav-dropdown-toggle active" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
-          <ul class="nav-dropdown-menu">
-            <li><a href="menu-calculator.html">Menu Calculator</a></li>
-            <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-            <li><a href="printing-calculator.html">Printing Calculator</a></li>
-            <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-            <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
-            <li><a href="food-worth-calculator.html">Food Worth</a></li>
-            <li><a href="crypto-radar.html">Crypto Radar</a></li>
-            <li><a href="market-radar.html" aria-current="page">Market Radar</a></li>
-          </ul>
+          <ul class="nav-dropdown-menu"><!-- populated by nav-config.js --></ul>
         </li>
         <li><a href="contact.html">Contact</a></li>
       </ul>
@@ -174,8 +186,25 @@
       </div>
     </section>
 
+    <!-- ============ MODE SELECT ============ -->
+    <section class="ica-panel" id="mr-mode-select">
+      <div class="wrap">
+        <p class="structure-note">Pick what you want to do first — each opens its own short wizard using the same map, and only one is open at a time.</p>
+        <div class="mr-mode-grid">
+          <button type="button" id="mr-mode-analysis-btn" class="mr-mode-card">
+            <strong>Market Analysis</strong>
+            <span>Check ONE business idea: competitor count, reach, and an opportunity score for a specific type you're weighing.</span>
+          </button>
+          <button type="button" id="mr-mode-gap-btn" class="mr-mode-card">
+            <strong>Market Gap</strong>
+            <span>Scan a household-needs checklist at once: what's missing, thin, or already oversupplied near a spot.</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ WIZARD ============ -->
-    <section class="ica-panel" id="wizard">
+    <section class="ica-panel" id="wizard" hidden>
       <div class="wrap">
         <div class="wizard-card" id="wizard-question"><!-- populated by JS --></div>
         <button type="button" id="wizard-back" class="btn btn-secondary" hidden>Back</button>
@@ -209,6 +238,18 @@
           </div>
         </fieldset>
 
+        <fieldset class="mr-category-fieldset no-print" id="mr-gap-intro" hidden>
+          <legend>Household-needs checklist <span class="toggle-hint">— every category below is checked at once, no ticking needed</span></legend>
+          <p class="structure-note" style="margin:0 0 10px;">Checks the same business types as Market Analysis (now including pharmacy and petrol station), plus anything you add below. See <span class="toggle-hint">"Why these types?"</span> in the plain-English read for how this list was put together.</p>
+          <div class="mr-vacancy-inputs">
+            <input type="text" id="mr-gap-custom-key" placeholder="OSM key, e.g. shop" maxlength="40" autocomplete="off">
+            <input type="text" id="mr-gap-custom-value" placeholder="OSM value, e.g. optician" maxlength="40" autocomplete="off">
+            <button type="button" class="btn" id="mr-gap-custom-add">Add to checklist</button>
+          </div>
+          <p class="toggle-hint" style="margin:4px 0 0;">letters, numbers, _ : - only — e.g. shop=optician, office=insurance, shop=pet</p>
+          <ul class="mr-vacancy-list" id="mr-gap-custom-list"></ul>
+        </fieldset>
+
         <div class="mr-controls-row no-print">
           <div>
             <label for="mr-catchment-select">Catchment</label>
@@ -239,6 +280,15 @@
             <small>Opportunity score</small>
             <span class="mr-provenance">Calculated — your own weights below</span>
           </div>
+        </div>
+
+        <div class="ica-results" id="mr-gap-results" hidden>
+          <p class="structure-note" style="margin-top:0;">Each row is a business type checked against everything found in this catchment. <strong>Gap</strong> = none found. <strong>Thin</strong> = well below the mix of everything else here. <strong>Oversupplied</strong> = well above it. This is a read of THIS spot's own mix, not a comparison to an outside "should have" number — see the note below the table.</p>
+          <table class="mr-gap-table">
+            <thead><tr><th>Business type</th><th>Found</th><th>Reach</th><th>Read</th></tr></thead>
+            <tbody id="mr-gap-table-body"><!-- populated by JS --></tbody>
+          </table>
+          <p class="structure-note" id="mr-gap-provenance"></p>
         </div>
 
         <div class="ica-results" id="mr-result-cards" hidden>
@@ -343,10 +393,12 @@
     </div>
   </footer>
 
+  <script src="site-config.js?v=1" defer></script>
+  <script src="nav-config.js?v=1" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="market-radar.js?v=20260922a" defer></script>
+  <script src="market-radar.js?v=20260924a" defer></script>
 </body>
 </html>

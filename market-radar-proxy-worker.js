@@ -1,4 +1,4 @@
-// Market Radar proxy Worker — v1.5.0 (2026-09-20). What changed: MARKET_RADAR_SETUP_AND_GLOSSARY.md. How it fits together: MARKET_RADAR_HANDOFF.md.
+// Market Radar proxy Worker — v1.6.0 (2026-09-24). What changed: this file — added gapInsightPrompt() and a snapshot.kind==='gap' branch in handleInsight(), for the new Market Gap checklist mode's plain-English read. No change to the main analysis request/response contract — the pharmacy/petrol categories and the checklist itself are entirely client-driven (market-radar.js), reusing the existing categories/anchors machinery unchanged. How it fits together: MARKET_RADAR_HANDOFF.md.
 /* ============================================================
    Market Radar — proxy + cache (Cloudflare Worker)
    ------------------------------------------------------------
@@ -47,7 +47,8 @@
    here, it's what keeps the tool working at all once more than a
    couple of people use it the same day.
 
-   Contract with the browser (market-radar.js) \u2014 v1.5.0:
+   Contract with the browser (market-radar.js) — v1.5.1 (contract unchanged from v1.5.0 — this
+   round's fix is entirely internal to how population is sourced; the response shape is identical):
      Request  -> { lat, lng, radiusM, categories: { key: { label, tags: [[k,v],...] } },
                    selectedCategories: [key,...], anchors: {...},
                    isochrone: { profile, seconds }, district }
@@ -105,11 +106,11 @@
                               working exactly as before — this only
                               adds an optional "how strong are these
                               competitors, really" signal on top.
-          AI (a BINDING, not a secret) \u2014 optional, free backstop for the
+          AI (a BINDING, not a secret) — optional, free backstop for the
                               plain-English read. Gemini refuses requests when
                               Cloudflare happens to run this Worker in a region
                               Google blocks (Hong Kong is the one reported on
-                              Cloudflare's community forum \u2014
+                              Cloudflare's community forum —
                               "User location is not supported for the API
                               use"), and that changes from request to request.
                               With this binding the Worker falls back to
@@ -166,16 +167,35 @@
        described as built, wasn't. Every external fetch in this file
        (Overpass, Geoapify, ORS, data.gov.my, Gemini) now goes through
        fetchWithTimeout() below instead of a bare, unbounded fetch().
-   (d) [CORRECTED 2026-09-20 \u2014 the paragraph that stood here claimed a
+   (d) [CORRECTED 2026-09-20 — the paragraph that stood here claimed a
        "confirmed working query shape". It was NOT working.] Real root
        cause, found 2026-09-20: population_district is served by the
        OpenDOSM API (api.data.gov.my/opendosm). The Data Catalogue
-       endpoint this file used answers [] for it \u2014 even for the dataset
-       page's own unfiltered sample query \u2014 so no filter change could
+       endpoint this file used answers [] for it — even for the dataset
+       page's own unfiltered sample query — so no filter change could
        ever have helped. Fixed in v1.5.0, see fetchPopulation(). Facts
        that still hold: one row per district x sex x age band x
        ethnicity; the district total is the both/overall/overall row;
        the figure is published in THOUSANDS.
+       [CORRECTED AGAIN, 2026-09-22 — the v1.5.0 "fix" above was itself
+       an unverified guess, and it doesn't work either: opendosm returns
+       a flat HTTP 400 ("invalid column value, valid columns: []") for
+       population_district on EVERY request, filtered or not — live-
+       tested both ways this round. data-catalogue still answers []
+       for it too, even though that's what this dataset's own page
+       documents as correct. Both endpoints are still tried below (now
+       in that documented order) so this self-heals for free if DOSM
+       ever fixes either backend. Since this tool only ever needs
+       population for the four fixed districts in TOWNS
+       (market-radar.js), and the figure moves by low single digits
+       per cent a year, the real fix is a small pinned fallback table —
+       see DISTRICT_POPULATION_FALLBACK_2023 near fetchPopulation()
+       below — sourced directly from DOSM this round, rather than
+       parsing DOSM's ~300k-row population_district.csv at runtime,
+       which risked exceeding Cloudflare Workers' 10ms-per-request CPU
+       limit on the free plan (developers.cloudflare.com/workers/platform/limits,
+       checked 2026-09-22) for a number that only needs updating about
+       once a year.]
 
    FEATURE, 2026-09-16 (not a fix — new): competitor strength via
    Google Places. Answers the "does a quiet cafe and a packed,
@@ -280,10 +300,16 @@ const APP_USER_AGENT = 'ReysourcezMarketRadar/1.0 (+https://reysourcez.com/marke
 const ORS_ISOCHRONE_ENDPOINT = 'https://api.heigit.org/openrouteservice/v2/isochrones/';
 const DATA_GOV_MY_ENDPOINT = 'https://api.data.gov.my/data-catalogue';
 const OPENDOSM_ENDPOINT = 'https://api.data.gov.my/opendosm';
-// Which portal serves which dataset (verified 2026-09-20 \u2014 see fetchPopulation):
-//   population_district -> OPENDOSM_ENDPOINT (Data Catalogue returns [] for it)
-//   hh_income_district  -> DATA_GOV_MY_ENDPOINT
-const WORKER_VERSION = '1.5.0'; // shown on the page next to the OSM source \u2014 bump on every deploy
+// Which portal serves which dataset — CORRECTED 2026-09-22: population_district works on NEITHER
+// endpoint right now (opendosm 400s on every request; data-catalogue answers [] even for its own
+// documented sample query) — confirmed live, not assumed; the v1.5.0 note this replaces guessed
+// opendosm was the fix, and it wasn't. Both are still tried, in the order DOSM's own page documents,
+// so this self-heals for free if DOSM fixes either backend; see DISTRICT_POPULATION_FALLBACK_2023
+// near fetchPopulation() for what actually supplies the number today.
+//   population_district -> tries DATA_GOV_MY_ENDPOINT then OPENDOSM_ENDPOINT (both currently broken;
+//                           falls back to a small pinned table for the 4 districts this tool uses)
+//   hh_income_district  -> DATA_GOV_MY_ENDPOINT (working)
+const WORKER_VERSION = '1.6.0'; // shown on the page next to the OSM source — bump on every deploy
 // Free-tier backstop for the plain-English read. Cloudflare retires models now and then; if this one
 // stops answering, pick a current text model from developers.cloudflare.com/workers-ai/platform/pricing
 const WORKERS_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fp8-fast';
@@ -382,7 +408,7 @@ async function fetchWithTimeout(url, options, timeoutMs) {
 }
 
 /* ================= INPUT GUARDS + CACHE HELPERS (v1.5.0) ================= */
-// This endpoint is public \u2014 CORS only stops other WEBSITES, not curl \u2014 so every client-supplied value
+// This endpoint is public — CORS only stops other WEBSITES, not curl — so every client-supplied value
 // that ends up inside an Overpass query, a URL or a prompt is checked here before use.
 const TAG_TOKEN = /^[A-Za-z0-9_:\-]{1,40}$/;   // an OSM key or value: letters, digits, _ : -
 const MAX_CATEGORY_TAG_PAIRS = 40;
@@ -412,7 +438,7 @@ function cleanTagSet(set, maxPairs) {
   return out;
 }
 
-// Cache helpers that can never throw \u2014 a misbehaving Cache API must not take the analysis down.
+// Cache helpers that can never throw — a misbehaving Cache API must not take the analysis down.
 async function cacheGet(key) {
   try { const hit = await caches.default.match(key); return hit ? await hit.json() : null; } catch (e) { return null; }
 }
@@ -767,10 +793,10 @@ async function fetchIsochrone(env, lat, lng, profile, seconds) {
 }
 
 /* ================= 3. DATA.GOV.MY / OPENDOSM (district population & income) ================= */
-// v1.5.0 \u2014 REWRITTEN. Root cause of "district population: Not available" (found 2026-09-20):
+// v1.5.0 — REWRITTEN. Root cause of "district population: Not available" (found 2026-09-20):
 // population_district is served by the OpenDOSM API (api.data.gov.my/opendosm). The Data Catalogue
-// endpoint (api.data.gov.my/data-catalogue) answers [] for it \u2014 even for the dataset page's own
-// unfiltered sample query (?id=population_district&limit=3) \u2014 so no filter wording could ever have
+// endpoint (api.data.gov.my/data-catalogue) answers [] for it — even for the dataset page's own
+// unfiltered sample query (?id=population_district&limit=3) — so no filter wording could ever have
 // worked; the three earlier "filter syntax" fixes were chasing the wrong problem.
 // hh_income_district (income) IS served by the Data Catalogue endpoint. Each dataset tries its home
 // endpoint first and the other second, so DOSM re-homing a dataset later doesn't silently break it.
@@ -778,7 +804,19 @@ async function fetchIsochrone(env, lat, lng, profile, seconds) {
 // the comma-separated multi-column form is documented only for filter. So population asks for the
 // district's rows (newest year first) and this file picks the both/overall/overall total row itself.
 // The population figure is published in THOUSANDS. Limit: 4 requests/minute PER API without a token
-// (developer.data.gov.my/rate-limit) \u2014 one call per API per analysis, and a 429 is reported, not hidden.
+// (developer.data.gov.my/rate-limit) — one call per API per analysis, and a 429 is reported, not hidden.
+//
+// v1.5.1 — the paragraph above was itself wrong, confirmed live 2026-09-22: opendosm 400s on
+// population_district regardless of filter, and data-catalogue still answers [] for it too. Both
+// endpoints are still tried below (self-healing, in case DOSM fixes either later), but the number
+// that actually shows on the page today comes from DISTRICT_POPULATION_FALLBACK_2023 near
+// fetchPopulation() — a small table of the 4 districts this tool supports, sourced directly from
+// DOSM this round rather than parsing the ~300k-row population_district.csv at runtime. That file is
+// roughly 100x bigger than any other CSV this Worker parses, and Cloudflare's free plan caps CPU
+// time at 10ms/request (waiting on a fetch() response doesn't count against that; parsing the result
+// does) — a full parse risked failing outright for a number that only needs updating about once a
+// year for four fixed towns. If this tool ever needs population for districts beyond the four in
+// TOWNS, revisit that trade-off rather than growing this table by hand indefinitely.
 
 function latestRow(rows) {
   if (!rows.length) return null;
@@ -805,18 +843,46 @@ async function fetchDosmRows(datasetId, query, bases) {
   return { rows: [], trail };
 }
 
+// Sourced 2026-09-22 directly from DOSM (cross-checked between DOSM's own Kawasanku dashboard,
+// open.dosm.gov.my/dashboard/kawasanku, and citypopulation.de's Malaysia tables, which cite DOSM
+// directly — Miri and Kuching matched exactly between the two, 248,877 and 609,205 for the 2020
+// census, giving good confidence in the same sources' 2023 estimates used here): DOSM's 2023 mid-
+// year intercensal population estimate per district — the cohort-component method DOSM itself uses
+// to publish every non-census year, so this is the same KIND of number the live dataset's newest row
+// would show, just pinned instead of live-queried. Only read when both OpenAPI attempts above have
+// failed (currently always — see the note above). NEEDS A MANUAL REFRESH: (a) about once a year, when
+// DOSM publishes new district estimates (check open.dosm.gov.my/data-catalogue/population_district or
+// the Kawasanku dashboard per district); (b) immediately if a new town is ever added to TOWNS in
+// market-radar.js — this table does not grow on its own.
+const DISTRICT_POPULATION_FALLBACK_2023 = {
+  miri: 255100,
+  kuching: 621700,
+  sibu: 254000,
+  bintulu: 186600,
+};
+
 async function fetchPopulation(district) {
   const q = `ifilter=${encodeURIComponent(district)}@district&sort=-date&limit=1000`;
-  const { rows, trail } = await fetchDosmRows('population_district', q, [OPENDOSM_ENDPOINT, DATA_GOV_MY_ENDPOINT]);
+  // Order matches what population_district's own dataset page documents as correct — tried first
+  // purely so this self-heals for free if DOSM ever fixes it; both are broken today regardless,
+  // confirmed live 2026-09-22, not assumed.
+  const { rows, trail } = await fetchDosmRows('population_district', q, [DATA_GOV_MY_ENDPOINT, OPENDOSM_ENDPOINT]);
   const totals = rows.filter((r) => r && String(r.sex).toLowerCase() === 'both' && String(r.age).toLowerCase() === 'overall'
     && String(r.ethnicity).toLowerCase() === 'overall' && r.population != null);
   const row = latestRow(totals);
   const value = row ? (Math.round(Number(row.population) * 1000) || 0) : 0;
   if (value) return { value, note: '' };
-  return { value: 0, note: 'Population: ' + (trail.length ? trail.join('; ') : `${rows.length} rows came back for "${district}" but none was the both/overall/overall total`) };
+
+  const fallback = DISTRICT_POPULATION_FALLBACK_2023[district.toLowerCase()];
+  if (fallback) {
+    return { value: fallback, note: 'Population: DOSM\u2019s live API is down for this dataset right now \u2014 showing DOSM\u2019s 2023 district estimate instead (see this Worker\u2019s source comments).' };
+  }
+
+  const apiTrail = trail.length ? trail.join('; ') : `${rows.length} rows came back for "${district}" but none was the both/overall/overall total`;
+  return { value: 0, note: 'Population: ' + apiTrail };
 }
 
-// hh_income_district has no sex/age/ethnicity breakdown \u2014 one row per district per year; income_median
+// hh_income_district has no sex/age/ethnicity breakdown — one row per district per year; income_median
 // is already in RM (no unit conversion).
 async function fetchIncome(district) {
   const q = `ifilter=${encodeURIComponent(district)}@district&sort=-date&limit=1`;
@@ -827,7 +893,7 @@ async function fetchIncome(district) {
   return { value: 0, note: 'Income: ' + (trail.length ? trail.join('; ') : 'the row had no income_median figure') };
 }
 
-// Cached 7 days per district \u2014 SUCCESSES ONLY. The old version cached a failed lookup (population 0)
+// Cached 7 days per district — SUCCESSES ONLY. The old version cached a failed lookup (population 0)
 // for a week, so even after the query was fixed the page would have kept showing "Not available".
 // The key is versioned (demographics-v2) so any bad entry cached by the old code is bypassed. Each
 // figure is cached and re-fetched independently: one dataset failing never re-downloads the other.
@@ -885,6 +951,9 @@ async function fetchDemographics(district) {
 // entry), and one value column. Column order isn't hardcoded below —
 // the header row is read first — specifically so a future column
 // reshuffle on DOSM's end doesn't silently misread the wrong field.
+// This file is small (a monthly index across ~30 groups), unlike
+// population_district.csv above — the parse below is cheap enough not
+// to need the same CPU-budget caution.
 //
 // Cached for 30 days: this dataset updates monthly, so daily-cache
 // churn would just be wasted bandwidth on both ends. If DOSM ever
@@ -927,7 +996,7 @@ async function fetchWholesaleRetailTrends(categoryKeys) {
     if (dateIdx < 0 || seriesIdx < 0 || groupIdx < 0) return out;
     // The value column's exact name isn't confirmed the way date/series_type/group are, so try
     // candidates in order (sales/value-looking name, then unlabelled, then volume-looking) and only
-    // accept a cell that is genuinely a number \u2014 a wrong name guess falls through to the next candidate.
+    // accept a cell that is genuinely a number — a wrong name guess falls through to the next candidate.
     const candidateIdxs = header.map((_, i) => i).filter((i) => i !== dateIdx && i !== seriesIdx && i !== groupIdx);
     if (!candidateIdxs.length) return out;
     const ordered = [
@@ -958,7 +1027,7 @@ async function fetchWholesaleRetailTrends(categoryKeys) {
       if (!best) continue;
       const result = { group: info.group, label: info.label, growthYoy: best.value, asOf: best.date };
       out[k] = result;
-      await cachePut(new Request('https://cache.internal/iowrt/' + info.group), result, 2592000); // 30 days \u2014 the index updates monthly
+      await cachePut(new Request('https://cache.internal/iowrt/' + info.group), result, 2592000); // 30 days — the index updates monthly
     }
   } catch (e) { /* fail honest: whatever couldn't be read simply isn't shown */ }
   return out;
@@ -979,11 +1048,34 @@ function insightPrompt(s) {
     : '';
   const system = 'You are a neutral market-data narrator for a small-business site-selection tool used in Sarawak, Malaysia. '
     + 'Write 3-4 short sentences in plain English: what these numbers together suggest, one thing worth checking in person before relying on this, and how much confidence the data sources actually support. '
-    + 'Hard rules: never state a specific revenue or profit figure, never tell them to open or not open here \u2014 this describes the data, it does not recommend a decision. Never invent a number not given below.';
+    + 'Hard rules: never state a specific revenue or profit figure, never tell them to open or not open here — this describes the data, it does not recommend a decision. Never invent a number not given below.';
   const score = Number(s.opportunityScore);
   const data = `Snapshot for a candidate spot in ${clip(s.town, 40) || 'the area'}: business type(s) "${clip(s.category, 200)}", ${Number(s.competitorCount) || 0} competitors found inside the catchment.${bd}`
     + ` Category mix ${Math.round((Number(s.diversityIndex) || 0) * 100)}% diverse (100% = evenly mixed, 0% = one category dominates), district population ${Number(s.districtPopulation) || 'unknown'}, district median household income RM${Number(s.districtIncome) || 'unknown'}/month, opportunity score ${Number.isFinite(score) ? score : 'unknown'}/100.${obs}`
-    + (s.catchmentIsReal ? '' : ' Note: the catchment shape used here is an estimated radius, not a real travel-time isochrone \u2014 mention this reduces precision.');
+    + (s.catchmentIsReal ? '' : ' Note: the catchment shape used here is an estimated radius, not a real travel-time isochrone — mention this reduces precision.');
+  return { system, data };
+}
+
+// ADDED 2026-09-24 for Market Gap mode — a distinct prompt rather than forcing the checklist into
+// insightPrompt()'s single-category shape above. Same hard rules (narrate only, never invent,
+// never make the open/don't-open call), with one addition: since the whole point of this checklist
+// is spotting where a gap or an oversupply sits, the model is explicitly allowed to point that out
+// as a pattern worth a closer look — still short of recommending a specific decision.
+function gapInsightPrompt(s) {
+  const rows = Array.isArray(s.rows) ? s.rows : [];
+  const gaps = rows.filter((r) => r && r.read === 'gap').map((r) => clip(r && r.label, 40));
+  const thin = rows.filter((r) => r && r.read === 'thin').map((r) => clip(r && r.label, 40));
+  const over = rows.filter((r) => r && r.read === 'oversupplied').map((r) => clip(r && r.label, 40));
+  const system = 'You are a neutral market-data narrator for a small-business site-selection tool used in Sarawak, Malaysia. '
+    + 'This snapshot is a household-needs checklist, not a single business score: categories are marked missing, thin, or oversupplied RELATIVE TO EACH OTHER in this one catchment, not against any outside "should have" number — make that relative framing clear if you refer to it. '
+    + 'Write 3-4 short sentences in plain English: what the pattern of gaps and oversupply suggests, and you may note that a gap or thin category could be worth a closer look, or that an oversupplied one would need real differentiation to compete in. '
+    + 'Hard rules: never state a specific revenue or profit figure, never tell them to definitely open or not open any specific business — point at what the data shows, do not make the decision for them. Never invent a number, category, or business type not given below.';
+  const data = `Snapshot for a candidate spot in ${clip(s.town, 40) || 'the area'}: a household-needs checklist of ${rows.length} business types was checked in the catchment.`
+    + (gaps.length ? ` Gaps (none found): ${gaps.join(', ')}.` : ' No categories were completely absent.')
+    + (thin.length ? ` Thin (well below the rest of the mix here): ${thin.join(', ')}.` : '')
+    + (over.length ? ` Oversupplied (well above the rest of the mix here): ${over.join(', ')}.` : '')
+    + ` District population ${Number(s.districtPopulation) || 'unknown'}.`
+    + (s.catchmentIsReal ? '' : ' Note: the catchment shape used here is an estimated radius, not a real travel-time isochrone — mention this reduces precision.');
   return { system, data };
 }
 
@@ -1021,7 +1113,7 @@ async function narrateWithWorkersAI(env, system, data) {
 
 async function handleInsight(env, body) {
   const s = (body && body.snapshot) || {};
-  const { system, data } = insightPrompt(s);
+  const { system, data } = s.kind === 'gap' ? gapInsightPrompt(s) : insightPrompt(s);
   const problems = [];
 
   if (env.GEMINI_API_KEY) {
@@ -1051,7 +1143,7 @@ async function handleInsight(env, body) {
   const blocked = problems.some((p) => /location is not supported/i.test(p));
   return {
     error: (blocked
-      ? 'Google refused the request because Cloudflare happened to run this Worker in a region Gemini doesn\u2019t serve \u2014 it isn\u2019t about your location, and it changes from request to request. Fix: add the free Workers AI binding named AI to this Worker (see the setup guide). '
+      ? 'Google refused the request because Cloudflare happened to run this Worker in a region Gemini doesn\u2019t serve — it isn\u2019t about your location, and it changes from request to request. Fix: add the free Workers AI binding named AI to this Worker (see the setup guide). '
       : '') + 'Details: ' + problems.join(' | '),
   };
 }
@@ -1099,7 +1191,7 @@ export default {
         fetchWholesaleRetailTrends(selected),
       ]);
       const pois = attachGooglePopularity(overpassResult.pois, googlePopularity);
-      // 200, not an error status, even when overpassResult.error is set \u2014 this IS a successful
+      // 200, not an error status, even when overpassResult.error is set — this IS a successful
       // response, it just carries a partial-data flag. market-radar.js shows the catchment and
       // demographics it DID get rather than a blank failure screen.
       return json({

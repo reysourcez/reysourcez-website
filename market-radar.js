@@ -1,4 +1,4 @@
-// Market Radar client logic — v1.5.1 (2026-09-22). What changed: this file (one line in analyzeSpot() — the population note now shows even when a number is present, not just on "Not available"; see MARKET_RADAR_SETUP_AND_GLOSSARY.md). How it fits together: MARKET_RADAR_HANDOFF.md.
+// Market Radar client logic — v1.6.0 (2026-09-24). What changed: this file and market-radar-proxy-worker.js — added a mode-select screen (Market Analysis vs. the new Market Gap checklist mode), two new standard categories (pharmacy, petrol station), and the Market Gap results panel. See MARKET_RADAR_SETUP_AND_GLOSSARY.md for the full writeup and research behind the checklist. How it fits together: MARKET_RADAR_HANDOFF.md.
 /* ============================================================
    Market Radar
    Two deliberate exceptions to this site's usual zero-dependency
@@ -80,7 +80,7 @@
    tag added here.
    ============================================================ */
 
-const MR_CLIENT_VERSION = '1.5.1';
+const MR_CLIENT_VERSION = '1.6.0';
 console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' — build 2026-09-22');
 
 /* ================= CONFIG =================
@@ -164,6 +164,15 @@ const CATEGORY_TAGS = {
   laundry: { label: 'Laundry', tags: [['shop', 'laundry']], msic: { code: '96011', name: 'Laundering and dry-cleaning of textile and fur products' } },
   salon: { label: 'Salon / barber', tags: [['shop', 'hairdresser'], ['shop', 'beauty']], msic: { code: '96020', name: 'Hairdressing and other beauty treatment' } },
   printing: { label: 'Printing / copy shop', tags: [['shop', 'copyshop'], ['shop', 'printing']], msic: { code: '82190', name: 'Photocopying, document preparation and other specialised office support activities' } },
+  // ADDED 2026-09-24, for the Market Gap checklist (household monthly-needs research — see
+  // MARKET_RADAR_SETUP_AND_GLOSSARY.md for the sources): both are also just ordinary tickable
+  // types in Market Analysis mode, same as everything else in this table — no special-casing
+  // needed anywhere else in the file for that. MSIC codes cross-checked against other countries'
+  // ISIC-derived codes at this same 5-digit level (India's NIC-2008 for pharmacy, Sweden's SNI for
+  // fuel retail) rather than a direct Malaysia SSM/DOSM lookup — flagging that distinction here the
+  // same way this file already does for every other MSIC code, so it's easy to re-verify later.
+  pharmacy: { label: 'Pharmacy', tags: [['amenity', 'pharmacy']], msic: { code: '47721', name: 'Retail sale of pharmaceuticals, medical and orthopaedic goods and toilet articles' } },
+  petrol: { label: 'Petrol / fuel station', tags: [['amenity', 'fuel']], msic: { code: '47300', name: 'Retail sale of automotive fuel in specialised stores' } },
   custom: { label: 'Custom — type your own OSM tag', tags: [], msic: null },
 };
 
@@ -299,6 +308,30 @@ function recordUsage() {
   catch (e) {}
 }
 
+/* ================= MODE SELECT (added 2026-09-24 — Market Analysis vs. Market Gap) ================= */
+// currentMode gates which of the two result panels renders and which categories get checked —
+// see applyModeVisibility() and getActiveCategories(). Chosen once, before the wizard, and only
+// changed by explicitly going back to this screen (see backToModeSelect()) — never inferred.
+let currentMode = null; // 'analysis' | 'gap'
+
+function chooseMode(mode) {
+  currentMode = mode;
+  document.getElementById('mr-mode-select').hidden = true;
+  document.getElementById('wizard').hidden = false;
+  wizardStepIndex = 0;
+  renderWizardStep();
+}
+
+// Reached by going "back" from the wizard's first step (town) — see goBack() below. Resets
+// everything the same way switching towns does, PLUS clears which mode was active, so nothing
+// from one mode's analysis can bleed into the other after switching.
+function backToModeSelect() {
+  resetAnalysisState();
+  currentMode = null;
+  document.getElementById('wizard').hidden = true;
+  document.getElementById('mr-mode-select').hidden = false;
+}
+
 /* ================= WIZARD ================= */
 
 const WIZARD_STEPS = [
@@ -327,9 +360,17 @@ function renderWizardStep() {
       renderWizardStep();
     });
   });
-  document.getElementById('wizard-back').hidden = wizardStepIndex === 0;
+  // ADDED 2026-09-24: the back button is never hidden anymore — at step 0 it now leads all the way
+  // back to mode-select (there's a step "-1" to go back to now), so it stays visible and relabels
+  // itself instead of disappearing the way it did when the wizard was the first thing on the page.
+  const backBtn = document.getElementById('wizard-back');
+  backBtn.hidden = false;
+  backBtn.textContent = wizardStepIndex === 0 ? '← Choose a different analysis' : 'Back';
 }
-function goBack() { if (wizardStepIndex > 0) { wizardStepIndex--; renderWizardStep(); } }
+function goBack() {
+  if (wizardStepIndex > 0) { wizardStepIndex--; renderWizardStep(); return; }
+  backToModeSelect();
+}
 
 function finishWizard() {
   document.getElementById('wizard').hidden = true;
@@ -338,8 +379,76 @@ function finishWizard() {
   document.getElementById('mr-town-label').textContent = town.label;
   document.getElementById('mr-catchment-select').value = wizardAnswers.catchment;
   initMap(town);
+  applyModeVisibility();
 }
+
+// ADDED 2026-09-24: toggles which INPUT area shows inside the shared analysis screen — the
+// category-ticking fieldset for Market Analysis, or the checklist intro/custom-add row for Market
+// Gap. Output-side visibility (which results panel renders) is handled separately in
+// resetAnalysisState() and renderScore()/renderGapResults(), since those only matter after a real
+// analysis — this only concerns the pre-Analyze input state.
+function applyModeVisibility() {
+  const isGap = currentMode === 'gap';
+  document.getElementById('mr-category-group').hidden = isGap;
+  document.getElementById('mr-gap-intro').hidden = !isGap;
+}
+
+// FIXED, 2026-09-23: editAnswers() used to only swap which section was visible — it never reset
+// the previous spot's results, so the analysis screen could keep showing a stale competitor
+// count/score/AI read (and even a stale on-site busyness reading silently feeding the NEW spot's
+// score) right up until the next "Analyze this spot" click. The map alone self-corrected
+// (initMap() below always rebuilds the whole Leaflet instance), which is exactly why this was easy
+// to miss on a quick look — the map looked right immediately; only the cards/score/insight around
+// it didn't. Concretely, getInsight() builds its snapshot from TOWNS[wizardAnswers.town].label (the
+// NEW town, already updated by the wizard) alongside lastAnalysis's numbers (the OLD town's) — so a
+// plain-English read requested right after switching towns, before re-analyzing, would describe the
+// new town's name over the old town's data.
+// EXTENDED 2026-09-24 for the two-mode split: the same staleness risk applies to whichever mode's
+// results are on screen, so this resets BOTH the Market Analysis panel and the Market Gap panel
+// unconditionally, regardless of which one is currently visible — cheaper and safer than tracking
+// which one needs it, and hiding an already-hidden element is a no-op.
+function resetAnalysisState() {
+  lastAnalysis = null;
+
+  // The on-site read is the sneaky part: left alone, a "Busy" read from the OLD spot would keep
+  // affecting the NEXT spot's score under an "Observed" tag that implies a fresh, current read.
+  // Clear it and undo whatever auto-weight shift it applied — same restore onObservedChange()
+  // already does when a read is cleared by hand. Other, manually-edited weights are left alone:
+  // those are a standing preference across spots, not something tied to one location.
+  const observedEl = document.getElementById('mr-observed-busyness');
+  if (observedEl) observedEl.value = '';
+  if (strengthAutoApplied) {
+    const lc = parseFloat(document.getElementById('mr-weight-lowCompetition').value) || 0;
+    setWeightInput('lowCompetition', lc + strengthAutoMoved);
+    setWeightInput('competitorStrength', 0);
+    strengthAutoApplied = false;
+    strengthAutoMoved = 0;
+  }
+  document.getElementById('mr-observed-notice').hidden = true;
+  updateWeightTotalDisplay();
+
+  // Back to exactly how these looked before the very first "Analyze this spot" click. vacantUnits
+  // (the notepad) and gapCustomItems (the checklist additions) are deliberately left alone — both
+  // are documented as running, session-long lists, not per-spot results tied to whichever pin or
+  // mode happens to be active right now.
+  document.getElementById('mr-score-banner').hidden = true;
+  document.getElementById('mr-result-cards').hidden = true;
+  document.getElementById('mr-field-note-panel').hidden = true;
+  document.getElementById('mr-vacancy-panel').hidden = true;
+  document.getElementById('mr-weights-panel').hidden = true;
+  document.getElementById('mr-gap-results').hidden = true;
+
+  document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below once you\'ve analyzed a spot.';
+  document.getElementById('mr-ai-insight').classList.add('is-empty');
+  setStatus('');
+
+  // Map layers need no explicit clearing here: finishWizard() (called right after the wizard
+  // finishes again) always runs initMap(), which calls map.remove() and builds a brand-new Leaflet
+  // map — that alone wipes every marker/heat/catchment layer the old analysis drew.
+}
+
 function editAnswers() {
+  resetAnalysisState();
   document.getElementById('mr-analysis').hidden = true;
   document.getElementById('wizard').hidden = false;
   wizardStepIndex = 0;
@@ -380,7 +489,85 @@ function syncCategoryUI() {
   document.getElementById('mr-custom-tag-row').classList.toggle('is-visible', selected.includes('custom'));
 }
 
-/* ================= MAP ================= */
+/* ================= MARKET GAP CHECKLIST (added 2026-09-24) ================= */
+// Gap mode checks EVERY standard category at once (no ticking — see applyModeVisibility()) plus
+// whatever the person adds here. This is the multi-item equivalent of Market Analysis's single
+// "custom" slot above: same validation pattern (CUSTOM_TAG_PATTERN), but a running list instead of
+// one slot, since auditing a whole checklist is the point of this mode.
+const MAX_GAP_CUSTOM_ITEMS = 8; // sanity cap, not a hard technical limit — keeps the table and the Overpass query reasonable
+let gapCustomItems = []; // {key, tagKey, tagValue, label}
+let gapCustomCounter = 0;
+
+function renderGapCustomList() {
+  const list = document.getElementById('mr-gap-custom-list');
+  list.innerHTML = gapCustomItems.map((c, i) =>
+    `<li><span>${escapeHTML(c.label)}</span><button type="button" data-idx="${i}" aria-label="Remove">✕</button></li>`
+  ).join('');
+  list.querySelectorAll('button[data-idx]').forEach((btn) => {
+    btn.addEventListener('click', () => { gapCustomItems.splice(Number(btn.dataset.idx), 1); renderGapCustomList(); });
+  });
+}
+
+function addGapCustomItem() {
+  const keyEl = document.getElementById('mr-gap-custom-key');
+  const valueEl = document.getElementById('mr-gap-custom-value');
+  const key = keyEl.value.trim();
+  const value = valueEl.value.trim();
+  if (!key || !value) { setStatus('Type both an OSM key and value to add a checklist item.', true); return; }
+  if (!CUSTOM_TAG_PATTERN.test(key) || !CUSTOM_TAG_PATTERN.test(value)) {
+    setStatus('Custom OSM tags can only use letters, numbers, _ : and - (up to 40 characters).', true);
+    return;
+  }
+  if (gapCustomItems.length >= MAX_GAP_CUSTOM_ITEMS) {
+    setStatus('Up to ' + MAX_GAP_CUSTOM_ITEMS + ' custom checklist items at a time — remove one to add another.', true);
+    return;
+  }
+  gapCustomCounter += 1;
+  gapCustomItems.push({ key: 'gapcustom' + gapCustomCounter, tagKey: key, tagValue: value, label: key + '=' + value });
+  keyEl.value = '';
+  valueEl.value = '';
+  renderGapCustomList();
+}
+
+// Covers both the 13 standard types and any gap-mode custom additions — analysis mode's single
+// "custom" slot has its own locally-scoped label logic inside analyzeSpot() and doesn't go through
+// this helper.
+function labelForCategory(key) {
+  if (CATEGORY_TAGS[key]) return CATEGORY_TAGS[key].label;
+  const custom = gapCustomItems.find((c) => c.key === key);
+  return custom ? custom.label : key;
+}
+
+// What "Analyze this spot" actually checks: the ticked types in Market Analysis mode, or the whole
+// checklist (everything but 'custom' plus whatever's been added) in Market Gap mode. Kept separate
+// from getSelectedCategories() itself rather than folding a mode-check into it, since the checkbox
+// list it reads doesn't exist/apply in gap mode at all.
+function getActiveCategories() {
+  if (currentMode !== 'gap') return getSelectedCategories();
+  return Object.keys(CATEGORY_TAGS).filter((k) => k !== 'custom').concat(gapCustomItems.map((c) => c.key));
+}
+
+// Herfindahl-style diversity (computeDiversityIndex) answers "how mixed is it"; this answers "which
+// SPECIFIC types are thin or piled up" — a judgement call the same way SATURATION_COUNT is:
+// relative to the OTHER checklist categories found in this same catchment, not against an outside
+// "should have" number nobody here has good data for. Zero is always a plain gap, no threshold
+// needed; everything else is ranked against this catchment's own average non-zero count.
+function computeGapReads(categoryCounts, checklistKeys, districtPopulation) {
+  const rows = checklistKeys.map((key) => ({ key, label: labelForCategory(key), count: categoryCounts[key] || 0 }));
+  const nonZero = rows.map((r) => r.count).filter((n) => n > 0);
+  const avg = nonZero.length ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length : 0;
+  return rows.map((r) => {
+    let read;
+    if (r.count === 0) read = 'gap';
+    else if (avg > 0 && r.count >= avg * 2) read = 'oversupplied';
+    else if (avg > 0 && r.count <= avg * 0.4) read = 'thin';
+    else read = 'adequate';
+    const perShop = (districtPopulation && r.count > 0) ? Math.round(districtPopulation / r.count) : null;
+    return { ...r, read, perShop };
+  }).sort((a, b) => a.count - b.count); // gaps and thin ones surface first
+}
+
+
 
 let map, pinMarker, catchmentLayer, heatLayer;
 let poiMarkers = [];
@@ -792,14 +979,19 @@ async function analyzeSpot() {
   const town = TOWNS[wizardAnswers.town];
   const catchmentModeKey = document.getElementById('mr-catchment-select').value;
   const catchmentMode = CATCHMENT_MODES[catchmentModeKey];
-  const selected = getSelectedCategories();
+  const selected = getActiveCategories();
   const pin = pinMarker.getLatLng();
 
-  if (!selected.length) { setStatus('Tick at least one business type first.', true); return; }
-  if (selected.length > MAX_CATEGORIES) { setStatus('Pick at most ' + MAX_CATEGORIES + ' business types.', true); return; }
+  // MAX_CATEGORIES and "tick at least one" are Market Analysis rules — Market Gap always sends the
+  // whole checklist (never empty, never capped at 4), so neither check applies to it.
+  if (currentMode === 'analysis') {
+    if (!selected.length) { setStatus('Tick at least one business type first.', true); return; }
+    if (selected.length > MAX_CATEGORIES) { setStatus('Pick at most ' + MAX_CATEGORIES + ' business types.', true); return; }
+  }
 
   // Every standard type is always sent (so "category mix nearby" stays meaningful whichever ones
-  // are ticked); a custom OSM tag joins them as its own type when ticked.
+  // are ticked); a custom OSM tag joins them as its own type when ticked (Market Analysis), and any
+  // gap-mode checklist additions join the same way (Market Gap) — see gapCustomItems.
   const categoriesForRequest = {};
   Object.entries(CATEGORY_TAGS).forEach(([key, c]) => { if (key !== 'custom') categoriesForRequest[key] = { label: c.label, tags: c.tags }; });
   let customLabel = '';
@@ -814,7 +1006,10 @@ async function analyzeSpot() {
     customLabel = `${key}=${value}`;
     categoriesForRequest.custom = { label: customLabel, tags: [[key, value]] };
   }
-  const labelFor = (k) => (k === 'custom' ? customLabel : CATEGORY_TAGS[k].label);
+  if (currentMode === 'gap') {
+    gapCustomItems.forEach((c) => { categoriesForRequest[c.key] = { label: c.label, tags: [[c.tagKey, c.tagValue]] }; });
+  }
+  const labelFor = (k) => (k === 'custom' ? customLabel : labelForCategory(k));
 
   if (!WORKER_ENDPOINT || WORKER_ENDPOINT.indexOf('PASTE_YOUR') === 0) {
     setStatus('This tool needs its proxy URL set — see WORKER_ENDPOINT near the top of market-radar.js.', true);
@@ -859,6 +1054,9 @@ async function analyzeSpot() {
     // whether or not it has a rating; this is a separate, optional refinement, not a filter.
     const competitorRatingSample = competitors.filter((p) => p.rating != null).map((p) => ({ rating: p.rating, reviewCount: p.reviewCount || 0 }));
 
+    // In gap mode "competitors" ends up meaning every checked category's POIs (selectedSet = the
+    // whole checklist), which is exactly what should show as markers/heat for a full-area scan —
+    // no special-casing needed here for that.
     poiMarkers = competitors.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#C0392B', fillColor: '#C0392B', fillOpacity: 0.7, weight: 1 })
       .bindTooltip(escapeHTML(p.name || 'Unnamed') + (selected.length > 1 ? ' — ' + escapeHTML(labelFor(p.category)) : '')).addTo(map));
     if (competitors.length > 0 && typeof L.heatLayer === 'function') {
@@ -885,6 +1083,37 @@ async function analyzeSpot() {
     // Older Workers sent one trend for one category; newer ones send an object keyed by category.
     const trends = data.wholesaleRetailTrends || (data.wholesaleRetailTrend ? { [selected[0]]: data.wholesaleRetailTrend } : {});
     const demo = data.demographics || {};
+    const poisAvailable = !data.poisError;
+
+    if (currentMode === 'gap') {
+      // ADDED 2026-09-24 — see computeGapReads() for the gap/thin/oversupplied logic (a relative,
+      // in-catchment read, not an invented external "should have" benchmark) and
+      // MARKET_RADAR_SETUP_AND_GLOSSARY.md for the household-needs research behind the checklist.
+      // Anchors, the DOSM trend card, and rzBroadcast are Market-Analysis-specific display/plumbing
+      // that don't have an equivalent here yet — not shown in gap mode, flagged as KIV rather than
+      // forced into a shape that doesn't fit.
+      lastAnalysis = {
+        poisAvailable,
+        gapRows: poisAvailable ? computeGapReads(categoryCounts, selected, demo.population || 0) : [],
+        districtPopulation: demo.population || 0,
+        districtIncome: demo.medianIncome || 0,
+        demographicsNotes: demo.notes || [],
+        catchmentIsReal: catchment.isReal,
+        districtLabel: town.district,
+        categoryLabel: 'Household needs checklist',
+      };
+      renderGapResults(catchment, data);
+      document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below for a summary of what this checklist suggests.';
+      document.getElementById('mr-ai-insight').classList.add('is-empty');
+      if (data.poisError) {
+        setStatus(data.poisError, true);
+      } else {
+        const gapCount = lastAnalysis.gapRows.filter((r) => r.read === 'gap').length;
+        const overCount = lastAnalysis.gapRows.filter((r) => r.read === 'oversupplied').length;
+        setStatus(`Checked ${selected.length} business types in this catchment — ${gapCount} gap${gapCount === 1 ? '' : 's'}, ${overCount} oversupplied.`);
+      }
+      return; // gap mode's rendering is fully handled above; skip the analysis-mode block below
+    }
 
     lastAnalysis = {
       competitorCount: competitors.length,
@@ -906,7 +1135,7 @@ async function analyzeSpot() {
       // "0 competitors" and "we couldn't check" must never look the same on screen — the first
       // is a real, useful finding; the second is a data outage that would otherwise read as a
       // suspiciously perfect opportunity score.
-      poisAvailable: !data.poisError,
+      poisAvailable,
     };
 
     const countEl = document.getElementById('mr-competitor-count');
@@ -970,6 +1199,8 @@ async function analyzeSpot() {
     // Broadcasts if costing-sync.js is loaded and a listener exists — Interactive Costing Analysis and
     // Margin Analysis don't read a 'market-radar' source yet (see the KIV list), so this currently
     // reaches no one, but the shape is ready. `category` stays a single joined string for that reason.
+    // Market Gap mode doesn't broadcast (see the early return above) — there's no single opportunity
+    // score or category to send in this same shape; revisit if a receiving side is ever built for it.
     if (typeof rzBroadcast === 'function') {
       rzBroadcast({ source: 'market-radar', category: lastAnalysis.categoryLabel, categories: selected.slice(), district: lastAnalysis.districtLabel, competitorCount: lastAnalysis.competitorCount, opportunityScore: computeOpportunityScore(scoreInputs(), currentWeights()).total });
     }
@@ -982,6 +1213,31 @@ async function analyzeSpot() {
 }
 function provenanceHTML(text) { return `<span class="mr-provenance">${escapeHTML(text)}</span>`; }
 
+// Renders the Market Gap checklist table from lastAnalysis.gapRows (see computeGapReads()).
+// catchment/data are passed in rather than re-read from lastAnalysis since the provenance line
+// needs catchment.isReal and data.meta, which aren't part of the gap-mode lastAnalysis shape.
+function renderGapResults(catchment, data) {
+  const rows = lastAnalysis.gapRows;
+  const body = document.getElementById('mr-gap-table-body');
+  if (!lastAnalysis.poisAvailable) {
+    body.innerHTML = '<tr><td colspan="4">Unavailable — see the status message below.</td></tr>';
+  } else {
+    const READ_LABELS = { gap: 'Gap', thin: 'Thin', adequate: 'Adequate', oversupplied: 'Oversupplied' };
+    body.innerHTML = rows.map((r) => {
+      const reach = r.perShop ? '≈' + r.perShop.toLocaleString() + ' people/shop' : '—';
+      return `<tr><td>${escapeHTML(r.label)}</td><td>${r.count}</td><td>${reach}</td>`
+        + `<td><span class="mr-gap-read is-${r.read}">${READ_LABELS[r.read]}</span></td></tr>`;
+    }).join('');
+  }
+  const meta = data.meta || {};
+  const sourceParts = [catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback];
+  if (meta.poiSource) sourceParts.push('OSM via ' + meta.poiSource);
+  if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
+  document.getElementById('mr-gap-provenance').textContent = 'Estimated — ' + sourceParts.join(' · ')
+    + (lastAnalysis.districtPopulation ? ' · "people/shop" uses this district\u2019s DOSM population figure' : '');
+  document.getElementById('mr-gap-results').hidden = false;
+}
+
 /* ================= PLAIN-ENGLISH READ (narration only — Gemini first, Workers AI backstop on the Worker side) ================= */
 
 async function getInsight() {
@@ -990,22 +1246,40 @@ async function getInsight() {
   box.textContent = 'Writing a plain-English read…';
   box.classList.remove('is-empty');
   try {
-    const score = computeOpportunityScore(scoreInputs(), currentWeights());
-    const data = await fetchAnalysis({
-      mode: 'insight',
-      snapshot: {
-        town: TOWNS[wizardAnswers.town].label,
-        category: lastAnalysis.categoryLabel,
-        competitorCount: lastAnalysis.competitorCount,
-        breakdown: lastAnalysis.competitorBreakdown.map((b) => ({ label: b.label, count: b.count })),
-        diversityIndex: lastAnalysis.diversityIndex,
-        districtPopulation: lastAnalysis.districtPopulation,
-        districtIncome: lastAnalysis.districtIncome,
-        opportunityScore: Math.round(score.total * 100),
-        catchmentIsReal: lastAnalysis.catchmentIsReal,
-        observedBusyness: getObservedBusyness(),
-      },
-    });
+    let data;
+    if (currentMode === 'gap') {
+      // ADDED 2026-09-24 — a distinct snapshot shape (kind:'gap') rather than forcing the checklist
+      // into the single-category shape below; see gapInsightPrompt() in
+      // market-radar-proxy-worker.js for the matching narration prompt. Same hard rules apply:
+      // narrate only, never invent a number, never tell the person to open or not open something.
+      data = await fetchAnalysis({
+        mode: 'insight',
+        snapshot: {
+          kind: 'gap',
+          town: TOWNS[wizardAnswers.town].label,
+          rows: lastAnalysis.gapRows.map((r) => ({ label: r.label, count: r.count, read: r.read })),
+          districtPopulation: lastAnalysis.districtPopulation,
+          catchmentIsReal: lastAnalysis.catchmentIsReal,
+        },
+      });
+    } else {
+      const score = computeOpportunityScore(scoreInputs(), currentWeights());
+      data = await fetchAnalysis({
+        mode: 'insight',
+        snapshot: {
+          town: TOWNS[wizardAnswers.town].label,
+          category: lastAnalysis.categoryLabel,
+          competitorCount: lastAnalysis.competitorCount,
+          breakdown: lastAnalysis.competitorBreakdown.map((b) => ({ label: b.label, count: b.count })),
+          diversityIndex: lastAnalysis.diversityIndex,
+          districtPopulation: lastAnalysis.districtPopulation,
+          districtIncome: lastAnalysis.districtIncome,
+          opportunityScore: Math.round(score.total * 100),
+          catchmentIsReal: lastAnalysis.catchmentIsReal,
+          observedBusyness: getObservedBusyness(),
+        },
+      });
+    }
     box.textContent = (data.text || 'No usable text came back that time — the numbers above are unaffected.')
       + (data.text && data.via && data.via !== 'Gemini' ? ' (Written by ' + data.via + ' — Gemini was unavailable.)' : '');
     box.classList.remove('is-empty');
@@ -1032,12 +1306,17 @@ function init() {
   const catchmentSelect = document.getElementById('mr-catchment-select');
   catchmentSelect.innerHTML = Object.entries(CATCHMENT_MODES).map(([value, m]) => `<option value="${value}">${escapeHTML(m.label)}</option>`).join('');
 
-  renderWizardStep();
+  // ADDED 2026-09-24: the page now opens on mode-select (see market-radar.html), not the wizard —
+  // chooseMode() below renders the wizard's first step itself once a mode is actually picked, so
+  // there's nothing to pre-render here.
+  document.getElementById('mr-mode-analysis-btn').addEventListener('click', () => chooseMode('analysis'));
+  document.getElementById('mr-mode-gap-btn').addEventListener('click', () => chooseMode('gap'));
   document.getElementById('wizard-back').addEventListener('click', goBack);
   document.getElementById('mr-edit-answers').addEventListener('click', editAnswers);
   document.getElementById('mr-save-pdf').addEventListener('click', () => window.print());
   document.getElementById('mr-analyze-btn').addEventListener('click', analyzeSpot);
   document.getElementById('mr-get-insight').addEventListener('click', getInsight);
+  document.getElementById('mr-gap-custom-add').addEventListener('click', addGapCustomItem);
 
   ['lowCompetition', 'population', 'income', 'diversity', 'momentum', 'competitorStrength'].forEach((key) => {
     document.getElementById('mr-weight-' + key).addEventListener('input', onWeightEditedByHand);

@@ -31,10 +31,10 @@ Adding, removing, or renaming a tool anywhere on the site is now a single line i
 
 Open the page, click "Business Analysis." It should list every current tool with the right hrefs. If it's missing one or has the wrong href, the problem is in `nav-config.js` itself, not this page — don't try to fix it locally.
 
-## Status across the site (as of 2026-09-24, later)
+## Status across the site (as of 2026-09-24)
 
-**Done:** `index.html`, `about.html`, `services.html`, `contact.html`, `menu-calculator.html`, `interactive-costing-analysis.html`, `form-scanner.html` (2026-09-24, alongside that tool's v6.0 rebuild — see `FORM_SCANNER_CHANGE_NOTES.md`).
+**Done:** `index.html`, `about.html`, `services.html`, `contact.html`, `menu-calculator.html`, `interactive-costing-analysis.html`, `market-radar.html` (2026-09-24).
 
-**Not yet — if this is your page, do the retrofit above before anything else:** `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html`, `food-worth-calculator.html`, `crypto-radar.html`, `rental-calculator.html`, `market-radar.html`, `cost-structure-checker.html`, `qr-listing-creator.html`, `sop-creator.html`, `project-plan-architect.html`, `qr-creator.html`.
+**Not yet — if this is your page, do the retrofit above before anything else:** `overhead-manpower-calculator.html`, `printing-calculator.html`, `margin-audit-calculator.html`, `food-worth-calculator.html`, `crypto-radar.html`, `rental-calculator.html`, `cost-structure-checker.html`, `qr-listing-creator.html`, `sop-creator.html`, `project-plan-architect.html`, `form-scanner.html`, `qr-creator.html`.
 
 Whoever's coordinating across sessions: once a "not yet" page gets retrofitted, move its filename up to "Done" in this doc so the list stays trustworthy — a stale status list here would just recreate the exact problem this doc exists to fix.
