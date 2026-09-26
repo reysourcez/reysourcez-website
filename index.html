@@ -1,169 +1,160 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reysourcez Enterprise — Home</title>
-  <meta name="description" content="Reysourcez Enterprise caters to both local and international clients by providing specific case to case solutions. Get in touch for a quote.">
-  <link rel="icon" href="favicon.ico" sizes="32x32">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="site.webmanifest">
-
-  <!-- Google Fonts: Fraunces for headings, IBM Plex Sans for body text -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-
-  <link rel="stylesheet" href="styles.css?v=20">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CDM Rental Docs</title>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --bg:#f5f6f8; --card:#ffffff; --ink:#1c1f26; --sub:#6b7280;
+  --line:#e3e5e9; --brand:#2F5496; --brand-ink:#ffffff;
+  --good:#1e8e5a; --bad:#c0392b; --pending:#b8860b;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#14161b; --card:#1d2027; --ink:#eceef1; --sub:#9aa1ab;
+    --line:#2b2f38; --brand:#7ea1d6; --brand-ink:#0d1117;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#14161b; --card:#1d2027; --ink:#eceef1; --sub:#9aa1ab;
+  --line:#2b2f38; --brand:#7ea1d6; --brand-ink:#0d1117;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+header{background:var(--brand);color:var(--brand-ink);padding:14px 16px calc(14px + env(safe-area-inset-top,0px));display:flex;align-items:baseline;gap:10px;}
+header b{font-size:16px;}
+header span{font-size:12px;opacity:.85;}
+.wrap{max-width:640px;margin:0 auto;padding:16px;}
+.banner{background:#fff7e0;color:#7a5b00;border:1px solid #f0d98c;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:16px;}
+:root:not([data-theme="light"]) .banner,:root[data-theme="dark"] .banner{background:#3a3418;color:#e8d68a;border-color:#5b4f22;}
+h2{font-size:16px;margin:0 0 12px;font-weight:600;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;}
+.rental{cursor:pointer;}
+.rental:hover{border-color:var(--brand);}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.row b{font-size:15px;}
+.row .sub{font-size:12px;color:var(--sub);white-space:nowrap;}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
+.chip{font-size:11px;padding:3px 9px;border-radius:999px;background:var(--line);color:var(--sub);}
+.chip.good{background:#e2f5ea;color:var(--good);}
+.chip.pending{background:#fbf0d9;color:var(--pending);}
+:root:not([data-theme="light"]) .chip.good,:root[data-theme="dark"] .chip.good{background:#173a29;color:#7ad3a3;}
+:root:not([data-theme="light"]) .chip.pending,:root[data-theme="dark"] .chip.pending{background:#4a3a12;color:#e8c66a;}
+.step{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);}
+.step div b{font-size:14px;display:block;}
+.step div span{font-size:12px;color:var(--sub);}
+button{background:var(--brand);color:var(--brand-ink);border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;}
+button.ghost{background:transparent;color:var(--brand);border:1px solid var(--brand);}
+button[disabled]{opacity:.4;cursor:default;}
+.back{font-size:13px;color:var(--brand);cursor:pointer;display:inline-block;margin-bottom:14px;}
+.item{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--card);}
+.item b{font-size:13px;display:block;margin-bottom:9px;font-weight:600;}
+.toggle{display:flex;gap:6px;margin-bottom:8px;}
+.toggle button{flex:1;background:var(--line);color:var(--ink);font-weight:500;}
+.toggle button.sel-good{background:var(--good);color:#fff;}
+.toggle button.sel-bad{background:var(--bad);color:#fff;}
+input[type=text]{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font-size:13px;}
+input[type=text]:focus,button:focus-visible{outline:2px solid var(--brand);outline-offset:1px;}
+.screen{display:none;}
+.screen.active{display:block;}
+footer{text-align:center;font-size:11px;color:var(--sub);padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));}
+</style>
 </head>
 <body>
+<header><b>CDM Rental Docs</b><span>v0.2 — Path A pilot</span></header>
+<div class="wrap">
 
-  <a href="#main" class="skip-link">Skip to content</a>
+<div class="banner">Rentals below are live from your Sheet. Rental detail &amp; the inspection form are still a look-and-feel preview.</div>
 
-  <header class="site-header">
-    <nav class="nav" aria-label="Primary">
-      <a href="index.html" class="brand">
-        <svg width="26" height="26" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
-          <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
-        </svg>
-        Reysourcez Enterprise
-      </a>
-      <ul class="nav-links">
-        <li><a href="index.html" aria-current="page">Home</a></li>
-        <li><a href="about.html">About</a></li>
-        <li><a href="services.html">Services</a></li>
-        <li class="nav-dropdown">
-          <button type="button" class="nav-dropdown-toggle" aria-expanded="false" aria-haspopup="true">Business Analysis <i class="nav-dropdown-caret" aria-hidden="true"></i></button>
-          <ul class="nav-dropdown-menu"><!-- populated by nav-config.js --></ul>
-        </li>
-        <li><a href="contact.html">Contact</a></li>
-      </ul>
-    </nav>
-  </header>
+<div id="dash" class="screen active">
+  <h2>Rentals</h2>
+  <div id="dashList" class="card">Loading…</div>
+</div>
 
-  <main id="main">
+<div id="detail" class="screen">
+  <span class="back" onclick="showScreen('dash')">← Rentals</span>
+  <h2 id="detailTitle">—</h2>
+  <div class="step"><div><b>Delivery Note / GRN</b><span>Preview only</span></div><button class="ghost">View PDF</button></div>
+  <div class="step"><div><b>Pre-Rental Inspection</b><span>Preview only</span></div><button class="ghost">View PDF</button></div>
+  <div class="step"><div><b>Post-Rental Inspection</b><span>Preview only</span></div><button onclick="showScreen('inspect')">Start</button></div>
+  <div class="step"><div><b>Damage &amp; Report</b><span>Preview only</span></div><button class="ghost" disabled>Generate</button></div>
+  <div class="step"><div><b>HIRARC</b><span>Preview only</span></div><button class="ghost">Prepare</button></div>
+  <div class="step"><div><b>Contract Signature</b><span>Preview only</span></div><button class="ghost">Send links</button></div>
+</div>
 
-    <!-- ============ HERO ============ -->
-    <section class="hero">
-      <div class="wrap hero-grid">
-        <div>
-          <span class="eyebrow">Est. 2022 · Sarawak, Malaysia</span>
-          <h1>Creative and concise, complete and complimentary.</h1>
-          <p class="lead">Reysourcez Enterprise assists in creating efficient and affordable solutions — done properly, explained clearly, delivered on schedule.</p>
-          <div class="hero-actions">
-            <a href="services.html" class="btn btn-primary">See our services</a>
-            <a href="contact.html" class="btn btn-secondary">Get in touch</a>
-          </div>
-        </div>
-        <div class="hero-mark">
-          <svg width="180" height="180" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="5" y="5" width="30" height="30" rx="7" fill="#1F6F5C"/>
-            <text x="20" y="29" font-family="Fraunces, Georgia, serif" font-size="20" font-weight="700" fill="#FFFFFF" text-anchor="middle">R</text>
-          </svg>
-        </div>
-      </div>
+<div id="inspect" class="screen">
+  <span class="back" onclick="showScreen('detail')">← Back</span>
+  <h2>Post-Rental Inspection</h2>
+  <div class="item"><b>1. Bucket teeth</b>
+    <div class="toggle"><button onclick="pick(this,'good')">Good</button><button onclick="pick(this,'bad')">Damaged</button></div>
+    <input type="text" placeholder="Note (optional)">
+  </div>
+  <div class="item"><b>2. Hydraulic hoses</b>
+    <div class="toggle"><button onclick="pick(this,'good')">Good</button><button onclick="pick(this,'bad')">Damaged</button></div>
+    <input type="text" placeholder="Note (optional)">
+  </div>
+  <div class="item"><b>3. Stabiliser legs</b>
+    <div class="toggle"><button onclick="pick(this,'good')">Good</button><button onclick="pick(this,'bad')">Damaged</button></div>
+    <input type="text" placeholder="Note (optional)">
+  </div>
+  <button style="width:100%;margin-top:10px;" onclick="alert('Preview only — this would run Generate Post-Rental Inspection PDF for real.')">Generate PDF</button>
+</div>
 
-      <div class="wrap values">
-        <div class="value">
-          <svg class="mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
-            <path d="M8 12l3 3 5-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <h3>Local, International &amp; Reachable</h3>
-          <p>Based in Sarawak, Malaysia.</p>
-        </div>
-        <div class="value">
-          <svg class="mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <rect x="3" y="7" width="18" height="13" rx="2" stroke="currentColor" stroke-width="2"/>
-            <path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2" stroke="currentColor" stroke-width="2"/>
-          </svg>
-          <h3>Upfront pricing</h3>
-          <p>You'll know the cost before we start — no surprise invoices later.</p>
-        </div>
-        <div class="value">
-          <svg class="mark" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
-          </svg>
-          <h3>Fast turnaround</h3>
-          <p>Most projects start within a week of getting in touch.</p>
-        </div>
-      </div>
-    </section>
+</div>
+<footer>CDM Rental Docs — Web Preview v0.2</footer>
+<script>
+let rentalsData = [];
 
-    <!-- ============ ABOUT TEASER ============ -->
-    <section class="section section-alt">
-      <div class="wrap about-teaser">
-        <div>
-          <span class="eyebrow">About us</span>
-          <h2>A family run business by family for family</h2>
-          <p>As a founder, I have always seen some family, community struggle in getting jobs and in this financial slump environment, that is ever more difficult. Creating this company is a step towards making jobs more accessible for my family and our community.</p>
-          <a href="about.html" class="btn btn-secondary">Read our story</a>
-        </div>
-        <div class="portrait portrait-wide" aria-hidden="true"></div>
-      </div>
-    </section>
-
-    <!-- ============ CLOSING CTA ============ -->
-    <section class="cta-band">
-      <div class="wrap">
-        <h2>Have a project in mind?</h2>
-        <p>Tell us what you're working on — we'll get back to you within 1-3 business days.</p>
-        <a href="contact.html" class="btn btn-primary">Contact Reysourcez Enterprise</a>
-      </div>
-    </section>
-
-  </main>
-
-  <footer class="site-footer">
-    <div class="wrap">
-      <div class="footer-grid">
-        <div>
-          <div class="footer-brand">Reysourcez Enterprise</div>
-          <p class="footer-tagline">We focus on providing catered solutions to your dilemmas.</p>
-        </div>
-        <div class="footer-links">
-          <div class="footer-col">
-            <h4>Site</h4>
-            <ul>
-              <li><a href="index.html">Home</a></li>
-              <li><a href="about.html">About</a></li>
-              <li><a href="services.html">Services</a></li>
-              <li><a href="menu-calculator.html">Menu Calculator</a></li>
-              <li><a href="overhead-manpower-calculator.html">Overhead &amp; Manpower</a></li>
-              <li><a href="interactive-costing-analysis.html">Costing Analysis</a></li>
-              <li><a href="printing-calculator.html">Printing Calculator</a></li>
-               <li><a href="margin-audit-calculator.html">Margin Analysis</a></li>
-              <li><a href="food-worth-calculator.html">Food Worth</a></li>
-              <li><a href="crypto-radar.html">Crypto Radar</a></li>
-              <li><a href="rental-calculator.html">Rental Calculator</a></li>
-              <li><a href="market-radar.html">Market Radar</a></li>
-               <li><a href="cost-structure-checker.html">Cost Structure Checker</a></li>
-              <li><a href="qr-listing-creator.html">QR Listing Creator</a></li>
-               <li><a href="sop-creator.html">SOP Creator</a></li>
-              <li><a href="project-plan-architect.html">Project Planner</a></li>
-              <li><a href="form-scanner.html">Form Creator</a></li>
-              <li><a href="qr-creator.html">QR Creator</a></li>
-              <li><a href="contact.html">Contact</a></li>
-            </ul>
-          </div>
-          <div class="footer-col">
-            <h4>Contact</h4>
-            <ul>
-              <li><a href="mailto:reysourcez.ent@gmail.com">reysourcez.ent@gmail.com</a></li>
-            </ul>
-          </div>
-        </div>
-      </div>
-      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
-    </div>
-  </footer>
-
-  <script src="site-config.js?v=1" defer></script>
-  <script src="nav-config.js?v=1" defer></script>
-  <script src="nav-dropdown.js?v=1" defer></script>
-
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
+  document.getElementById(id).classList.add('active');
+  window.scrollTo(0,0);
+}
+function pick(btn,val){
+  var row = btn.parentElement.querySelectorAll('button');
+  row.forEach(function(b){b.classList.remove('sel-good','sel-bad');});
+  btn.classList.add(val==='good'?'sel-good':'sel-bad');
+}
+function esc(s){
+  return String(s==null?'':s).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
+}
+function chip(label, done){
+  return '<span class="chip ' + (done?'good':'pending') + '">' + label + (done?' ✓':'') + '</span>';
+}
+function renderRentals(){
+  const list = document.getElementById('dashList');
+  if (!rentalsData.length){ list.className='card'; list.textContent='No rentals found.'; return; }
+  list.outerHTML = '<div id="dashList">' + rentalsData.map(function(r,i){
+    return '<div class="card rental" onclick="openRental('+i+')">' +
+      '<div class="row"><b>'+esc(r.id)+' · '+esc(r.assetModel)+'</b><span class="sub">'+esc(r.customer)+'</span></div>' +
+      '<div class="chips">'+chip('Delivery',r.flags.delivery)+chip('Pre-Insp',r.flags.preInsp)+chip('Post-Insp',r.flags.postInsp)+chip('HIRARC',r.flags.hirarc)+'</div>' +
+    '</div>';
+  }).join('') + '</div>';
+}
+function openRental(i){
+  const r = rentalsData[i];
+  document.getElementById('detailTitle').textContent = r.id + ' · ' + r.assetModel;
+  showScreen('detail');
+}
+async function loadRentals(){
+  const list = document.getElementById('dashList');
+  try {
+    const res = await fetch('/api/rentals');
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    rentalsData = json.rentals || [];
+    renderRentals();
+  } catch (err) {
+    list.className = 'card';
+    list.textContent = 'Could not load rentals from the Sheet — ' + err.message;
+  }
+}
+loadRentals();
+</script>
 </body>
 </html>
