@@ -1,160 +1,121 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>CDM Rental Docs</title>
-<style>
-:root{
-  box-sizing:border-box;
-  padding-top:env(safe-area-inset-top,0px);
-  padding-bottom:env(safe-area-inset-bottom,0px);
-  --bg:#f5f6f8; --card:#ffffff; --ink:#1c1f26; --sub:#6b7280;
-  --line:#e3e5e9; --brand:#2F5496; --brand-ink:#ffffff;
-  --good:#1e8e5a; --bad:#c0392b; --pending:#b8860b;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#14161b; --card:#1d2027; --ink:#eceef1; --sub:#9aa1ab;
-    --line:#2b2f38; --brand:#7ea1d6; --brand-ink:#0d1117;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#14161b; --card:#1d2027; --ink:#eceef1; --sub:#9aa1ab;
-  --line:#2b2f38; --brand:#7ea1d6; --brand-ink:#0d1117;
-}
-html{scroll-padding-top:env(safe-area-inset-top,0px);}
-*{box-sizing:border-box;}
-body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);}
-header{background:var(--brand);color:var(--brand-ink);padding:14px 16px calc(14px + env(safe-area-inset-top,0px));display:flex;align-items:baseline;gap:10px;}
-header b{font-size:16px;}
-header span{font-size:12px;opacity:.85;}
-.wrap{max-width:640px;margin:0 auto;padding:16px;}
-.banner{background:#fff7e0;color:#7a5b00;border:1px solid #f0d98c;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:16px;}
-:root:not([data-theme="light"]) .banner,:root[data-theme="dark"] .banner{background:#3a3418;color:#e8d68a;border-color:#5b4f22;}
-h2{font-size:16px;margin:0 0 12px;font-weight:600;}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:10px;}
-.rental{cursor:pointer;}
-.rental:hover{border-color:var(--brand);}
-.row{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
-.row b{font-size:15px;}
-.row .sub{font-size:12px;color:var(--sub);white-space:nowrap;}
-.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
-.chip{font-size:11px;padding:3px 9px;border-radius:999px;background:var(--line);color:var(--sub);}
-.chip.good{background:#e2f5ea;color:var(--good);}
-.chip.pending{background:#fbf0d9;color:var(--pending);}
-:root:not([data-theme="light"]) .chip.good,:root[data-theme="dark"] .chip.good{background:#173a29;color:#7ad3a3;}
-:root:not([data-theme="light"]) .chip.pending,:root[data-theme="dark"] .chip.pending{background:#4a3a12;color:#e8c66a;}
-.step{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--card);}
-.step div b{font-size:14px;display:block;}
-.step div span{font-size:12px;color:var(--sub);}
-button{background:var(--brand);color:var(--brand-ink);border:none;border-radius:7px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;}
-button.ghost{background:transparent;color:var(--brand);border:1px solid var(--brand);}
-button[disabled]{opacity:.4;cursor:default;}
-.back{font-size:13px;color:var(--brand);cursor:pointer;display:inline-block;margin-bottom:14px;}
-.item{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--card);}
-.item b{font-size:13px;display:block;margin-bottom:9px;font-weight:600;}
-.toggle{display:flex;gap:6px;margin-bottom:8px;}
-.toggle button{flex:1;background:var(--line);color:var(--ink);font-weight:500;}
-.toggle button.sel-good{background:var(--good);color:#fff;}
-.toggle button.sel-bad{background:var(--bad);color:#fff;}
-input[type=text]{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font-size:13px;}
-input[type=text]:focus,button:focus-visible{outline:2px solid var(--brand);outline-offset:1px;}
-.screen{display:none;}
-.screen.active{display:block;}
-footer{text-align:center;font-size:11px;color:var(--sub);padding:18px 16px calc(18px + env(safe-area-inset-bottom,0px));}
-</style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Luno Altcoin Bot — Dashboard</title>
+<link rel="stylesheet" href="/dashboard.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 </head>
 <body>
-<header><b>CDM Rental Docs</b><span>v0.2 — Path A pilot</span></header>
-<div class="wrap">
+  <div class="wrap">
 
-<div class="banner">Rentals below are live from your Sheet. Rental detail &amp; the inspection form are still a look-and-feel preview.</div>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <div>
+          <h1>Luno Altcoin Bot</h1>
+          <p class="brand-sub">always-on, all-weather rotation</p>
+        </div>
+      </div>
+      <div class="status-cluster">
+        <span id="status-pill" class="pill pill-muted">connecting…</span>
+        <span id="cycle-info" class="muted small"></span>
+      </div>
+    </header>
 
-<div id="dash" class="screen active">
-  <h2>Rentals</h2>
-  <div id="dashList" class="card">Loading…</div>
-</div>
+    <div id="paper-banner" class="paper-banner" style="display:none">
+      <span class="paper-banner-dot"></span>
+      PAPER TRADING — real Luno prices, simulated trades, zero real money at risk
+    </div>
 
-<div id="detail" class="screen">
-  <span class="back" onclick="showScreen('dash')">← Rentals</span>
-  <h2 id="detailTitle">—</h2>
-  <div class="step"><div><b>Delivery Note / GRN</b><span>Preview only</span></div><button class="ghost">View PDF</button></div>
-  <div class="step"><div><b>Pre-Rental Inspection</b><span>Preview only</span></div><button class="ghost">View PDF</button></div>
-  <div class="step"><div><b>Post-Rental Inspection</b><span>Preview only</span></div><button onclick="showScreen('inspect')">Start</button></div>
-  <div class="step"><div><b>Damage &amp; Report</b><span>Preview only</span></div><button class="ghost" disabled>Generate</button></div>
-  <div class="step"><div><b>HIRARC</b><span>Preview only</span></div><button class="ghost">Prepare</button></div>
-  <div class="step"><div><b>Contract Signature</b><span>Preview only</span></div><button class="ghost">Send links</button></div>
-</div>
+    <section class="regime-card card">
+      <div class="regime-header">
+        <h2>Market Regime</h2>
+        <span id="regime-badge" class="pill">—</span>
+      </div>
+      <div class="regime-gauge">
+        <svg viewBox="0 0 320 60" class="gauge-svg">
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="var(--accent-rose)" />
+              <stop offset="50%" stop-color="var(--text-tertiary)" />
+              <stop offset="100%" stop-color="var(--accent-gold)" />
+            </linearGradient>
+          </defs>
+          <rect x="10" y="24" width="300" height="8" rx="4" fill="url(#gaugeGrad)" opacity="0.55" />
+          <g id="gauge-marker" transform="translate(10,0)">
+            <line x1="0" y1="10" x2="0" y2="46" stroke="var(--text-primary)" stroke-width="3" stroke-linecap="round" />
+            <circle cx="0" cy="10" r="5" fill="var(--text-primary)" />
+          </g>
+          <text x="10" y="58" class="gauge-label" text-anchor="start">RISK-OFF</text>
+          <text x="160" y="58" class="gauge-label" text-anchor="middle">NEUTRAL</text>
+          <text x="310" y="58" class="gauge-label" text-anchor="end">RISK-ON</text>
+        </svg>
+      </div>
+      <p id="regime-detail" class="muted small"></p>
+      <div class="regime-dials">
+        <div><span class="dial-label">Buy threshold this cycle</span><span id="dial-threshold" class="mono">—</span></div>
+        <div><span class="dial-label">Position size this cycle</span><span id="dial-size" class="mono">—</span></div>
+        <div><span class="dial-label">BTC trend</span><span id="dial-btc" class="mono">—</span></div>
+        <div><span class="dial-label">Breadth beating BTC</span><span id="dial-breadth" class="mono">—</span></div>
+      </div>
+    </section>
 
-<div id="inspect" class="screen">
-  <span class="back" onclick="showScreen('detail')">← Back</span>
-  <h2>Post-Rental Inspection</h2>
-  <div class="item"><b>1. Bucket teeth</b>
-    <div class="toggle"><button onclick="pick(this,'good')">Good</button><button onclick="pick(this,'bad')">Damaged</button></div>
-    <input type="text" placeholder="Note (optional)">
+    <section class="stat-row">
+      <div class="stat card">
+        <span class="stat-label">Available balance</span>
+        <span id="stat-balance" class="stat-value mono">—</span>
+      </div>
+      <div class="stat card">
+        <span class="stat-label">Open positions</span>
+        <span id="stat-positions" class="stat-value mono">—</span>
+      </div>
+      <div class="stat card">
+        <span class="stat-label">Realised P&amp;L (all trades)</span>
+        <span id="stat-pnl" class="stat-value mono">—</span>
+      </div>
+      <div class="stat card">
+        <span class="stat-label">Win rate</span>
+        <span id="stat-winrate" class="stat-value mono">—</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Open Positions</h2>
+      <div id="positions-list" class="positions-list">
+        <p class="empty-state">No open positions right now — the bot is scanning for the next one.</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="section-header">
+        <h2>Opportunities right now</h2>
+        <span class="muted small">top scores this cycle, out of every eligible pair</span>
+      </div>
+      <div id="scores-list" class="scores-list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Trade History</h2>
+      <div id="trades-list" class="trades-list">
+        <p class="empty-state">No closed trades yet.</p>
+      </div>
+    </section>
+
+    <section class="card settings-card">
+      <h2>Current Settings</h2>
+      <p class="muted small">Edit these in <code>.env</code> — see <code>SETTINGS.xlsx</code> or <code>ARCHITECTURE.md</code> for what each one means.</p>
+      <div id="settings-grid" class="settings-grid mono"></div>
+    </section>
+
+    <footer class="foot muted small">
+      <span id="last-error"></span>
+      <span>Luno Altcoin Bot v2 — this is not financial advice.</span>
+    </footer>
   </div>
-  <div class="item"><b>2. Hydraulic hoses</b>
-    <div class="toggle"><button onclick="pick(this,'good')">Good</button><button onclick="pick(this,'bad')">Damaged</button></div>
-    <input type="text" placeholder="Note (optional)">
-  </div>
-  <div class="item"><b>3. Stabiliser legs</b>
-    <div class="toggle"><button onclick="pick(this,'good')">Good</button><button onclick="pick(this,'bad')">Damaged</button></div>
-    <input type="text" placeholder="Note (optional)">
-  </div>
-  <button style="width:100%;margin-top:10px;" onclick="alert('Preview only — this would run Generate Post-Rental Inspection PDF for real.')">Generate PDF</button>
-</div>
 
-</div>
-<footer>CDM Rental Docs — Web Preview v0.2</footer>
-<script>
-let rentalsData = [];
-
-function showScreen(id){
-  document.querySelectorAll('.screen').forEach(function(s){s.classList.remove('active');});
-  document.getElementById(id).classList.add('active');
-  window.scrollTo(0,0);
-}
-function pick(btn,val){
-  var row = btn.parentElement.querySelectorAll('button');
-  row.forEach(function(b){b.classList.remove('sel-good','sel-bad');});
-  btn.classList.add(val==='good'?'sel-good':'sel-bad');
-}
-function esc(s){
-  return String(s==null?'':s).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});
-}
-function chip(label, done){
-  return '<span class="chip ' + (done?'good':'pending') + '">' + label + (done?' ✓':'') + '</span>';
-}
-function renderRentals(){
-  const list = document.getElementById('dashList');
-  if (!rentalsData.length){ list.className='card'; list.textContent='No rentals found.'; return; }
-  list.outerHTML = '<div id="dashList">' + rentalsData.map(function(r,i){
-    return '<div class="card rental" onclick="openRental('+i+')">' +
-      '<div class="row"><b>'+esc(r.id)+' · '+esc(r.assetModel)+'</b><span class="sub">'+esc(r.customer)+'</span></div>' +
-      '<div class="chips">'+chip('Delivery',r.flags.delivery)+chip('Pre-Insp',r.flags.preInsp)+chip('Post-Insp',r.flags.postInsp)+chip('HIRARC',r.flags.hirarc)+'</div>' +
-    '</div>';
-  }).join('') + '</div>';
-}
-function openRental(i){
-  const r = rentalsData[i];
-  document.getElementById('detailTitle').textContent = r.id + ' · ' + r.assetModel;
-  showScreen('detail');
-}
-async function loadRentals(){
-  const list = document.getElementById('dashList');
-  try {
-    const res = await fetch('/api/rentals');
-    const json = await res.json();
-    if (json.error) throw new Error(json.error);
-    rentalsData = json.rentals || [];
-    renderRentals();
-  } catch (err) {
-    list.className = 'card';
-    list.textContent = 'Could not load rentals from the Sheet — ' + err.message;
-  }
-}
-loadRentals();
-</script>
+  <script src="/dashboard.js"></script>
 </body>
 </html>
