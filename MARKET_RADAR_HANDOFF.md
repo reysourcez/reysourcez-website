@@ -1,5 +1,5 @@
-<!-- Market Radar — AI Continuity Dossier — v1.6.0 (2026-09-24). Generated FROM the shipped code (function/constant indexes were extracted from the files, not recalled). -->
-# Market Radar — AI Continuity Dossier (v1.6.0, 2026-09-24)
+<!-- Market Radar — AI Continuity Dossier — v1.6.1 (2026-09-25). Generated FROM the shipped code (function/constant indexes were extracted from the files, not recalled). -->
+# Market Radar — AI Continuity Dossier (v1.6.1, 2026-09-25)
 
 **Audience:** a brand-new AI session that must continue this project without any chat history.
 **Read order:** this file → `MARKET_RADAR_SETUP_AND_GLOSSARY.md` (history, deploy steps, jargon) → `market-radar-settings-reference.xlsx` (every tunable value) → the three code files.
@@ -39,9 +39,9 @@ A second top-level mode, chosen on a new `#mr-mode-select` screen shown before t
 
 | File | Version | Lives at | Deployed by |
 |---|---|---|---|
-| `market-radar.html` | 1.6.0 (mode-select screen + Market Gap panel added to markup this round, plus the nav retrofit — see NAV_RETROFIT_HOWTO.md) | site root, GitHub Pages | commit/upload; `<script src="market-radar.js?v=20260924a">` is the cache-buster — change it on every JS release |
-| `market-radar.js` | client 1.6.0 (`MR_CLIENT_VERSION`, first line) | site root | same |
-| `market-radar-proxy-worker.js` | Worker 1.6.0 (`WORKER_VERSION`, first line; returned in `meta.workerVersion`) | Cloudflare Worker, code pasted in dashboard "Edit code" | dashboard paste (no Wrangler) |
+| `market-radar.html` | 1.6.0 markup (comment notes v1.6.1 pairing — one clarifying sentence added to the Market Gap intro text, otherwise unchanged) | site root, GitHub Pages | commit/upload; `<script src="market-radar.js?v=20260925a">` is the cache-buster — change it on every JS release |
+| `market-radar.js` | client 1.6.1 (`MR_CLIENT_VERSION`, first line) | site root | same |
+| `market-radar-proxy-worker.js` | Worker 1.6.0 — unchanged this round (`WORKER_VERSION`, first line; returned in `meta.workerVersion`) | Cloudflare Worker, code pasted in dashboard "Edit code" | dashboard paste (no Wrangler) |
 | `market-radar-settings-reference.xlsx` | — (not regenerated this round — nothing in it is wrong, but it's now missing `DISTRICT_POPULATION_FALLBACK_2023` AND the two new categories/MAX_GAP_CUSTOM_ITEMS; see §13) | project | human-facing config sheet: current value, yellow "your value" column, code location, notes |
 | `MARKET_RADAR_SETUP_AND_GLOSSARY.md` | — | project | history, deploy steps, jargon |
 | `NAV_RETROFIT_HOWTO.md` | — | project | site-wide nav coordination doc; this page's own retrofit is now done (2026-09-24), see its own status list |
@@ -264,6 +264,8 @@ Classification rule (`categorize` in the Worker): **all `cuisine=*` pairs are ch
 10. A "custom" OSM tag counts as one of the ≤4 types and is sent alongside all standard types.
 11. Going back to "Edit answers" always resets every result-dependent element (score, cards, on-site read + its auto-weight, AI box, status line) to its pre-analysis state — a stale spot's numbers must never persist onto a new spot's screen (v1.5.2; the map needed no equivalent fix, since rebuilding it already did this by accident). **v1.6.0 extends this to mode-switching too** — `backToModeSelect()` runs the same reset before returning to `#mr-mode-select`.
 12. Market Gap's gap/thin/oversupplied read is ALWAYS relative to the other checklist categories found in the SAME catchment (`computeGapReads`), never against an external "a healthy area should have N of these" number — this project has no verified source for that kind of benchmark, and inventing one would break the same "never invent a number" rule that already governs the AI narration (§9's whole population saga is the cautionary tale for why). Zero count is the one absolute case ("Gap" = none found), safe because it needs no benchmark at all.
+13. `initMap()` always resets `pinMarker = null` before rebuilding the Leaflet map (v1.6.1) — the marker object from the OLD map doesn't survive `map.remove()` usefully (it's detached, not destroyed), so `placePin()` must be forced to create a fresh one bound to whichever map is actually on screen, or it silently updates an orphaned marker's coordinates with no visible effect.
+14. `applyModeVisibility()` force-hides the INACTIVE mode's entire output every time it runs (v1.6.1), not just on the assumption that `resetAnalysisState()` already ran — whichever mode is active, the other mode's results panel must never be visible on `#mr-analysis`, enforced structurally rather than by call-order convention.
 
 ## 11. Known limitations / unverified as of 2026-09-22
 
@@ -287,6 +289,7 @@ Method: Node ≥ 20 + Playwright/Chromium. Serve `market-radar.html`/`.js` at `h
 - **v1.5.1 gap, not yet closed:** no test covers the new fallback path (both DOSM endpoints failing → `DISTRICT_POPULATION_FALLBACK_2023` value returned, correct provenance note text, real API failure still shown for a district NOT in the table). Should reuse the existing "Overpass down ± Geoapify key" test's shape (mock both DOSM endpoints failing, assert the pinned value and note) — mocks for this already exist (`Data Catalogue [] for population_district`); only the OpenDOSM-side mock needs updating from empty-response to an HTTP-400 body to match what's actually confirmed live now.
 - **v1.5.2 gap, not yet closed:** no test covers `resetAnalysisState()` — run an analysis, click "Edit answers," and assert `lastAnalysis` is `null`, the score banner/result cards/field-note/vacancy/weights panels are all `hidden`, the on-site `<select>` is back to `""`, and (if a read had been picked) the weights are back to their pre-read values before the next "Analyze" click.
 - **v1.6.0 gap, not yet closed:** nothing covers the new mode split at all — needs, at minimum: page opens on `#mr-mode-select`, not the wizard; each mode button leads to the wizard and eventually the right results panel (`#mr-result-cards`+score vs. `#mr-gap-results`) with the OTHER one staying hidden; `goBack()` at wizard step 0 returns to mode-select and resets state; `computeGapReads()` unit tests for the gap/thin/adequate/oversupplied thresholds (0 ⇒ gap; ≥2× catchment average ⇒ oversupplied; ≤0.4× ⇒ thin) including the zero-average edge case (no categories found at all); `getActiveCategories()` returns the ticked set in analysis mode and the full 13+custom checklist in gap mode; `gapInsightPrompt()` is picked over `insightPrompt()` when `snapshot.kind==='gap'`.
+- **v1.6.1 gap, not yet closed:** no test covers either fix specifically — needs: click the map, switch mode via wizard-back→mode-select→other mode, click the map again, assert exactly one marker exists and it's at the new coordinates (this is precisely the scenario that shipped broken and wasn't caught); complete a Gap analysis, switch to Analysis mode, run a fresh analyze, assert `#mr-gap-results` is `hidden` throughout.
 
 ## 13. Open items (KIV)
 
@@ -299,3 +302,6 @@ Refresh `DISTRICT_POPULATION_FALLBACK_2023` about once a year (or sooner if DOSM
 - Verify (don't guess) whether `pharmacy`/`petrol` belong in `IOWRT_GROUPS`, and add real `GEOAPIFY_CATEGORY_MAP`/`GOOGLE_PLACE_TYPES` entries for both against each provider's current docs.
 - Decide whether to build a persona picker (household / small business / institution) for Market Gap's checklist. Research so far strongly supports the household list; business/institution research is thin — see `MARKET_RADAR_SETUP_AND_GLOSSARY.md`'s 2026-09-24 section before building this rather than guessing a checklist.
 - `market-radar-settings-reference.xlsx` needs a `MAX_GAP_CUSTOM_ITEMS` (8) row alongside the two new categories.
+
+**New from testing (2026-09-25):**
+- **A specific Petronas station showed on the map but Market Gap counted 0 petrol stations.** Not resolved — needs a live check this session couldn't do (no network access to query OSM directly). Leading theory: it sits just outside the actual counted catchment shape even though it's inside the wider area the map happens to display (`fitBounds` padding, and a real isochrone's irregular shape both mean "visible on screen" ≠ "inside the tested polygon") — no red competitor marker was reported AT that location, which is consistent with this theory rather than a miscount. Alternative: this specific OSM node's own tagging doesn't include `amenity=fuel`. Check the point directly on openstreetmap.org to tell which.

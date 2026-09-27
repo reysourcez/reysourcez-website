@@ -1,4 +1,4 @@
-// Market Radar client logic — v1.6.0 (2026-09-24). What changed: this file and market-radar-proxy-worker.js — added a mode-select screen (Market Analysis vs. the new Market Gap checklist mode), two new standard categories (pharmacy, petrol station), and the Market Gap results panel. See MARKET_RADAR_SETUP_AND_GLOSSARY.md for the full writeup and research behind the checklist. How it fits together: MARKET_RADAR_HANDOFF.md.
+// Market Radar client logic — v1.6.1 (2026-09-25). What changed: this file only, three fixes — (1) the map pin's red marker stopped appearing after the map re-initialized a second time (any "Edit answers" cycle or mode switch); (2) a completed Market Gap analysis's checklist table could stay visible after switching to Market Analysis and running a fresh analyze; (3) the Market Gap "Reach" figure read as if it meant a monthly/daily throughput — it's a static population-per-shop ratio with no time dimension, rewording + a locale-pinned number format fixes the ambiguity. No Worker change, no redeploy needed this round. See MARKET_RADAR_SETUP_AND_GLOSSARY.md. How it fits together: MARKET_RADAR_HANDOFF.md.
 /* ============================================================
    Market Radar
    Two deliberate exceptions to this site's usual zero-dependency
@@ -80,7 +80,7 @@
    tag added here.
    ============================================================ */
 
-const MR_CLIENT_VERSION = '1.6.0';
+const MR_CLIENT_VERSION = '1.6.1';
 console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' — build 2026-09-22');
 
 /* ================= CONFIG =================
@@ -384,13 +384,31 @@ function finishWizard() {
 
 // ADDED 2026-09-24: toggles which INPUT area shows inside the shared analysis screen — the
 // category-ticking fieldset for Market Analysis, or the checklist intro/custom-add row for Market
-// Gap. Output-side visibility (which results panel renders) is handled separately in
-// resetAnalysisState() and renderScore()/renderGapResults(), since those only matter after a real
-// analysis — this only concerns the pre-Analyze input state.
+// Gap.
+// HARDENED 2026-09-25: also force-hides the OTHER mode's output panels every time this runs, rather
+// than trusting that resetAnalysisState() already cleaned them up. Reported bug: after a completed
+// Market Gap analysis, switching to Market Analysis and running a fresh analyze still showed the old
+// gap table underneath the new score. resetAnalysisState() (called by editAnswers()/
+// backToModeSelect() on the way here) already sets #mr-gap-results.hidden = true, so this SHOULD
+// have been unreachable — but the fix here doesn't depend on figuring out why that path didn't run:
+// every entry into this screen now re-asserts which output panels the ACTIVE mode is even allowed to
+// show, so a stale panel from the other mode can never survive regardless of how this screen was
+// reached (a caching mismatch between an old JS file and a new HTML file could produce exactly this
+// symptom too — if this keeps happening after redeploying both files together, that's worth ruling
+// out next).
 function applyModeVisibility() {
   const isGap = currentMode === 'gap';
   document.getElementById('mr-category-group').hidden = isGap;
   document.getElementById('mr-gap-intro').hidden = !isGap;
+  if (isGap) {
+    document.getElementById('mr-score-banner').hidden = true;
+    document.getElementById('mr-result-cards').hidden = true;
+    document.getElementById('mr-field-note-panel').hidden = true;
+    document.getElementById('mr-vacancy-panel').hidden = true;
+    document.getElementById('mr-weights-panel').hidden = true;
+  } else {
+    document.getElementById('mr-gap-results').hidden = true;
+  }
 }
 
 // FIXED, 2026-09-23: editAnswers() used to only swap which section was visible — it never reset
@@ -573,8 +591,18 @@ let map, pinMarker, catchmentLayer, heatLayer;
 let poiMarkers = [];
 let anchorMarkers = [];
 
+// FIXED, 2026-09-25: map.remove() destroys the Leaflet map instance and detaches every layer from
+// it, but it does NOT clear this file's own pinMarker reference — the marker object still exists in
+// memory, just orphaned from any map. placePin() below only creates a NEW marker when pinMarker is
+// falsy; left unreset, every initMap() call after the very first one would silently call
+// .setLatLng() on that orphaned marker instead — updating its coordinates with no visible effect,
+// since it isn't attached to the map actually on screen. This is why the pin coordinates always
+// updated correctly but the red marker itself stopped appearing after the first time the wizard (or
+// "Edit answers", or — since v1.6.0 — a mode switch) ran a second time. This bug predates the v1.6.0
+// mode split; the mode split just made initMap() run far more often, which is why it became obvious.
 function initMap(town) {
   if (map) map.remove();
+  pinMarker = null;
   map = L.map('mr-map').setView([town.lat, town.lng], 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -1160,11 +1188,16 @@ async function analyzeSpot() {
     // DISTRICT_POPULATION_FALLBACK_2023 in market-radar-proxy-worker.js) rather than a live query, and
     // that's exactly the kind of thing this page's own provenance-tag principle says should be shown,
     // not silently hidden behind a plain-looking number.
+    // FIXED, 2026-09-25: toLocaleString() with no locale argument renders using the VIEWER's own
+    // browser/OS locale, which could in principle use a different thousands separator than the comma
+    // shown when this was built and tested — pinning to 'en-MY' makes every large number on this page
+    // render identically for every visitor, matching the same fix applied to the Market Gap table's
+    // "Reach" column below.
     document.getElementById('mr-population-value').innerHTML = lastAnalysis.districtPopulation
-      ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString()) + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '')
+      ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString('en-MY')) + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '')
       : 'Not available' + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '');
     document.getElementById('mr-income-value').innerHTML = lastAnalysis.districtIncome
-      ? escapeHTML('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString() + '/mo')
+      ? escapeHTML('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString('en-MY') + '/mo')
       : 'Not available' + (demoNote('Income') ? provenanceHTML(demoNote('Income')) : '');
 
     renderStrengthCard();
@@ -1224,7 +1257,16 @@ function renderGapResults(catchment, data) {
   } else {
     const READ_LABELS = { gap: 'Gap', thin: 'Thin', adequate: 'Adequate', oversupplied: 'Oversupplied' };
     body.innerHTML = rows.map((r) => {
-      const reach = r.perShop ? '≈' + r.perShop.toLocaleString() + ' people/shop' : '—';
+      // FIXED, 2026-09-25: "≈255,100 people/shop" read to at least one person as a THROUGHPUT figure
+      // (as if each shop must serve 255,100 people a month/day/year) — it isn't one; there's no time
+      // dimension here at all, and no foot-traffic or purchase-frequency data behind this tool to
+      // support one. It's a plain, static ratio: this district's whole population (the same number
+      // Market Analysis mode shows) divided by how many of this type were found in THIS catchment —
+      // a rough "how many people share access to one of these" reading, nothing more. "N per ≈X"
+      // reads as that ratio without implying a rate; toLocaleString('en-MY') pins the thousands
+      // separator to a comma regardless of the viewer's own browser/OS locale, which otherwise could
+      // theoretically render some other way.
+      const reach = r.perShop ? '1 per ≈' + r.perShop.toLocaleString('en-MY') : '—';
       return `<tr><td>${escapeHTML(r.label)}</td><td>${r.count}</td><td>${reach}</td>`
         + `<td><span class="mr-gap-read is-${r.read}">${READ_LABELS[r.read]}</span></td></tr>`;
     }).join('');
@@ -1234,7 +1276,7 @@ function renderGapResults(catchment, data) {
   if (meta.poiSource) sourceParts.push('OSM via ' + meta.poiSource);
   if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
   document.getElementById('mr-gap-provenance').textContent = 'Estimated — ' + sourceParts.join(' · ')
-    + (lastAnalysis.districtPopulation ? ' · "people/shop" uses this district\u2019s DOSM population figure' : '');
+    + (lastAnalysis.districtPopulation ? ' · "Reach" = this district\u2019s whole DOSM population \u00f7 how many of that type are in this catchment \u2014 a rough district-wide availability ratio, not a monthly, daily, or catchment-only figure' : '');
   document.getElementById('mr-gap-results').hidden = false;
 }
 

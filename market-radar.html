@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Market Radar page v1.6.0 (2026-09-24) — mode-select screen (Market Analysis / Market Gap) and the Market Gap results panel added to markup this round — pairs with market-radar.js v1.6.0 and market-radar-proxy-worker.js v1.6.0 -->
+<!-- Market Radar page v1.6.0 (2026-09-24; page markup unchanged in v1.6.1 apart from one clarifying sentence in the Market Gap intro text) — pairs with market-radar.js v1.6.1 and market-radar-proxy-worker.js v1.6.0 -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -283,7 +283,7 @@
         </div>
 
         <div class="ica-results" id="mr-gap-results" hidden>
-          <p class="structure-note" style="margin-top:0;">Each row is a business type checked against everything found in this catchment. <strong>Gap</strong> = none found. <strong>Thin</strong> = well below the mix of everything else here. <strong>Oversupplied</strong> = well above it. This is a read of THIS spot's own mix, not a comparison to an outside "should have" number — see the note below the table.</p>
+          <p class="structure-note" style="margin-top:0;">Each row is a business type checked against everything found in this catchment. <strong>Gap</strong> = none found. <strong>Thin</strong> = well below the mix of everything else here. <strong>Oversupplied</strong> = well above it. This is a read of THIS spot's own mix, not a comparison to an outside "should have" number — see the note below the table. <strong>Reach</strong> is the district's whole population divided by how many of that type are here — a rough "how many people share one" figure, not a monthly or daily number.</p>
           <table class="mr-gap-table">
             <thead><tr><th>Business type</th><th>Found</th><th>Reach</th><th>Read</th></tr></thead>
             <tbody id="mr-gap-table-body"><!-- populated by JS --></tbody>
@@ -399,6 +399,6 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="market-radar.js?v=20260924a" defer></script>
+  <script src="market-radar.js?v=20260925a" defer></script>
 </body>
 </html>
