@@ -1,5 +1,9 @@
 <!DOCTYPE html>
-<!-- Market Radar page v1.6.0 (2026-09-24; page markup unchanged in v1.6.1 apart from one clarifying sentence in the Market Gap intro text) — pairs with market-radar.js v1.6.1 and market-radar-proxy-worker.js v1.6.0 -->
+<!-- Market Radar page v1.6.2 (2026-09-27) — aria-label added to 4 fields that only had a placeholder
+     (mr-vacancy-floor, mr-vacancy-detail, mr-gap-custom-key, mr-gap-custom-value — a DevTools "no
+     label associated with a form field" report), plus one new map-legend entry for the outside-
+     catchment diagnostic markers added in market-radar.js this round. No other markup changes —
+     pairs with market-radar.js v1.6.2 and market-radar-proxy-worker.js v1.6.0 (unchanged) -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -242,8 +246,8 @@
           <legend>Household-needs checklist <span class="toggle-hint">— every category below is checked at once, no ticking needed</span></legend>
           <p class="structure-note" style="margin:0 0 10px;">Checks the same business types as Market Analysis (now including pharmacy and petrol station), plus anything you add below. See <span class="toggle-hint">"Why these types?"</span> in the plain-English read for how this list was put together.</p>
           <div class="mr-vacancy-inputs">
-            <input type="text" id="mr-gap-custom-key" placeholder="OSM key, e.g. shop" maxlength="40" autocomplete="off">
-            <input type="text" id="mr-gap-custom-value" placeholder="OSM value, e.g. optician" maxlength="40" autocomplete="off">
+            <input type="text" id="mr-gap-custom-key" placeholder="OSM key, e.g. shop" maxlength="40" autocomplete="off" aria-label="OSM key">
+            <input type="text" id="mr-gap-custom-value" placeholder="OSM value, e.g. optician" maxlength="40" autocomplete="off" aria-label="OSM value">
             <button type="button" class="btn" id="mr-gap-custom-add">Add to checklist</button>
           </div>
           <p class="toggle-hint" style="margin:4px 0 0;">letters, numbers, _ : - only — e.g. shop=optician, office=insurance, shop=pet</p>
@@ -267,6 +271,7 @@
           <div id="mr-map"></div>
           <div class="mr-map-legend">
             <span><i class="mr-legend-dot" style="background:#C0392B;"></i>Competitor</span>
+            <span><i class="mr-legend-dot" style="background:#fff; border:2px dashed #8A8A8A;"></i>Found by OSM, outside this catchment</span>
             <span><i class="mr-legend-line" style="border-top-style:solid; border-color:var(--accent);"></i>Real catchment (isochrone)</span>
             <span><i class="mr-legend-line"></i>Estimated catchment (radius fallback)</span>
             <label><input type="checkbox" id="mr-heat-toggle" checked> Density heat map <span class="toggle-hint">(teal = a competitor nearby, red = 3+ overlapping in one spot)</span></label>
@@ -283,7 +288,7 @@
         </div>
 
         <div class="ica-results" id="mr-gap-results" hidden>
-          <p class="structure-note" style="margin-top:0;">Each row is a business type checked against everything found in this catchment. <strong>Gap</strong> = none found. <strong>Thin</strong> = well below the mix of everything else here. <strong>Oversupplied</strong> = well above it. This is a read of THIS spot's own mix, not a comparison to an outside "should have" number — see the note below the table. <strong>Reach</strong> is the district's whole population divided by how many of that type are here — a rough "how many people share one" figure, not a monthly or daily number.</p>
+          <p class="structure-note" style="margin-top:0;">Each row is a business type checked against everything found in this catchment. <strong>Gap</strong> = none found. <strong>Thin</strong> = well below the mix of everything else here. <strong>Oversupplied</strong> = well above it. This is a read of THIS spot's own mix, not a comparison to an outside "should have" number — see the note below the table. <strong>Reach</strong> is the district's whole population divided by how many of that type are here — a rough "how many people share one" figure, not a monthly or daily number. If a business type you can see nearby shows as a Gap, check the map above for a hollow grey marker at that spot — it means OSM has the place, just outside the shape actually being counted.</p>
           <table class="mr-gap-table">
             <thead><tr><th>Business type</th><th>Found</th><th>Reach</th><th>Read</th></tr></thead>
             <tbody id="mr-gap-table-body"><!-- populated by JS --></tbody>
@@ -324,7 +329,7 @@
             <span class="mr-provenance" id="mr-anchor-provenance">Official — OSM</span>
           </div>
           <div class="result-card">
-            <span class="result-label">National retail trend<span class="tooltip-icon" data-tooltip="DOSM's Wholesale & Retail Trade Index, year-on-year growth for the category's MSIC group. Two important limits: this is Malaysia-WIDE (not town or state-specific), and it only covers 4 of the 11 categories here — minimart, bakery, hardware, and fashion — since the index tracks MSIC Section G (wholesale/retail) only, not the food & beverage or services sections the other categories fall under.">?</span></span>
+            <span class="result-label">National retail trend<span class="tooltip-icon" data-tooltip="DOSM's Wholesale & Retail Trade Index, year-on-year growth for the category's MSIC group. Two important limits: this is Malaysia-WIDE (not town or state-specific), and it only covers 4 of the 13 categories here — minimart, bakery, hardware, and fashion — since the index tracks MSIC Section G (wholesale/retail) only, not the food & beverage or services sections the other categories fall under.">?</span></span>
             <span class="result-value" id="mr-trend-value">—</span>
             <span class="mr-provenance" id="mr-trend-provenance">Official — DOSM</span>
           </div>
@@ -347,14 +352,14 @@
         <div class="mr-field-note" id="mr-vacancy-panel" hidden>
           <label style="font-weight:600;">Vacant units you've spotted nearby <span class="toggle-hint">(optional — for your own notes and the PDF export)</span></label>
           <div class="mr-vacancy-inputs">
-            <select id="mr-vacancy-floor">
+            <select id="mr-vacancy-floor" aria-label="Floor">
               <option>Ground floor</option>
               <option>1st floor</option>
               <option>2nd floor</option>
               <option>3rd floor</option>
               <option>Other / whole shoplot</option>
             </select>
-            <input type="text" id="mr-vacancy-detail" placeholder="e.g. ~600 sqft, asking RM1,800/mo, agent 012-xxx" maxlength="140">
+            <input type="text" id="mr-vacancy-detail" placeholder="e.g. ~600 sqft, asking RM1,800/mo, agent 012-xxx" maxlength="140" aria-label="Vacancy notes">
             <button type="button" class="btn" id="mr-vacancy-add">Add</button>
           </div>
           <ul class="mr-vacancy-list" id="mr-vacancy-list"></ul>
@@ -399,6 +404,6 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="market-radar.js?v=20260925a" defer></script>
+  <script src="market-radar.js?v=20260927a" defer></script>
 </body>
 </html>

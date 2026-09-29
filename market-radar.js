@@ -1,4 +1,14 @@
-// Market Radar client logic — v1.6.1 (2026-09-25). What changed: this file only, three fixes — (1) the map pin's red marker stopped appearing after the map re-initialized a second time (any "Edit answers" cycle or mode switch); (2) a completed Market Gap analysis's checklist table could stay visible after switching to Market Analysis and running a fresh analyze; (3) the Market Gap "Reach" figure read as if it meant a monthly/daily throughput — it's a static population-per-shop ratio with no time dimension, rewording + a locale-pinned number format fixes the ambiguity. No Worker change, no redeploy needed this round. See MARKET_RADAR_SETUP_AND_GLOSSARY.md. How it fits together: MARKET_RADAR_HANDOFF.md.
+// Market Radar client logic — v1.6.2 (2026-09-27). What changed: this file only — (1) panel
+// visibility for the two modes now goes through one setPanelHidden() helper that sets BOTH the
+// native `hidden` attribute AND an inline style.display, and applyModeVisibility() is now ALSO
+// called at the top of analyzeSpot() (not just once at wizard-finish) — see the mode-leeching note
+// below; (2) new diagnostic markers: a POI Overpass found that matches an active category but sits
+// OUTSIDE the tested catchment shape now draws as a hollow grey dot, so "found but outside your
+// catchment" is visually distinguishable from "Overpass never found it" — see the pharmacy/petrol
+// note below; (3) four form fields that only had a placeholder (no accessible name) now carry an
+// aria-label (mr-vacancy-floor, mr-vacancy-detail, mr-gap-custom-key, mr-gap-custom-value — set in
+// market-radar.html this round; JS unaffected by that one). No Worker change. See MARKET_RADAR_SETUP_AND_GLOSSARY.md for the full writeup and
+// what is and isn't confirmed. How it fits together: MARKET_RADAR_HANDOFF.md.
 /* ============================================================
    Market Radar
    Two deliberate exceptions to this site's usual zero-dependency
@@ -57,7 +67,7 @@
    MARKET_RADAR_SETUP_AND_GLOSSARY.md for the fuller list):
      - AppSheet field-survey ingestion, as a fourth "Observed" layer.
      - Full MSIC-code category alignment — CATEGORY_TAGS below covers
-       the ~11 categories likeliest to matter for a first F&B/retail
+       the ~13 categories likeliest to matter for a first F&B/retail
        business, not the full official taxonomy.
      - Momentum / trend tracking. Needs repeated snapshots taken
        weeks apart to mean anything; the momentum sub-score sits at
@@ -68,6 +78,9 @@
        those two files don't recognise a 'market-radar' source yet.
        That's a small, contained edit flagged in the setup doc rather
        than made here, since it touches files this session didn't own.
+     - A visible toggle for the new "outside catchment" markers below,
+       if they turn out to clutter the map on a dense search — not
+       needed yet, flagged in case a future session hears that report.
 
    ------------------------------------------------------------
    FIXED, 2026-09-16: "Drink stall / bubble tea" was invisible for
@@ -78,10 +91,44 @@
    amenity=fast_food) + cuisine=bubble_tea, not as its own shop type,
    so it needed a specific-tag-priority fix in the Worker, not just a
    tag added here.
+
+   ------------------------------------------------------------
+   2026-09-27 (this round) — TWO REPORTS. The first got a DEFENSIVE fix whose root cause is still
+   UNCONFIRMED; the second got a DIAGNOSTIC only and is still OPEN. Read
+   MARKET_RADAR_SETUP_AND_GLOSSARY.md's 2026-09-27 section for the full writeup; short version for
+   whichever session reads this next:
+
+   (a) "Results from either analysis mode still leech into the other after switching" — reported as
+       STILL happening even after v1.6.1's applyModeVisibility() hardening. Re-reading that fix: it
+       was only ever invoked from finishWizard(), i.e. once, when the analysis screen first appears
+       for a given mode. Nothing forced it to run again at the one moment that actually matters —
+       right before analyzeSpot() renders NEW output. This round moves the SAME call to also run at
+       the very top of analyzeSpot(), so results can never be produced without first re-asserting
+       which panels the active mode is even allowed to show, regardless of how this screen was
+       reached. Separately — and this part is a HYPOTHESIS, not a confirmed root cause, since
+       styles.css lives outside this project and this session had no live access to inspect it or
+       the deployed page — hiding/showing now also sets an explicit inline style.display alongside
+       the native `hidden` attribute (see setPanelHidden() below), which is a safe superset of the
+       previous behaviour either way: it guards against the possibility that a shared class both
+       result panels carry (.ica-results) sets its own `display` without accounting for `[hidden]`,
+       which would let a same-specificity class rule silently win the cascade over the attribute
+       selector's default `display:none`. If the leeching still recurs after THIS fix ships, that
+       would argue the CSS theory was wrong and something else entirely is going on — worth a live
+       screenshot of computed styles on the stuck panel, not another guess from this end.
+   (b) "Pharmacy/petrol still show 0 / gap even though the map clearly shows one nearby" — NOT
+       fixed, because no specific code bug was found to fix; see MARKET_RADAR_SETUP_AND_GLOSSARY.md
+       for the three candidate explanations. What WAS added: a diagnostic overlay (see
+       "outsideCatchment" in analyzeSpot() below) that draws a hollow grey marker for any POI
+       Overpass DID return, that matches an active category, but that the point-in-polygon test
+       excluded from the catchment — so a person can now tell "found, just outside my shape" (grey
+       dot appears) apart from "Overpass never returned this at all" (no dot of any colour appears,
+       only the base map tile's own icon) apart from "wrong tag on this specific OSM node" (also no
+       dot, needs a direct openstreetmap.org check) — three genuinely different problems that
+       previously all looked identical on screen as "not counted."
    ============================================================ */
 
-const MR_CLIENT_VERSION = '1.6.1';
-console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' — build 2026-09-22');
+const MR_CLIENT_VERSION = '1.6.2';
+console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' — build 2026-09-27');
 
 /* ================= CONFIG =================
    Everything below is meant to be changed. See the Settings
@@ -107,7 +154,7 @@ const TOWNS = {
   sibu: { label: 'Sibu', lat: 2.2870, lng: 111.8305, district: 'Sibu' },
   bintulu: { label: 'Bintulu', lat: 3.1668, lng: 113.0413, district: 'Bintulu' },
 };
-const DEFAULT_TOWN = 'miri';
+const DEFAULT_TOWN = 'miri'; // NOTE 2026-09-27: declared but not read anywhere — the wizard always asks for the town, so changing this has NO effect. Kept only so nothing referencing it breaks.
 
 // Each category maps to one or more OpenStreetMap tag pairs. OSM
 // tagging is crowd-sourced and genuinely inconsistent — a "drink
@@ -171,6 +218,11 @@ const CATEGORY_TAGS = {
   // ISIC-derived codes at this same 5-digit level (India's NIC-2008 for pharmacy, Sweden's SNI for
   // fuel retail) rather than a direct Malaysia SSM/DOSM lookup — flagging that distinction here the
   // same way this file already does for every other MSIC code, so it's easy to re-verify later.
+  // NOT the suspect for the 2026-09-27 "pharmacy/petrol missing" report below — amenity=pharmacy and
+  // amenity=fuel are unambiguous, unshared OSM tags (unlike bubble tea's cuisine=* situation above),
+  // and this row's own shape is identical to every other single-tag category here. See the header
+  // comment's 2026-09-27 note and MARKET_RADAR_SETUP_AND_GLOSSARY.md for where the actual candidate
+  // explanations lie instead (catchment-boundary geometry and/or OSM base-tile icon confusion).
   pharmacy: { label: 'Pharmacy', tags: [['amenity', 'pharmacy']], msic: { code: '47721', name: 'Retail sale of pharmaceuticals, medical and orthopaedic goods and toilet articles' } },
   petrol: { label: 'Petrol / fuel station', tags: [['amenity', 'fuel']], msic: { code: '47300', name: 'Retail sale of automotive fuel in specialised stores' } },
   custom: { label: 'Custom — type your own OSM tag', tags: [], msic: null },
@@ -227,7 +279,16 @@ const ANCHOR_TAGS = {
 // and radiusM sent to the Worker is 1.3x this — a deliberate
 // over-fetch, since the real isochrone shape is rarely a perfect
 // circle and the extra margin gets trimmed off client-side anyway
-// (see pointInPolygon).
+// (see pointInPolygon). NOTE, 2026-09-27: this 1.3x multiplier is one
+// of the candidate explanations raised for the pharmacy/petrol report
+// above — a drive-time isochrone can be genuinely elongated along a
+// highway well past 1.3x its own straight-line radius, in which case
+// Overpass's OWN search never reaches the point at all (a different,
+// earlier failure than the point-in-polygon trim this comment
+// describes). Not changed this round — see
+// MARKET_RADAR_SETUP_AND_GLOSSARY.md before touching this number;
+// widening it is a real trade-off against Overpass/Geoapify load, not
+// a free fix.
 // v1.5.0: added walk5 / drive5 — same pace ratios as the 10-minute rows (walk 80 m per minute, drive ~500 m per minute).
 const CATCHMENT_MODES = {
   walk5: { label: '5-minute walk', profile: 'foot-walking', seconds: 300, fallbackRadiusM: 400 },
@@ -292,6 +353,23 @@ function setStatus(text, isError) {
   const el = document.getElementById('mr-status');
   el.textContent = text;
   el.classList.toggle('is-error', !!isError);
+}
+
+// ADDED, 2026-09-27: every panel this file shows/hides now goes through this one helper instead of
+// setting `.hidden` directly. Two things happen together: the native `hidden` attribute (still the
+// semantically correct signal — respected by screen readers, print media, and anything else that
+// understands HTML5 hidden) AND an explicit inline `style.display`, which forces the visual result
+// regardless of any competing CSS rule on a class the element also carries (see the header comment's
+// 2026-09-27 note on the "mode leeching" report for why this is a defensive addition, not a confirmed
+// fix — this session had no live access to the deployed page or to styles.css, which lives outside
+// this project, to actually confirm a CSS conflict is the cause). Clearing style.display back to ''
+// on show lets the page's own CSS (e.g. a grid layout on .ica-results) take back over exactly as
+// before; this never overrides anything when there was nothing to override.
+function setPanelHidden(id, hide) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.hidden = hide;
+  el.style.display = hide ? 'none' : '';
 }
 
 /* ================= SOFT USAGE CAP (same pattern as food-worth-calculator.js) ================= */
@@ -386,28 +464,24 @@ function finishWizard() {
 // category-ticking fieldset for Market Analysis, or the checklist intro/custom-add row for Market
 // Gap.
 // HARDENED 2026-09-25: also force-hides the OTHER mode's output panels every time this runs, rather
-// than trusting that resetAnalysisState() already cleaned them up. Reported bug: after a completed
-// Market Gap analysis, switching to Market Analysis and running a fresh analyze still showed the old
-// gap table underneath the new score. resetAnalysisState() (called by editAnswers()/
-// backToModeSelect() on the way here) already sets #mr-gap-results.hidden = true, so this SHOULD
-// have been unreachable — but the fix here doesn't depend on figuring out why that path didn't run:
-// every entry into this screen now re-asserts which output panels the ACTIVE mode is even allowed to
-// show, so a stale panel from the other mode can never survive regardless of how this screen was
-// reached (a caching mismatch between an old JS file and a new HTML file could produce exactly this
-// symptom too — if this keeps happening after redeploying both files together, that's worth ruling
-// out next).
+// than trusting that resetAnalysisState() already cleaned them up.
+// HARDENED AGAIN 2026-09-27, since the 2026-09-25 hardening alone did not stop the reported leeching:
+// this function is now ALSO called from the very top of analyzeSpot() (see there), not just once
+// from finishWizard() — so the correct panel set for the active mode is re-asserted immediately
+// before any new output is produced, not only when the screen first appears. Every hide/show below
+// now goes through setPanelHidden() (see its own comment) rather than the raw `.hidden` property.
 function applyModeVisibility() {
   const isGap = currentMode === 'gap';
-  document.getElementById('mr-category-group').hidden = isGap;
-  document.getElementById('mr-gap-intro').hidden = !isGap;
+  setPanelHidden('mr-category-group', isGap);
+  setPanelHidden('mr-gap-intro', !isGap);
   if (isGap) {
-    document.getElementById('mr-score-banner').hidden = true;
-    document.getElementById('mr-result-cards').hidden = true;
-    document.getElementById('mr-field-note-panel').hidden = true;
-    document.getElementById('mr-vacancy-panel').hidden = true;
-    document.getElementById('mr-weights-panel').hidden = true;
+    setPanelHidden('mr-score-banner', true);
+    setPanelHidden('mr-result-cards', true);
+    setPanelHidden('mr-field-note-panel', true);
+    setPanelHidden('mr-vacancy-panel', true);
+    setPanelHidden('mr-weights-panel', true);
   } else {
-    document.getElementById('mr-gap-results').hidden = true;
+    setPanelHidden('mr-gap-results', true);
   }
 }
 
@@ -448,13 +522,14 @@ function resetAnalysisState() {
   // Back to exactly how these looked before the very first "Analyze this spot" click. vacantUnits
   // (the notepad) and gapCustomItems (the checklist additions) are deliberately left alone — both
   // are documented as running, session-long lists, not per-spot results tied to whichever pin or
-  // mode happens to be active right now.
-  document.getElementById('mr-score-banner').hidden = true;
-  document.getElementById('mr-result-cards').hidden = true;
-  document.getElementById('mr-field-note-panel').hidden = true;
-  document.getElementById('mr-vacancy-panel').hidden = true;
-  document.getElementById('mr-weights-panel').hidden = true;
-  document.getElementById('mr-gap-results').hidden = true;
+  // mode happens to be active right now. Every panel below now goes through setPanelHidden() (v1.6.2)
+  // instead of a raw `.hidden = true` — see that helper's own comment.
+  setPanelHidden('mr-score-banner', true);
+  setPanelHidden('mr-result-cards', true);
+  setPanelHidden('mr-field-note-panel', true);
+  setPanelHidden('mr-vacancy-panel', true);
+  setPanelHidden('mr-weights-panel', true);
+  setPanelHidden('mr-gap-results', true);
 
   document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below once you\'ve analyzed a spot.';
   document.getElementById('mr-ai-insight').classList.add('is-empty');
@@ -590,6 +665,9 @@ function computeGapReads(categoryCounts, checklistKeys, districtPopulation) {
 let map, pinMarker, catchmentLayer, heatLayer;
 let poiMarkers = [];
 let anchorMarkers = [];
+// ADDED, 2026-09-27: see the header comment's 2026-09-27(b) note and the drawing code inside
+// analyzeSpot(). Holds the hollow grey "found by Overpass, outside this catchment" markers.
+let outsideMarkers = [];
 
 // FIXED, 2026-09-25: map.remove() destroys the Leaflet map instance and detaches every layer from
 // it, but it does NOT clear this file's own pinMarker reference — the marker object still exists in
@@ -632,6 +710,8 @@ function clearResultLayers() {
   poiMarkers = [];
   anchorMarkers.forEach((m) => map.removeLayer(m));
   anchorMarkers = [];
+  outsideMarkers.forEach((m) => map.removeLayer(m)); // ADDED 2026-09-27
+  outsideMarkers = [];
 }
 
 // Draws whatever catchment shape came back — a real isochrone
@@ -904,7 +984,7 @@ function scoreInputs() {
 function renderScore() {
   if (!lastAnalysis) return;
   const result = computeOpportunityScore(scoreInputs(), currentWeights());
-  document.getElementById('mr-score-banner').hidden = false;
+  setPanelHidden('mr-score-banner', false);
   document.getElementById('mr-score-number').textContent = Math.round(result.total * 100);
   document.getElementById('mr-score-verdict').textContent = lastAnalysis.poisAvailable
     ? scoreVerdict(result.total)
@@ -982,7 +1062,7 @@ function renderStrengthCard() {
   }
 }
 
-// DOSM trend card — one line per ticked type that the index actually tracks (4 of the 11).
+// DOSM trend card — one line per ticked type that the index actually tracks (4 of the 13).
 function renderTrendCard(trends, selected, labelFor, town) {
   const valueEl = document.getElementById('mr-trend-value');
   const provEl = document.getElementById('mr-trend-provenance');
@@ -991,7 +1071,7 @@ function renderTrendCard(trends, selected, labelFor, town) {
   if (!tracked.length) {
     valueEl.textContent = 'Not tracked';
     provEl.textContent = (selected.length > 1 ? 'None of these types are' : labelFor(selected[0]) + ' isn’t')
-      + ' part of DOSM’s wholesale & retail trade index (it only covers 4 of the 11 categories here — see the tooltip)';
+      + ' part of DOSM’s wholesale & retail trade index (it only covers 4 of the 13 categories here — see the tooltip)';
     return;
   }
   const fmt = (t) => (t.growthYoy > 0 ? '+' : '') + t.growthYoy.toFixed(1) + '% YoY';
@@ -1004,6 +1084,11 @@ function renderTrendCard(trends, selected, labelFor, town) {
 }
 
 async function analyzeSpot() {
+  // ADDED, 2026-09-27: re-assert the active mode's panel set before doing anything else — see this
+  // function's own comment on applyModeVisibility() for why this is the more important of the two
+  // call sites now, not just the one in finishWizard().
+  applyModeVisibility();
+
   const town = TOWNS[wizardAnswers.town];
   const catchmentModeKey = document.getElementById('mr-catchment-select').value;
   const catchmentMode = CATCHMENT_MODES[catchmentModeKey];
@@ -1100,6 +1185,18 @@ async function analyzeSpot() {
       if (document.getElementById('mr-heat-toggle').checked) heatLayer.addTo(map);
     }
 
+    // ADDED, 2026-09-27 — see the header comment's 2026-09-27(b) note. A POI Overpass DID return,
+    // that matches one of the active categories, but that the point-in-polygon/radius test above
+    // excluded from `withinCatchment` — drawn as a distinct hollow marker so it's visually separate
+    // from a real, counted competitor. This never touches competitorCount, categoryCounts, the
+    // opportunity score, or the Gap checklist's counts — it's purely a diagnostic overlay for telling
+    // "found, just outside your shape" apart from "Overpass never found this at all" (which shows no
+    // marker of any colour here — only the base OpenStreetMap tile's own icon, if it draws one for
+    // that amenity/shop type, completely independent of anything this tool draws).
+    const outsideCatchmentPois = pois.filter((p) => selectedSet.has(p.category) && !catchment.containsPoint(p.lat, p.lng));
+    outsideMarkers = outsideCatchmentPois.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#8A8A8A', fillColor: '#ffffff', fillOpacity: 0.5, weight: 2, dashArray: '3,3' })
+      .bindTooltip(escapeHTML(p.name || 'Unnamed') + ' — ' + escapeHTML(labelFor(p.category)) + ' (found, outside this catchment)').addTo(map));
+
     // Anchors are informational only — never counted as competitors, never touch the opportunity score.
     const anchorList = data.anchors || [];
     anchorMarkers = anchorList.map((a) => L.marker([a.lat, a.lng], {
@@ -1188,11 +1285,6 @@ async function analyzeSpot() {
     // DISTRICT_POPULATION_FALLBACK_2023 in market-radar-proxy-worker.js) rather than a live query, and
     // that's exactly the kind of thing this page's own provenance-tag principle says should be shown,
     // not silently hidden behind a plain-looking number.
-    // FIXED, 2026-09-25: toLocaleString() with no locale argument renders using the VIEWER's own
-    // browser/OS locale, which could in principle use a different thousands separator than the comma
-    // shown when this was built and tested — pinning to 'en-MY' makes every large number on this page
-    // render identically for every visitor, matching the same fix applied to the Market Gap table's
-    // "Reach" column below.
     document.getElementById('mr-population-value').innerHTML = lastAnalysis.districtPopulation
       ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString('en-MY')) + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '')
       : 'Not available' + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '');
@@ -1210,10 +1302,10 @@ async function analyzeSpot() {
 
     renderTrendCard(trends, selected, labelFor, town);
 
-    document.getElementById('mr-result-cards').hidden = false;
-    document.getElementById('mr-field-note-panel').hidden = false;
-    document.getElementById('mr-vacancy-panel').hidden = false;
-    document.getElementById('mr-weights-panel').hidden = false;
+    setPanelHidden('mr-result-cards', false);
+    setPanelHidden('mr-field-note-panel', false);
+    setPanelHidden('mr-vacancy-panel', false);
+    setPanelHidden('mr-weights-panel', false);
     updateWeightTotalDisplay();
     renderScore();
 
@@ -1257,15 +1349,9 @@ function renderGapResults(catchment, data) {
   } else {
     const READ_LABELS = { gap: 'Gap', thin: 'Thin', adequate: 'Adequate', oversupplied: 'Oversupplied' };
     body.innerHTML = rows.map((r) => {
-      // FIXED, 2026-09-25: "≈255,100 people/shop" read to at least one person as a THROUGHPUT figure
-      // (as if each shop must serve 255,100 people a month/day/year) — it isn't one; there's no time
-      // dimension here at all, and no foot-traffic or purchase-frequency data behind this tool to
-      // support one. It's a plain, static ratio: this district's whole population (the same number
-      // Market Analysis mode shows) divided by how many of this type were found in THIS catchment —
-      // a rough "how many people share access to one of these" reading, nothing more. "N per ≈X"
-      // reads as that ratio without implying a rate; toLocaleString('en-MY') pins the thousands
-      // separator to a comma regardless of the viewer's own browser/OS locale, which otherwise could
-      // theoretically render some other way.
+      // "N per ≈X" reads as a plain, static ratio (this district's whole population ÷ how many of
+      // this type are in THIS catchment), never a rate — see the 2026-09-25 fix note in
+      // MARKET_RADAR_SETUP_AND_GLOSSARY.md for why the wording and locale-pinned formatting matter.
       const reach = r.perShop ? '1 per ≈' + r.perShop.toLocaleString('en-MY') : '—';
       return `<tr><td>${escapeHTML(r.label)}</td><td>${r.count}</td><td>${reach}</td>`
         + `<td><span class="mr-gap-read is-${r.read}">${READ_LABELS[r.read]}</span></td></tr>`;
@@ -1277,7 +1363,7 @@ function renderGapResults(catchment, data) {
   if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
   document.getElementById('mr-gap-provenance').textContent = 'Estimated — ' + sourceParts.join(' · ')
     + (lastAnalysis.districtPopulation ? ' · "Reach" = this district\u2019s whole DOSM population \u00f7 how many of that type are in this catchment \u2014 a rough district-wide availability ratio, not a monthly, daily, or catchment-only figure' : '');
-  document.getElementById('mr-gap-results').hidden = false;
+  setPanelHidden('mr-gap-results', false);
 }
 
 /* ================= PLAIN-ENGLISH READ (narration only — Gemini first, Workers AI backstop on the Worker side) ================= */
