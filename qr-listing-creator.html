@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- QR Listing Creator, seller page. VERSION 1.6 (2026-09-25). Adds a per-listing Theme picker + Ad banner editor to Settings, on top of v1.5's Cost + Orders analytics. Notes: QLC_HANDOFF_v1.6_ADDENDUM.md (base: v1.5) -->
+<!-- QR Listing Creator, seller page. VERSION 1.7 (2026-09-27). Adds a live Questions tab (customers ask about an item or something general, seller replies or marks resolved) plus auto-refreshing Orders + Questions tabs, on top of v1.6's Theme + Ad banner editor. Notes: QLC_HANDOFF_v1.8_ADDENDUM.md (base: v1.6) -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -114,6 +114,15 @@
     .qlc-cls-puzzle { background: #EBDDFF; color: #4F2790; }
     .qlc-cls-dog { background: #EDEDED; color: #4A4A4A; }
 
+    /* ---- Questions / support (v1.7) ---- */
+    .qlc-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 5px; border-radius: 999px; background: #C0392B; color: #fff; font-size: 0.7rem; font-weight: 700; line-height: 18px; vertical-align: 2px; }
+    .qlc-q-card { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 14px 16px; margin-bottom: 12px; }
+    .qlc-q-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; font-weight: 600; font-size: 0.88rem; margin-bottom: 6px; }
+    .qlc-q-text { margin: 0 0 10px; font-size: 0.95rem; }
+    .qlc-q-reply { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); font-size: 0.9rem; box-sizing: border-box; margin-bottom: 10px; resize: vertical; }
+    .qlc-q-answer { margin: 0; font-size: 0.9rem; background: var(--paper); border-radius: 8px; padding: 10px 12px; }
+    .qlc-version-tag { font-size: 0.72rem; color: var(--muted); margin-left: 8px; }
+
     /* ---- Product tabs (v1.4): one form visible, tabs on top ("hide siblings, show one", same idea as the Menu Calculator's menu tabs) ---- */
     #qlc-panel-products .calc-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 16px; }
     .qlc-ptabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -225,6 +234,7 @@
           <button type="button" class="qlc-calc-tab" data-tab="floorplan" aria-expanded="false">Floor plan</button>
           <button type="button" class="qlc-calc-tab" data-tab="settings" aria-expanded="false">Settings</button>
           <button type="button" class="qlc-calc-tab" data-tab="orders" aria-expanded="false">Orders</button>
+          <button type="button" class="qlc-calc-tab" data-tab="questions" aria-expanded="false">Questions<span class="qlc-badge" id="qlc-q-badge" hidden>0</span></button>
         </div>
 
         <!-- ---- PRODUCTS ---- -->
@@ -305,6 +315,15 @@
             </table>
           </div>
         </div>
+
+        <!-- ---- QUESTIONS (v1.7) ---- -->
+        <div class="qlc-panel" id="qlc-panel-questions" data-panel="questions" hidden>
+          <p class="menu-builder-intro">Customers can ask a quick question while browsing &mdash; about a specific item, or something general &mdash; and it shows up here right away. Reply and they'll see your answer on their screen, or mark it resolved if you answered them in person instead.</p>
+          <div class="calc-actions no-print"><button type="button" class="btn btn-secondary" id="qlc-refresh-questions">Refresh</button></div>
+          <div id="qlc-questions-open"></div>
+          <h3 style="font-size:1.05rem; margin-top:26px;">Answered &amp; resolved</h3>
+          <div id="qlc-questions-answered"></div>
+        </div>
       </div>
     </section>
 
@@ -312,7 +331,7 @@
 
   <footer class="site-footer no-print">
     <div class="wrap">
-      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved.</div>
+      <div class="footer-bottom">&copy; 2026 Reysourcez Enterprise. All rights reserved. <span class="qlc-version-tag" title="Build version">QR Listing Creator v1.7</span></div>
     </div>
   </footer>
 
@@ -322,6 +341,7 @@
     <button type="button" class="qlc-quick-nav-btn" data-tab="floorplan">Floor plan</button>
     <button type="button" class="qlc-quick-nav-btn" data-tab="settings">Settings</button>
     <button type="button" class="qlc-quick-nav-btn" data-tab="orders">Orders</button>
+    <button type="button" class="qlc-quick-nav-btn" data-tab="questions">Questions</button>
   </div>
 
   <script src="site-config.js?v=1" defer></script>
@@ -329,6 +349,6 @@
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="floor-plan.js?v=2" defer></script>
   <script src="order-themes.js?v=2" defer></script>
-  <script src="qr-listing-creator.js?v=5" defer></script>
+  <script src="qr-listing-creator.js?v=6" defer></script>
 </body>
 </html>

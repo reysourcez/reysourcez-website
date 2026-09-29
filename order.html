@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- QR Listing Creator, customer ordering page. VERSION 1.5 (2026-09-26). Change list: QLC_HANDOFF_v1.7_ADDENDUM.md (v1.4 base: QLC_HANDOFF_v1.6_ADDENDUM.md; v1.3 base: QLC_HANDOFF_v1.3_ADDENDUM.md; v1.1 base: QLC_HANDOFF_v1.1.md) -->
+<!-- QR Listing Creator, customer ordering page. VERSION 1.6 (2026-09-27). Change list: QLC_HANDOFF_v1.8_ADDENDUM.md (v1.5 base: QLC_HANDOFF_v1.7_ADDENDUM.md; v1.4 base: QLC_HANDOFF_v1.6_ADDENDUM.md; v1.3 base: QLC_HANDOFF_v1.3_ADDENDUM.md; v1.1 base: QLC_HANDOFF_v1.1.md) -->
 <html lang="en" data-theme="classic" data-cards="grid" data-cart="bar" data-nav="pills">
 <head>
   <meta charset="UTF-8">
@@ -121,6 +121,20 @@
     .ord-plan-scroll { overflow: auto; max-height: 58vh; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
     #ord-plan-svg { display: block; min-width: 100%; height: auto; }
 
+    /* ---- Ask a question (v1.5) ---- */
+    .ord-ask-fab { position: fixed; right: 16px; bottom: 108px; z-index: 21; width: 52px; height: 52px; border-radius: 50%; border: none; background: var(--accent); color: var(--on-accent, #fff); font-size: 1.35rem; box-shadow: 0 4px 14px rgba(0,0,0,0.25); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .ord-ask-fab:focus-visible { outline: 3px solid var(--accent-dark); outline-offset: 2px; }
+    .ord-q-badge { position: absolute; top: -1px; right: -1px; width: 15px; height: 15px; border-radius: 50%; background: #C0392B; border: 2px solid var(--paper); }
+    .ord-q-label { display: block; text-align: left; font-weight: 600; font-size: 0.85rem; margin: 14px 0 6px; }
+    .ord-q-label:first-child { margin-top: 0; }
+    #ord-q-product, #ord-q-input { width: 100%; margin-top: 5px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); font-size: 0.92rem; box-sizing: border-box; }
+    .ord-q-mine-title { font-size: 1rem; margin: 20px 0 8px; }
+    .ord-q-mine-card { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--surface); }
+    .ord-q-mine-q { margin: 0 0 6px; font-size: 0.9rem; }
+    .ord-q-about { color: var(--muted); font-weight: 600; }
+    .ord-q-waiting { margin: 0; font-size: 0.85rem; color: var(--muted); font-style: italic; }
+    .ord-q-answer { margin: 0; font-size: 0.9rem; background: var(--paper); border-radius: 8px; padding: 8px 10px; }
+
     @media (min-width: 700px) {
       .ord-drawer { left: 50%; right: auto; width: 420px; transform: translateX(-50%); border-radius: 16px; bottom: 20px; max-height: 80vh; }
     }
@@ -170,6 +184,11 @@
     </div>
   </div>
 
+  <button type="button" id="ord-ask-fab" class="ord-ask-fab" aria-label="Ask a question" hidden>
+    <span aria-hidden="true">&#128172;</span>
+    <span class="ord-q-badge" id="ord-q-badge" hidden></span>
+  </button>
+
   <div class="ord-drawer-backdrop" id="ord-drawer-backdrop" hidden></div>
 
   <div class="ord-drawer" id="ord-cart-drawer" hidden>
@@ -196,6 +215,14 @@
     <div id="ord-plan-body"></div>
   </div>
 
+  <div class="ord-drawer" id="ord-question-drawer" hidden>
+    <div class="ord-drawer-header">
+      <h2>Ask a question</h2>
+      <button type="button" id="ord-question-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="ord-question-body"></div>
+  </div>
+
   <div class="ord-theme-test" id="ord-theme-test" hidden>
     <span aria-hidden="true">&#127912;</span>
     <button type="button" data-step="-1" aria-label="Previous theme">&lsaquo;</button>
@@ -206,6 +233,6 @@
   <script src="order-config.js?v=2" defer></script>
   <script src="order-themes.js?v=2" defer></script>
   <script src="floor-plan.js?v=2" defer></script>
-  <script src="order.js?v=4" defer></script>
+  <script src="order.js?v=5" defer></script>
 </body>
 </html>

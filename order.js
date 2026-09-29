@@ -1,8 +1,8 @@
 /* ============================================================
    QR Listing Creator — customer ordering page (order.js)
-   VERSION 1.4 (2026-09-25) — v1.4: applies the seller's own Theme choice (Settings tab) once the catalog
-   loads, and shows the seller's own ad slides when they've set any (falls back to the shared default
-   otherwise). Notes: QLC_HANDOFF_v1.6_ADDENDUM.md (v1.3 base: QLC_HANDOFF_v1.3_ADDENDUM.md, v1.1 base: QLC_HANDOFF_v1.1.md)
+   VERSION 1.5 (2026-09-27) — v1.5: adds "Ask a question" — a floating button lets a customer ask about an
+   item (or something general) and see the seller's reply in the same drawer, with a quiet toast if they've
+   closed it when the answer arrives. Notes: QLC_HANDOFF_v1.8_ADDENDUM.md (v1.4 base: QLC_HANDOFF_v1.6_ADDENDUM.md, v1.3 base: QLC_HANDOFF_v1.3_ADDENDUM.md, v1.1 base: QLC_HANDOFF_v1.1.md)
    Vanilla JS, no build step. Talks to qr-listing-creator-worker.js
    over a small JSON API — see that file's own header for the full
    contract. Nothing here decides the REAL total; the Worker
@@ -239,14 +239,16 @@ function contextBadgeText() {
 // Only one drawer (cart, summary or floor plan) is ever open at once — matches this
 // site's own "one panel open at a time" rule (see AI_BUILD_BRIEF.md).
 function openDrawer(id) {
-  ['ord-cart-drawer', 'ord-summary-drawer', 'ord-plan-drawer'].forEach((d) => { document.getElementById(d).hidden = (d !== id); });
+  ['ord-cart-drawer', 'ord-summary-drawer', 'ord-plan-drawer', 'ord-question-drawer'].forEach((d) => { document.getElementById(d).hidden = (d !== id); });
   document.getElementById('ord-drawer-backdrop').hidden = false;
 }
 function closeDrawers() {
   document.getElementById('ord-cart-drawer').hidden = true;
   document.getElementById('ord-summary-drawer').hidden = true;
   document.getElementById('ord-plan-drawer').hidden = true;
+  document.getElementById('ord-question-drawer').hidden = true;
   document.getElementById('ord-drawer-backdrop').hidden = true;
+  ensureQuestionPolling(); // closing the drawer may mean nothing is left to check (v1.5)
 }
 
 /* ================= RENDER: header / banner / picks ================= */
@@ -736,6 +738,144 @@ function closePlan() {
   else closeDrawers();
 }
 
+/* ================= QUESTIONS / SUPPORT (v1.5) =================
+   A customer can ask about a specific item, or something general, without leaving the page — no order or cart
+   entry needed. The seller sees it on their own Questions tab and replies, or marks it resolved if they
+   answered in person instead. No accounts here either, matching the cart's own privacy bar exactly: a random
+   id is generated once and kept in this tab's sessionStorage so the customer can find their own questions
+   again — gone the moment the tab closes, and never enough for anyone else to guess and read someone else's. */
+
+function qSessionId() {
+  const key = 'ord-qsession-' + BIZ_ID;
+  let id = null;
+  try { id = sessionStorage.getItem(key); } catch (e) {}
+  if (!id) {
+    id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2));
+    try { sessionStorage.setItem(key, id); } catch (e) {}
+  }
+  return id;
+}
+
+let myQuestions = [];
+let qPollTimer = null;
+let seenAnsweredIds = new Set();
+try { seenAnsweredIds = new Set(JSON.parse(sessionStorage.getItem('ord-qseen-' + BIZ_ID) || '[]')); } catch (e) {}
+function saveSeenAnswered() { try { sessionStorage.setItem('ord-qseen-' + BIZ_ID, JSON.stringify([...seenAnsweredIds])); } catch (e) {} }
+
+function renderQuestionProductOptions() {
+  const sel = document.getElementById('ord-q-product');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">General question</option>' + state.products.map((p) => `<option value="${escapeHTML(p.id)}">${escapeHTML(p.name)}</option>`).join('');
+}
+
+function questionMineHTML(q) {
+  const about = q.productName ? ' <span class="ord-q-about">&middot; ' + escapeHTML(q.productName) + '</span>' : '';
+  const body = q.status === 'answered'
+    ? `<p class="ord-q-answer"><strong>Reply:</strong> ${escapeHTML(q.answer || '')}</p>`
+    : q.status === 'dismissed'
+      ? '<p class="ord-q-waiting">Marked as resolved by the staff.</p>'
+      : '<p class="ord-q-waiting">Waiting for a reply&hellip;</p>';
+  return `<div class="ord-q-mine-card"><p class="ord-q-mine-q">${escapeHTML(q.question)}${about}</p>${body}</div>`;
+}
+
+function renderQuestionDrawerBody() {
+  const body = document.getElementById('ord-question-body');
+  if (!body) return;
+  body.innerHTML = `
+    <label class="ord-q-label">Which item is this about?
+      <select id="ord-q-product"></select>
+    </label>
+    <label class="ord-q-label">Your question
+      <textarea id="ord-q-input" rows="3" maxlength="300" placeholder="e.g. Can I get extra rice with this?"></textarea>
+    </label>
+    <button type="button" class="btn btn-primary" id="ord-q-send" style="width:100%;">Send</button>
+    <p class="ord-status" id="ord-q-status" role="status" aria-live="polite"></p>
+    <h3 class="ord-q-mine-title">Your questions</h3>
+    <div id="ord-q-mine">${myQuestions.length ? myQuestions.map(questionMineHTML).join('') : '<p class="ord-empty">You haven\u2019t asked anything yet.</p>'}</div>
+  `;
+  renderQuestionProductOptions();
+  document.getElementById('ord-q-send').addEventListener('click', sendQuestion);
+}
+
+function openQuestionDrawer() {
+  renderQuestionDrawerBody();
+  openDrawer('ord-question-drawer');
+  myQuestions.forEach((q) => { if (q.status !== 'open') seenAnsweredIds.add(q.id); });
+  saveSeenAnswered();
+  updateQuestionBadge();
+  pollMyQuestions();
+}
+
+async function sendQuestion() {
+  const statusEl = document.getElementById('ord-q-status');
+  const productId = document.getElementById('ord-q-product').value;
+  const textEl = document.getElementById('ord-q-input');
+  const question = textEl.value.trim();
+  if (!question) { statusEl.textContent = 'Type your question first.'; statusEl.classList.add('is-error'); return; }
+  statusEl.textContent = 'Sending\u2026';
+  statusEl.classList.remove('is-error');
+  try {
+    const res = await fetch(WORKER_ENDPOINT + '/questions?biz=' + encodeURIComponent(BIZ_ID), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: qSessionId(), productId, question, orderType: state.orderType, tableNumber: state.tableNumber }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Could not send that just now.');
+    myQuestions.unshift({ id: data.id, productName: data.productName || null, question: data.question, answer: null, status: 'open', createdAt: new Date().toISOString() });
+    textEl.value = '';
+    statusEl.textContent = 'Sent \u2014 you\u2019ll see the reply here.';
+    const mineBox = document.getElementById('ord-q-mine');
+    if (mineBox) mineBox.innerHTML = myQuestions.map(questionMineHTML).join('');
+    ensureQuestionPolling();
+  } catch (err) {
+    statusEl.textContent = err.message;
+    statusEl.classList.add('is-error');
+  }
+}
+
+async function pollMyQuestions() {
+  try {
+    const res = await fetch(WORKER_ENDPOINT + '/questions?biz=' + encodeURIComponent(BIZ_ID) + '&session=' + encodeURIComponent(qSessionId()));
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { ensureQuestionPolling(); return; }
+    const prevOpenIds = new Set(myQuestions.filter((q) => q.status === 'open').map((q) => q.id));
+    myQuestions = data.questions || [];
+    const justAnswered = myQuestions.filter((q) => q.status !== 'open' && prevOpenIds.has(q.id));
+    const drawerHidden = document.getElementById('ord-question-drawer').hidden;
+    if (justAnswered.length && drawerHidden) toast('You have a reply to your question' + (justAnswered.length > 1 ? 's' : ''));
+    if (!drawerHidden) {
+      const mineBox = document.getElementById('ord-q-mine');
+      if (mineBox) mineBox.innerHTML = myQuestions.length ? myQuestions.map(questionMineHTML).join('') : '<p class="ord-empty">You haven\u2019t asked anything yet.</p>';
+      myQuestions.forEach((q) => { if (q.status !== 'open') seenAnsweredIds.add(q.id); });
+      saveSeenAnswered();
+    }
+    updateQuestionBadge();
+  } catch (e) { /* try again next tick */ }
+  ensureQuestionPolling();
+}
+
+function updateQuestionBadge() {
+  const badge = document.getElementById('ord-q-badge');
+  if (!badge) return;
+  const unseen = myQuestions.filter((q) => q.status !== 'open' && !seenAnsweredIds.has(q.id)).length;
+  badge.hidden = unseen === 0;
+}
+
+// Keeps itself running only while there is a real reason to check: the drawer is open, or something sent
+// earlier is still waiting on a reply. A customer who never asks anything never triggers a single extra
+// request. Paused (not stopped) while the browser tab is in the background. (v1.5)
+function ensureQuestionPolling() {
+  const hasOpen = myQuestions.some((q) => q.status === 'open');
+  const drawerEl = document.getElementById('ord-question-drawer');
+  const drawerOpen = drawerEl && !drawerEl.hidden;
+  if ((hasOpen || drawerOpen) && !qPollTimer) {
+    qPollTimer = setInterval(() => { if (!document.hidden) pollMyQuestions(); }, 12000);
+  } else if (!hasOpen && !drawerOpen && qPollTimer) {
+    clearInterval(qPollTimer);
+    qPollTimer = null;
+  }
+}
+
 /* ================= INIT ================= */
 
 // mode: 'busy' = spinner; 'retry' = message + Try again; 'stop' = message only (trying again would not help)
@@ -793,6 +933,8 @@ async function start() {
   renderPicks();
   renderCatalog();
   renderCartBar();
+  document.getElementById('ord-ask-fab').hidden = false;
+  pollMyQuestions(); // hydrate any questions asked earlier in this tab's session (e.g. after a reload)
 
   if (listenersWired) return;
   listenersWired = true;
@@ -802,6 +944,8 @@ async function start() {
   document.getElementById('ord-drawer-backdrop').addEventListener('click', closeDrawers);
   document.getElementById('ord-plan-btn').addEventListener('click', () => openPlan(false));
   document.getElementById('ord-plan-close').addEventListener('click', closePlan);
+  document.getElementById('ord-ask-fab').addEventListener('click', openQuestionDrawer);
+  document.getElementById('ord-question-close').addEventListener('click', closeDrawers);
 }
 
 function init() {

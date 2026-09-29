@@ -1,8 +1,8 @@
 /* ============================================================
    QR Listing Creator — ordering backend (Cloudflare Worker + D1)
-   VERSION 1.6 (2026-09-25) — v1.6: Worker now enforces the same floor-plan table cap the seller page shows;
-   order lines snapshot each product's cost at order time; per-business Theme + Ad banner (new columns).
-   Full change list and API notes: QLC_HANDOFF_v1.1.md (v1.5: QLC_HANDOFF_v1.5_ADDENDUM.md; v1.6: QLC_HANDOFF_v1.6_ADDENDUM.md)
+   VERSION 1.7 (2026-09-27) — v1.7: adds a "questions" table + endpoints so a customer can ask about an item
+   (or something general) while browsing and the seller can reply or mark it resolved — seen live on the dashboard.
+   Full change list and API notes: QLC_HANDOFF_v1.1.md (v1.5: QLC_HANDOFF_v1.5_ADDENDUM.md; v1.6: QLC_HANDOFF_v1.6_ADDENDUM.md; v1.7: QLC_HANDOFF_v1.8_ADDENDUM.md)
    ------------------------------------------------------------
    Deploys separately from GitHub Pages, same pattern as every other
    *-worker.js on this site — holds nothing secret this time (no API
@@ -66,6 +66,29 @@
         overview page) into WORKER_ENDPOINT in qr-listing-creator.js,
         order.js AND the connect-src line of the security policy at
         the top of order.html (three places, all the same URL).
+
+   UPGRADING TO v1.7 (customer questions / support messages) — D1 Console, once, then paste this file into the
+   Worker as usual:
+          CREATE TABLE questions (
+            id TEXT PRIMARY KEY,
+            business_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            order_type TEXT,
+            table_number TEXT,
+            product_id TEXT,
+            product_name TEXT,
+            question TEXT NOT NULL,
+            answer TEXT,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            answered_at TEXT
+          );
+          CREATE INDEX idx_questions_biz ON questions(business_id, created_at);
+          CREATE INDEX idx_questions_session ON questions(business_id, session_id, status);
+        (Skip it if you created the tables from THIS version of the file — the CREATE TABLE block below already
+        includes it.) Until it runs, the menu, cart and orders all work as normal; a customer trying to ask a
+        question just sees a plain "not available yet" message, and the seller's Questions tab just shows no
+        open questions — nothing else breaks.
 
    UPGRADING TO v1.6 (Theme + Ad banner) — D1 Console, once, then paste this file into the Worker as usual:
           ALTER TABLE businesses ADD COLUMN theme TEXT;
@@ -138,8 +161,24 @@
      status TEXT NOT NULL DEFAULT 'new',
      created_at TEXT NOT NULL DEFAULT (datetime('now'))
    );
+   CREATE TABLE questions (
+     id TEXT PRIMARY KEY,
+     business_id TEXT NOT NULL,
+     session_id TEXT NOT NULL,
+     order_type TEXT,
+     table_number TEXT,
+     product_id TEXT,
+     product_name TEXT,
+     question TEXT NOT NULL,
+     answer TEXT,
+     status TEXT NOT NULL DEFAULT 'open',
+     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+     answered_at TEXT
+   );
    CREATE INDEX idx_products_biz ON products(business_id);
    CREATE INDEX idx_orders_biz ON orders(business_id, created_at);
+   CREATE INDEX idx_questions_biz ON questions(business_id, created_at);
+   CREATE INDEX idx_questions_session ON questions(business_id, session_id, status);
    ------------------------------------------------------------
 
    Contract with the browser (owner-only calls send the key as an
@@ -154,6 +193,9 @@
      POST   /floorplan?biz=X           { plan }  (null / empty clears)  -> { ok, plan }  (owner)
      POST   /order?biz=X               { orderType, items, ... }      -> { orderId, items, adjustments, subtotal }
      GET    /orders?biz=X              -> { orders }                      (owner)
+     POST   /questions?biz=X           { sessionId, productId?, question, orderType?, tableNumber? } -> { id, productName, question, status }   (public — customer asks)
+     GET    /questions?biz=X[&session=Y] -> { questions[] }   (owner: every question, via X-Admin-Key; else session's own only)
+     POST   /questions?biz=X&id=Z      { answer } or { dismiss:true } -> { ok }   (owner — reply or mark resolved)
    ============================================================ */
 
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
@@ -168,6 +210,9 @@ const PLAN_H = 400;
 // Keep this in lock-step with the id list in order-themes.js's own T array (v1.6) — the Worker can't load
 // that file (separate deploy target), so the ids are mirrored here just for validation.
 const ALLOWED_THEMES = ['classic', 'ubereats', 'doordash', 'grab', 'foodpanda', 'shopeefood', 'deliveroo', 'noirgold', 'starbucks', 'neo', 'aurora'];
+const MAX_QUESTION_LEN = 300;               // a customer's question text
+const MAX_ANSWER_LEN = 500;                 // the seller's reply text
+const MAX_OPEN_QUESTIONS_PER_SESSION = 15;  // safety cap against a stuck retry loop or abuse (v1.7)
 
 function corsHeaders(origin) {
   const allow = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
@@ -730,6 +775,87 @@ async function handleGetOrders(env, bizId, key, origin) {
   return json({ orders }, 200, origin);
 }
 
+/* ---------- customer questions / support messages (v1.7) =================
+   A customer can ask about a specific item, or something general, while browsing — no order needed. The
+   seller sees it on their own Questions tab and replies (or marks it resolved without a written reply, for
+   the ones answered by walking over instead). No accounts on the customer side either: the browser generates
+   a random session id once (kept in this tab's sessionStorage, same privacy bar as the cart) so it can find
+   its own questions again later — nobody else's are ever returned for that id. */
+
+async function handleCreateQuestion(env, bizId, body, origin) {
+  const business = await env.DB.prepare('SELECT id FROM businesses WHERE id = ?').bind(bizId).first();
+  if (!business) return json({ error: 'No listing found for that link.' }, 404, origin);
+
+  const sessionId = cleanText(body.sessionId, 64);
+  const question = cleanText(body.question, MAX_QUESTION_LEN);
+  if (!sessionId) return json({ error: 'That request could not be read.' }, 400, origin);
+  if (!question) return json({ error: 'Type your question first.' }, 400, origin);
+
+  const orderType = ['dine_in', 'takeaway', 'delivery'].includes(body.orderType) ? body.orderType : null;
+  const tableNumber = cleanLabel(body.tableNumber, 12) || null;
+
+  // Snapshot the item's current name so a later rename doesn't confuse a question already sent about it.
+  let productId = null, productName = null;
+  if (body.productId) {
+    const p = await env.DB.prepare('SELECT id, name FROM products WHERE id = ? AND business_id = ? AND is_active = 1').bind(String(body.productId), bizId).first();
+    if (p) { productId = p.id; productName = p.name; }
+  }
+
+  try {
+    const openRow = await env.DB.prepare('SELECT COUNT(*) AS n FROM questions WHERE business_id = ? AND session_id = ? AND status = ?').bind(bizId, sessionId, 'open').first();
+    if (openRow && openRow.n >= MAX_OPEN_QUESTIONS_PER_SESSION) {
+      return json({ error: 'You already have several questions waiting for a reply \u2014 please wait for those first.' }, 429, origin);
+    }
+    const id = Date.now().toString(36) + randomKey(4);
+    await env.DB.prepare(`
+      INSERT INTO questions (id, business_id, session_id, order_type, table_number, product_id, product_name, question, status)
+      VALUES (?,?,?,?,?,?,?,?, 'open')
+    `).bind(id, bizId, sessionId, orderType, tableNumber, productId, productName, question).run();
+    return json({ id, productName, question, status: 'open' }, 200, origin);
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) {
+      return json({ error: 'Sorry, questions aren\u2019t set up for this listing yet \u2014 please ask a staff member directly.' }, 400, origin);
+    }
+    throw err;
+  }
+}
+
+// owner (valid X-Admin-Key): every question for the business. Otherwise: sessionId is required and only that
+// session's own questions come back — the same shape either way, just a different WHERE clause and row cap.
+async function handleGetQuestions(env, bizId, key, sessionId, origin) {
+  const owner = key ? await requireOwner(env, bizId, key) : false;
+  if (!owner && !sessionId) return json({ error: 'Not authorized.' }, 403, origin);
+  try {
+    const { results } = owner
+      ? await env.DB.prepare('SELECT id, order_type, table_number, product_id, product_name, question, answer, status, created_at, answered_at FROM questions WHERE business_id = ? ORDER BY created_at DESC LIMIT 200').bind(bizId).all()
+      : await env.DB.prepare('SELECT id, order_type, table_number, product_id, product_name, question, answer, status, created_at, answered_at FROM questions WHERE business_id = ? AND session_id = ? ORDER BY created_at DESC LIMIT 50').bind(bizId, sessionId).all();
+    const questions = (results || []).map((q) => ({
+      id: q.id, orderType: q.order_type, tableNumber: q.table_number, productId: q.product_id, productName: q.product_name,
+      question: q.question, answer: q.answer, status: q.status, createdAt: q.created_at, answeredAt: q.answered_at,
+    }));
+    return json({ questions }, 200, origin);
+  } catch (err) {
+    if (/no such table/i.test(String(err && err.message))) return json({ questions: [] }, 200, origin);
+    throw err;
+  }
+}
+
+// Owner only, and scoped to THIS business the same way every other single-row update on this file is
+// (WHERE id = ? AND business_id = ?) so one business can never answer or resolve another's question.
+async function handleAnswerQuestion(env, bizId, key, qid, body, origin) {
+  if (!(await requireOwner(env, bizId, key))) return json({ error: 'Not authorized for this business.' }, 403, origin);
+  if (body.dismiss) {
+    const res = await env.DB.prepare("UPDATE questions SET status = 'dismissed', answered_at = datetime('now') WHERE id = ? AND business_id = ?").bind(qid, bizId).run();
+    if (!res.meta || res.meta.changes < 1) return json({ error: 'That question was not found.' }, 404, origin);
+    return json({ ok: true }, 200, origin);
+  }
+  const answer = cleanText(body.answer, MAX_ANSWER_LEN);
+  if (!answer) return json({ error: 'Type a reply first.' }, 400, origin);
+  const res = await env.DB.prepare("UPDATE questions SET answer = ?, status = 'answered', answered_at = datetime('now') WHERE id = ? AND business_id = ?").bind(answer, qid, bizId).run();
+  if (!res.meta || res.meta.changes < 1) return json({ error: 'That question was not found.' }, 404, origin);
+  return json({ ok: true }, 200, origin);
+}
+
 async function readJson(request) {
   try {
     const b = await request.json();
@@ -764,6 +890,11 @@ export default {
       if (path === '/floorplan' && request.method === 'POST') return await handleSaveFloorPlan(env, bizId, key, body, origin);
       if (path === '/order' && request.method === 'POST') return await handleOrder(env, bizId, body, origin);
       if (path === '/orders' && request.method === 'GET') return await handleGetOrders(env, bizId, key, origin);
+      if (path === '/questions' && request.method === 'GET') return await handleGetQuestions(env, bizId, key, url.searchParams.get('session') || '', origin);
+      if (path === '/questions' && request.method === 'POST') {
+        const qid = url.searchParams.get('id') || '';
+        return qid ? await handleAnswerQuestion(env, bizId, key, qid, body, origin) : await handleCreateQuestion(env, bizId, body, origin);
+      }
       return json({ error: 'Unknown endpoint.' }, 404, origin);
     } catch (err) {
       // Path only (never the query string) so an admin key can't end up in the logs.

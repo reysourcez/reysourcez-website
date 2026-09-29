@@ -1,7 +1,8 @@
 /* ============================================================
    QR Listing Creator — seller-facing setup & management (qr-listing-creator.js)
-   VERSION 1.6 (2026-09-25) — v1.6: Theme picker + Ad banner editor (Settings tab); order-line cost snapshot
-   feeds the profit view so margins reflect what a product cost when it actually sold. Notes: QLC_HANDOFF_v1.6_ADDENDUM.md (base: v1.5)
+   VERSION 1.7 (2026-09-27) — v1.7: a live Questions tab (customers can ask about an item or something general;
+   reply or mark resolved) plus 10-second auto-refresh on the Orders and Questions tabs — the manual Refresh
+   buttons still work too. Notes: QLC_HANDOFF_v1.8_ADDENDUM.md (base: v1.6)
    Vanilla JS, no build step. Talks to the same Worker as order.js —
    see qr-listing-creator-worker.js's own header for the full API
    contract. This file owns everything a seller does: set up a
@@ -23,6 +24,7 @@
 
 const WORKER_ENDPOINT = 'https://qr-listing-creator-proxy.reysourcez-ent.workers.dev';
 const SESSION_KEY = 'qlc-session'; // { bizId, adminKey } for THIS browser only
+const LIVE_POLL_MS = 10000; // how often Orders (while open) and Questions (always, for the badge) re-check (v1.7)
 
 function formatRM(v) {
   if (!isFinite(v) || v < 0) return 'RM0.00';
@@ -47,6 +49,9 @@ let session = null; // { bizId, adminKey }
 let business = null;
 let products = [];
 let selectedVertical = 'fnb';
+let questions = [];               // (v1.7) latest fetch, kept for local optimistic updates after a reply
+let questionsPollTimer = null;    // (v1.7) always running once signed in — it's what keeps the tab badge live
+let ordersPollTimer = null;       // (v1.7) only runs while the Orders tab is the one open
 
 function loadSession() {
   try {
@@ -151,10 +156,11 @@ async function loadManageView(justCreated) {
   const enc = encodeURIComponent(session.bizId);
   // The orders call needs the admin key, so it also proves the saved key still works. The floor plan is
   // optional: if it cannot be fetched the seller still gets everything else. (v1.1)
-  const [data, orderData, planData] = await Promise.all([
+  const [data, orderData, planData, questionData] = await Promise.all([
     adminFetch('/catalog?biz=' + enc), // with the key, so the private Cost comes back too (v1.5)
     adminFetch('/orders?biz=' + enc),
     apiFetch('/floorplan?biz=' + enc).catch(() => ({ plan: null })),
+    adminFetch('/questions?biz=' + enc).catch(() => ({ questions: [] })), // (v1.7) same graceful-degrade pattern as the floor plan
   ]);
   business = data.business;
   products = data.products;
@@ -184,6 +190,8 @@ async function loadManageView(justCreated) {
   renderTables();
   renderSettings();
   renderOrders(orderData.orders);
+  renderQuestions(questionData.questions); // (v1.7)
+  startQuestionsPolling();                 // (v1.7) runs continuously from here on, regardless of active tab
   fpSetTool(fp.tool);
   fpRender();
 }
@@ -195,6 +203,11 @@ function setTab(tab) {
     b.setAttribute('aria-expanded', String(active));
   });
   document.querySelectorAll('.qlc-panel').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+  // Orders only auto-refreshes while it's the tab actually on screen (v1.7) — nothing on it is ever
+  // half-typed, so a plain silent re-check is safe; Questions polls continuously regardless of tab (see
+  // startQuestionsPolling), this just gives a snappier check the moment the seller switches into it.
+  if (tab === 'orders') { renderOrders(undefined, true); startOrdersPolling(); } else { stopOrdersPolling(); }
+  if (tab === 'questions') pollQuestionsTick();
 }
 
 /* ================= PRODUCTS ================= */
@@ -675,14 +688,21 @@ function renderAnalytics(orders) {
 /* ================= ORDERS ================= */
 
 // `preloaded` is the orders array when the caller already has it (first load); otherwise it is fetched.
-async function renderOrders(preloaded) {
+// `silent` (v1.7, used by the auto-refresh timer only) skips the "Loading…" flash and skips redrawing the
+// table at all when the fetched order list is identical to what's already on screen — a manual Refresh click
+// never passes this, so it keeps behaving exactly as it always has.
+let lastOrdersSignature = null;
+async function renderOrders(preloaded, silent) {
   const tbody = document.getElementById('qlc-orders-rows');
   try {
     let orders = preloaded;
     if (!orders) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted);">Loading&hellip;</td></tr>';
+      if (!silent) tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted);">Loading&hellip;</td></tr>';
       orders = (await adminFetch('/orders?biz=' + encodeURIComponent(session.bizId))).orders;
     }
+    const sig = orders.map((o) => o.id).join(',');
+    if (silent && sig === lastOrdersSignature) return; // nothing new since the last check
+    lastOrdersSignature = sig;
     renderAnalytics(orders);
     if (!orders.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--muted);">No orders yet.</td></tr>'; return; }
     tbody.innerHTML = orders.map((o) => {
@@ -698,8 +718,184 @@ async function renderOrders(preloaded) {
       return `<tr><td>${escapeHTML(o.id)}</td><td>${escapeHTML(context)}${deliveryLines}</td><td>${escapeHTML(itemsSummary + offers)}</td><td>${formatRM(o.subtotal)}</td><td>${escapeHTML(when)}</td></tr>`;
     }).join('');
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#C0392B;">${escapeHTML(err.message)}</td></tr>`;
+    // A silent background check that fails (a transient network blip) leaves the currently-shown, working
+    // table alone rather than replacing it with an error — only a manual Refresh click surfaces one. (v1.7)
+    if (!silent) tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:#C0392B;">${escapeHTML(err.message)}</td></tr>`;
   }
+}
+
+function startOrdersPolling() {
+  if (ordersPollTimer) return;
+  ordersPollTimer = setInterval(() => { if (!document.hidden) renderOrders(undefined, true); }, LIVE_POLL_MS);
+}
+function stopOrdersPolling() {
+  if (ordersPollTimer) { clearInterval(ordersPollTimer); ordersPollTimer = null; }
+}
+
+/* ================= QUESTIONS / SUPPORT (v1.7) =================
+   Customers ask from a floating button on the ordering page (see order.js); this tab is where the seller sees
+   and answers them. Kept live two ways: a badge on the "Questions" tab label that updates even while the
+   seller is on a different tab, and — while this tab IS open — the open/answered lists themselves.
+   The re-render is per-card, not a full rebuild: a poll tick only touches a card whose status or answer text
+   has actually changed since the last time it was drawn. An unchanged open question — reply box included — is
+   left completely alone, so typing a reply is never interrupted mid-keystroke by the next automatic check. */
+
+let lastQuestionsSnapshot = new Map(); // id -> "status|answer", what was last actually drawn for that card
+
+const Q_STATUS_LABEL = { answered: ['Answered', 'qlc-cls-star'], dismissed: ['Resolved', 'qlc-cls-dog'] };
+function questionSignature(q) { return q.status + '|' + (q.answer || ''); }
+function questionContextLabel(q) {
+  if (q.orderType === 'dine_in') return 'Table ' + (q.tableNumber || '\u2014');
+  if (q.orderType === 'delivery') return 'Delivery customer';
+  if (q.orderType === 'takeaway') return 'Takeaway customer';
+  return 'A customer';
+}
+function questionWhen(iso) { return new Date(String(iso).replace(' ', 'T') + 'Z').toLocaleString(); }
+
+function openQuestionCardHTML(q) {
+  const about = q.productName ? ' about <strong>' + escapeHTML(q.productName) + '</strong>' : '';
+  return `
+    <div class="qlc-q-card" data-id="${escapeHTML(q.id)}">
+      <div class="qlc-q-head"><span>${escapeHTML(questionContextLabel(q))}${about}</span><span class="toggle-hint">${escapeHTML(questionWhen(q.createdAt))}</span></div>
+      <p class="qlc-q-text">${escapeHTML(q.question)}</p>
+      <textarea class="qlc-q-reply" rows="2" placeholder="Type your reply\u2026" maxlength="500"></textarea>
+      <div class="qlc-row-actions">
+        <button type="button" class="btn btn-primary qlc-q-send">Send reply</button>
+        <button type="button" class="btn btn-secondary qlc-q-dismiss">Mark resolved (no reply)</button>
+        <span class="qlc-status" role="status"></span>
+      </div>
+    </div>`;
+}
+function answeredQuestionCardHTML(q) {
+  const about = q.productName ? ' about <strong>' + escapeHTML(q.productName) + '</strong>' : '';
+  const cls = Q_STATUS_LABEL[q.status] || Q_STATUS_LABEL.answered;
+  const body = q.status === 'dismissed'
+    ? '<p class="toggle-hint">Marked resolved without a written reply.</p>'
+    : `<p class="qlc-q-answer"><strong>You replied:</strong> ${escapeHTML(q.answer || '')}</p>`;
+  return `
+    <div class="qlc-q-card" data-id="${escapeHTML(q.id)}">
+      <div class="qlc-q-head"><span>${escapeHTML(questionContextLabel(q))}${about} <span class="qlc-cls ${cls[1]}">${cls[0]}</span></span><span class="toggle-hint">${escapeHTML(questionWhen(q.createdAt))}</span></div>
+      <p class="qlc-q-text">${escapeHTML(q.question)}</p>
+      ${body}
+    </div>`;
+}
+
+function wireQuestionCard(card, q) {
+  if (!card || q.status !== 'open') return;
+  card.querySelector('.qlc-q-send').addEventListener('click', () => sendQuestionReply(card, q.id));
+  card.querySelector('.qlc-q-dismiss').addEventListener('click', () => dismissQuestionCard(card, q.id));
+}
+
+function setQuestionsEmptyState(box, msg) {
+  box.innerHTML = '<p class="toggle-hint">' + msg + '</p>';
+  box.dataset.empty = '1';
+}
+
+function renderQuestions(qs) {
+  questions = qs || [];
+  const openBox = document.getElementById('qlc-questions-open');
+  const doneBox = document.getElementById('qlc-questions-answered');
+  if (!openBox || !doneBox) return;
+
+  if (!questions.length && !lastQuestionsSnapshot.size) {
+    setQuestionsEmptyState(openBox, 'No open questions right now.');
+    setQuestionsEmptyState(doneBox, 'Nothing answered yet.');
+    updateQuestionBadge(0);
+    return;
+  }
+
+  const seenIds = new Set();
+  let openCount = 0;
+
+  questions.forEach((q) => {
+    seenIds.add(q.id);
+    if (q.status === 'open') openCount++;
+    const sig = questionSignature(q);
+    const prevSig = lastQuestionsSnapshot.get(q.id);
+    const targetBox = q.status === 'open' ? openBox : doneBox;
+    const existing = document.querySelector('.qlc-q-card[data-id="' + q.id + '"]');
+
+    if (!existing) {
+      if (targetBox.dataset.empty) { targetBox.innerHTML = ''; delete targetBox.dataset.empty; }
+      targetBox.insertAdjacentHTML('afterbegin', q.status === 'open' ? openQuestionCardHTML(q) : answeredQuestionCardHTML(q));
+      wireQuestionCard(targetBox.querySelector('.qlc-q-card[data-id="' + q.id + '"]'), q);
+    } else if (prevSig !== sig) {
+      if (targetBox.dataset.empty) { targetBox.innerHTML = ''; delete targetBox.dataset.empty; }
+      const wrap = document.createElement('div');
+      wrap.innerHTML = q.status === 'open' ? openQuestionCardHTML(q) : answeredQuestionCardHTML(q);
+      const fresh = wrap.firstElementChild;
+      targetBox.insertAdjacentElement('afterbegin', fresh);
+      existing.remove();
+      wireQuestionCard(fresh, q);
+    }
+    // else: identical to what's already on screen — leave that card, and any half-typed reply, untouched.
+    lastQuestionsSnapshot.set(q.id, sig);
+  });
+
+  Array.from(lastQuestionsSnapshot.keys()).forEach((id) => {
+    if (!seenIds.has(id)) {
+      const el = document.querySelector('.qlc-q-card[data-id="' + id + '"]');
+      if (el) el.remove();
+      lastQuestionsSnapshot.delete(id);
+    }
+  });
+
+  if (!openBox.querySelector('.qlc-q-card')) setQuestionsEmptyState(openBox, 'No open questions right now.');
+  if (!doneBox.querySelector('.qlc-q-card')) setQuestionsEmptyState(doneBox, 'Nothing answered yet.');
+  updateQuestionBadge(openCount);
+}
+
+function updateQuestionBadge(n) {
+  const badge = document.getElementById('qlc-q-badge');
+  if (!badge) return;
+  badge.hidden = n === 0;
+  badge.textContent = String(n);
+}
+
+async function sendQuestionReply(card, id) {
+  const textarea = card.querySelector('.qlc-q-reply');
+  const statusEl = card.querySelector('.qlc-status');
+  const answer = textarea.value.trim();
+  if (!answer) { statusEl.textContent = 'Type a reply first.'; statusEl.className = 'qlc-status is-error'; return; }
+  statusEl.textContent = 'Sending\u2026';
+  statusEl.className = 'qlc-status';
+  try {
+    await adminFetch('/questions?biz=' + encodeURIComponent(session.bizId) + '&id=' + encodeURIComponent(id), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ answer }),
+    });
+    const q = questions.find((x) => x.id === id);
+    if (q) { q.status = 'answered'; q.answer = answer; }
+    renderQuestions(questions); // moves this one card to Answered immediately; next poll tick just confirms it
+  } catch (err) {
+    statusEl.textContent = err.message;
+    statusEl.className = 'qlc-status is-error';
+  }
+}
+
+async function dismissQuestionCard(card, id) {
+  if (!confirm('Mark this resolved without sending a written reply?')) return;
+  try {
+    await adminFetch('/questions?biz=' + encodeURIComponent(session.bizId) + '&id=' + encodeURIComponent(id), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dismiss: true }),
+    });
+    const q = questions.find((x) => x.id === id);
+    if (q) { q.status = 'dismissed'; }
+    renderQuestions(questions);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+async function pollQuestionsTick() {
+  if (document.hidden) return;
+  try {
+    const data = await adminFetch('/questions?biz=' + encodeURIComponent(session.bizId));
+    renderQuestions(data.questions);
+  } catch (e) { /* transient network hiccup — the next tick tries again */ }
+}
+function startQuestionsPolling() {
+  if (questionsPollTimer) return;
+  questionsPollTimer = setInterval(pollQuestionsTick, LIVE_POLL_MS);
 }
 
 /* ================= SESSION HELPERS (v1.1) ================= */
@@ -998,6 +1194,7 @@ function init() {
     wireAdRemovers();
   });
   document.getElementById('qlc-refresh-orders').addEventListener('click', () => renderOrders());
+  document.getElementById('qlc-refresh-questions').addEventListener('click', () => pollQuestionsTick());
   document.getElementById('qlc-copy-link').addEventListener('click', copyAdminLink);
   document.getElementById('qlc-show-key').addEventListener('click', showKeyBanner);
   document.getElementById('qlc-sign-out').addEventListener('click', signOut);
