@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.0 (2026-09-24)
+   Version: v6.1 (2026-09-30) — engine switch + comparison log
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the one Worker call: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.0 (2026-09-24)');
+console.info('[Form Scanner] page build: v6.1 (2026-09-30)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -236,7 +236,8 @@ function renderPreview(spec, page) {
 /* ================= scan flow ================= */
 async function runScan() {
   if (!current) { setStatus('Choose a photo or PDF first.', 'error'); return; }
-  const precise = $('fs-precise').checked;
+  const provider = $('fs-provider').value;
+  const precise = provider === 'gemini' && $('fs-precise').checked;
   const cost = precise ? CFG.PRECISE_COST : 1;
   if (getUsageToday() + cost > CFG.MAX_SCANS_PER_DAY) {
     setStatus('This browser has hit today\u2019s scan limit. Try again tomorrow.', 'error');
@@ -245,16 +246,20 @@ async function runScan() {
   const btn = $('fs-scan-btn');
   btn.disabled = true;
   setStatus(precise ? 'Reading the form thoroughly\u2026 this can take up to half a minute.' : 'Reading the form\u2026 this can take a few seconds.');
+  let t0 = performance.now(), secs = 0;
   try {
     const note = $('fs-note').value.trim();
-    const raw = await scanForm({ image: current.base64, mime_type: current.mimeType, note: note || undefined, tier: precise ? 'precise' : 'fast' });
+    const raw = await scanForm({ image: current.base64, mime_type: current.mimeType, note: note || undefined, tier: precise ? 'precise' : 'fast', provider });
+    secs = (performance.now() - t0) / 1000;
     recordUsage(cost);
     if (!raw.recognized) {
+      logRun({ label: (raw._meta && raw._meta.model) || provider, secs, error: 'Model did not recognise a form' });
       setStatus('Couldn\u2019t make out a form in that file \u2014 try a straighter, closer, better-lit photo, or a clearer PDF.', 'error');
       return;
     }
     const spec = E.normalizeSpec(raw);
     if (!spec.bands.length) {
+      logRun({ label: (raw._meta && raw._meta.model) || provider, secs, error: 'No fields or tables found' });
       setStatus('Recognised a form, but couldn\u2019t make out any fields or tables on it. Try a clearer file.', 'error');
       return;
     }
@@ -262,12 +267,35 @@ async function runScan() {
     lastSpec = spec; lastPage = page;
     renderPreview(spec, page);
     const nFields = spec.bands.reduce((a, b) => a + (b.kind === 'table' ? 1 : b.cells.reduce((n, c) => n + c.items.filter((it) => it.kind === 'F' || it.kind === 'C').length, 0)), 0);
-    setStatus(`Found ${spec.bands.length} section${spec.bands.length === 1 ? '' : 's'} on a ${page.label} page. Check it below, then download.`);
+    const label = (raw._meta && raw._meta.model) || provider;
+    logRun({ label, secs, spec, page, items: nFields });
+    setStatus(`Found ${spec.bands.length} section${spec.bands.length === 1 ? '' : 's'} on a ${page.label} page. Check it below, then download. (${label}, ${secs.toFixed(1)} s)`);
   } catch (err) {
     setStatus(err.message || 'Something went wrong. Try again.', 'error');
+    logRun({ label: $('fs-provider').selectedOptions[0].text, secs: (performance.now() - t0) / 1000, error: err.message || 'Error' });
   } finally {
     btn.disabled = false;
   }
+}
+
+/* ================= comparison log (this visit only, nothing saved) ================= */
+const runs = [];
+function logRun(r) { runs.push(r); renderRunLog(); }
+function renderRunLog() {
+  $('fs-runlog-wrap').hidden = !runs.length;
+  $('fs-runlog').innerHTML = runs.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHTML(r.label)}</td><td>${r.secs.toFixed(1)} s</td>` + (r.error
+    ? `<td colspan="2" class="fs-runlog-err">Failed: ${escapeHTML(String(r.error).slice(0, 90))}</td>`
+    : `<td>${r.spec.bands.length} sections / ${r.items} items</td><td><button type="button" class="fs-runlog-btn" data-show="${i}">Show</button> <button type="button" class="fs-runlog-btn" data-pdf="${i}">PDF</button></td>`) + '</tr>').join('');
+}
+async function downloadRun(r) {
+  try {
+    const res = await E.buildFillablePdf(PDFLib, r.spec, r.page, { shade: $('fs-shade').checked });
+    const url = URL.createObjectURL(new Blob([res.bytes], { type: 'application/pdf' }));
+    const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const a = document.createElement('a');
+    a.href = url; a.download = (slug(r.spec.title || 'scanned-form') || 'scanned-form') + '-' + slug(r.label) + '.pdf';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  } catch (err) { setStatus('Could not build the PDF (' + (err.message || 'unknown error') + ').', 'error'); }
 }
 
 /* ================= download ================= */
@@ -304,5 +332,11 @@ function init() {
   $('fs-photo-input').addEventListener('change', handleFileSelect);
   $('fs-scan-btn').addEventListener('click', runScan);
   $('fs-download-btn').addEventListener('click', downloadPdf);
+  $('fs-runlog').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.show) { const r = runs[+b.dataset.show]; lastSpec = r.spec; lastPage = r.page; renderPreview(r.spec, r.page); }
+    else if (b.dataset.pdf) downloadRun(runs[+b.dataset.pdf]);
+  });
 }
 document.addEventListener('DOMContentLoaded', init);

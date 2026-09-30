@@ -88,3 +88,16 @@ Real end-to-end testing this round, not just static review — a genuine change 
 - `nav-config.js`'s "Form Creator" label for this page — flag for confirmation, not this session's file to change.
 - No multi-page form support (a multi-page PDF only has its page 1 read) — unchanged scope from before.
 - A true site-wide sticky-while-scrolling pattern would need `body`'s `overflow-y: scroll` revisited — cross-tool decision, out of scope here; noted in case it comes up again.
+
+
+## 2026-09-30 — v6.1: engine switch (Gemini / Qwen / Kimi) for side-by-side testing
+
+**Why.** Gemini reads were slow and sometimes failed outright; v4.3's ~90% structure was close but placement was wrong. Instead of guessing, v6.1 lets the same form be read by three engines and compared, so one can be chosen as the long-term default.
+
+**What changed.** Worker: new `provider` field (`gemini` default | `qwen` | `kimi`). Qwen/Kimi call OpenRouter with the SAME prompt and SAME sanitizer as Gemini, so results are comparable. Models are set in `OR_MODELS` (top of the Worker): `qwen/qwen3.8-27b:free`, `moonshotai/kimi-k2.6:free` (both checked on openrouter.ai 2026-09-30). Every reply now carries `_meta.provider/model/ms`. Page: engine dropdown + a comparison log (engine, seconds, sections/items, Show and PDF buttons per run; failed runs are logged too). Log lives in memory only. `form-scanner.js?v=1` bumped to `?v=2`.
+
+**Deploy.** (1) openrouter.ai → sign up → Keys → create key. (2) Cloudflare → Workers & Pages → your form-scanner-proxy Worker → Settings → Variables and Secrets → Add → Secret → name `OPENROUTER_API_KEY` → paste key → Save. (3) Edit code → replace everything with the new `form-scanner-proxy-worker.js` → Deploy. (4) GitHub: replace `form-scanner.html` and `form-scanner.js`. (5) Hard refresh the page (Ctrl+F5).
+
+**How to test.** Same form, each engine in turn (screenshot a PDF page for Qwen/Kimi). Read the log: seconds, failures, and whether "sections/items" match the original. Click PDF on each row and compare placement against the source. If all engines detect the same structure but the PDFs still place it wrongly, the problem is the layout engine, not the model.
+
+**Limits / KIV.** Qwen/Kimi: images only (PDF reading would need page rasterising). Free OpenRouter models are rate-limited and may retain prompts, so use blank/sample forms while testing; data-policy routing not added because not verified. Reasoning models can be slow; the Worker asks for low reasoning and retries without it if rejected. Winner → set as default, remove the losers, re-check data policy.

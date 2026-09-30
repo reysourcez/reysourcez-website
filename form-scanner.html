@@ -96,6 +96,18 @@
     .fs-rescan-hint { font-size: 0.85rem; color: var(--muted); margin-top: 10px; }
     .fs-warn-list { font-size: 0.85rem; color: #96731A; margin: 10px 0 0; padding-left: 20px; }
 
+    .fs-provider-row { display: block; margin-top: 12px; font-size: 0.88rem; font-weight: 600; color: var(--text); }
+    .fs-select { display: block; width: 100%; margin-top: 6px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text); }
+    .fs-select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .fs-runlog-wrap { margin-bottom: 22px; }
+    .fs-runlog-title { font-size: 1rem; margin: 0 0 8px; }
+    .fs-runlog-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    .fs-runlog-table th, .fs-runlog-table td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    .fs-runlog-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); font-weight: 600; }
+    .fs-runlog-err { color: #C0392B; }
+    .fs-runlog-btn { font-family: var(--font-body); font-size: 0.8rem; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
+    .fs-runlog-btn:hover { background: var(--ink); color: #fff; }
+
     @media (min-width: 801px) {
       .fs-layout { display: grid; grid-template-columns: minmax(360px, 480px) 1fr; gap: 40px; align-items: start; }
       .fs-col-left { max-width: none; }
@@ -134,7 +146,7 @@
     <section class="calc-intro">
       <div class="wrap">
         <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
-        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.0 — 2026-09-24" title="v6.0 — 2026-09-24" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.0</span></h1>
+        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.1 — 2026-09-30" title="v6.1 — 2026-09-30" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.1</span></h1>
         <p class="lead">Photograph or upload a paper form — crooked, at an angle, whatever — and get back a straight, cleanly laid out PDF with real fillable fields, following the source form's own structure. Not an OCR text dump: an actual usable digital version, ready to type into.</p>
       </div>
     </section>
@@ -164,6 +176,15 @@
 
               <textarea class="fs-note" id="fs-note" maxlength="500" placeholder="Optional — structure guidance (ignore the letterhead, it's two pages) and/or an output request (make this A5 landscape, use a serif font, bigger text)"></textarea>
 
+              <label class="fs-provider-row" for="fs-provider">Reading engine (test switch)
+                <select id="fs-provider" class="fs-select">
+                  <option value="gemini">Gemini (current)</option>
+                  <option value="qwen">Qwen 3.8 27B (free)</option>
+                  <option value="kimi">Kimi K2.6 (free)</option>
+                </select>
+                <span class="fs-option-hint">Scan the same form with each engine, then compare in the log on the right. Qwen and Kimi take photos/screenshots only, not PDFs. Test with blank or sample forms — free engines may keep what you send.</span>
+              </label>
+
               <label class="fs-option-row">
                 <input type="checkbox" id="fs-shade">
                 <span>Shade fillable fields with a light tint<span class="fs-option-hint">Unchecked = colourless, best for printing. Either way, Chrome and Edge's own PDF viewer highlights every fillable field on screen by default — that's the browser, not this file, and it won't show when printed or in Acrobat with highlighting off.</span></span>
@@ -171,7 +192,7 @@
 
               <label class="fs-option-row">
                 <input type="checkbox" id="fs-precise">
-                <span>More thorough reading (slower)<span class="fs-option-hint">Uses a stronger model — worth it for a dense or unusually laid-out form.</span></span>
+                <span>More thorough reading (slower)<span class="fs-option-hint">Gemini only. Uses a stronger model — worth it for a dense or unusually laid-out form.</span></span>
               </label>
             </div>
 
@@ -187,6 +208,11 @@
           <div class="fs-col-right">
             <div class="fs-results-placeholder no-print" id="fs-results-placeholder">
               Choose a photo or PDF and scan it — the fields, tables and sign-off blocks this tool detects will be listed here first, so you can check they match the original before downloading.
+            </div>
+
+            <div id="fs-runlog-wrap" class="fs-runlog-wrap no-print" hidden>
+              <h3 class="fs-runlog-title">Comparison log <span class="fs-option-hint">(this visit only — nothing is saved)</span></h3>
+              <table class="fs-runlog-table"><thead><tr><th>#</th><th>Engine</th><th>Time</th><th>Detected</th><th></th></tr></thead><tbody id="fs-runlog"></tbody></table>
             </div>
 
             <div id="fs-results-section" hidden>
@@ -226,6 +252,6 @@
   <script src="nav-config.js?v=1" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="form-scanner-engine.js?v=1" defer></script>
-  <script src="form-scanner.js?v=1" defer></script>
+  <script src="form-scanner.js?v=2" defer></script>
 </body>
 </html>

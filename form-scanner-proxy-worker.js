@@ -1,9 +1,10 @@
 /* ============================================================
    Form Scanner — Gemini proxy (Cloudflare Worker)
-   Version: v6.0 (2026-09-24) — returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.1 (2026-09-30) — engine switch: Gemini / Qwen / Kimi. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). Holds the Gemini key as the
    encrypted secret GEMINI_API_KEY. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
-   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise" }
+   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen" | "kimi" }
+   Qwen/Kimi go through OpenRouter (images only) and need a 2nd secret: OPENROUTER_API_KEY.
    Response: the spec (see FORM_SCHEMA) + _meta, or { error }
    ============================================================ */
 
@@ -19,6 +20,12 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models
 const MAX_BASE64_CHARS = 20 * 1024 * 1024;      // ~15 MB file
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const UPSTREAM_TIMEOUT_MS = 55000;
+
+// OpenRouter models for the Qwen / Kimi switch (v6.1). Change the IDs here only.
+// Checked 2026-09-30 on openrouter.ai: qwen3.8-27b:free (vision, free), kimi-k2.6:free (multimodal, free).
+// Paid Kimi alternative: 'moonshotai/kimi-k3'. Free models are rate-limited by OpenRouter.
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const OR_MODELS = { qwen: 'qwen/qwen3.8-27b:free', kimi: 'moonshotai/kimi-k2.6:free' };
 
 /* ---------------- response schema (kept small: strings carry the item codes) ---------------- */
 const S = (description) => ({ type: 'string', description });
@@ -238,6 +245,63 @@ async function callGemini(env, model, parts, useSchema, useThinking) {
   } finally { clearTimeout(timer); }
 }
 
+/* OpenRouter path (Qwen / Kimi): images only; same PROMPT + same sanitizer as Gemini so results are comparable. */
+async function handleOpenRouter(env, provider, image, mime, note, origin) {
+  const model = OR_MODELS[provider];
+  if (!env.OPENROUTER_API_KEY) return jsonResponse({ error: 'The server is missing its OPENROUTER_API_KEY secret (Worker Settings > Variables and Secrets).' }, 500, origin);
+  if (mime === 'application/pdf') return jsonResponse({ error: 'Qwen and Kimi read photos or screenshots only. Screenshot the PDF page, or switch to Gemini for PDFs.' }, 415, origin);
+  const content = [
+    { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + image } },
+    { type: 'text', text: PROMPT + '\n\nReply with ONLY the JSON object. No markdown fences, no commentary.' },
+  ];
+  if (note) content.push({ type: 'text', text: 'Note from the person scanning this form (follow it as described above): ' + note });
+  const t0 = Date.now();
+  let useReasoning = true, useJsonMode = true, resp = null, fallback = '';
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const payload = { model, messages: [{ role: 'user', content }], max_tokens: 16384, temperature: 0 };
+    if (useJsonMode) payload.response_format = { type: 'json_object' };
+    if (useReasoning) payload.reasoning = { effort: 'low' };
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      resp = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + env.OPENROUTER_API_KEY, 'X-Title': 'Reysourcez Form Scanner' },
+        body: JSON.stringify(payload), signal: ctl.signal,
+      });
+    } catch (e) {
+      return jsonResponse({ error: e && e.name === 'AbortError' ? 'The scan took too long (over ' + UPSTREAM_TIMEOUT_MS / 1000 + ' s).' : 'Could not reach OpenRouter. Try again.' }, 502, origin);
+    } finally { clearTimeout(timer); }
+    if (resp.ok) break;
+    const errText = await resp.text();
+    console.error('[Form Scanner] OpenRouter', resp.status, model, errText.slice(0, 400));
+    if (resp.status === 400 && useReasoning) { useReasoning = false; fallback += 'no-reasoning '; continue; }
+    if (resp.status === 400 && useJsonMode) { useJsonMode = false; fallback += 'no-json-mode '; continue; }
+    if ((resp.status === 429 || resp.status === 502 || resp.status === 503) && attempt < 3) { await new Promise((r) => setTimeout(r, 1500)); continue; }
+    let msg = errText;
+    try { msg = (JSON.parse(errText).error || {}).message || errText; } catch (e) { /* keep raw */ }
+    const hint = resp.status === 401 || resp.status === 403 ? 'OpenRouter rejected the key.'
+      : resp.status === 402 ? 'OpenRouter says the credit or free-usage limit was reached.'
+      : resp.status === 404 ? 'That model is not available on OpenRouter right now (edit OR_MODELS).'
+      : resp.status === 429 ? 'The free model is rate-limited; wait a minute and retry.'
+      : 'OpenRouter error ' + resp.status + '.';
+    return jsonResponse({ error: hint + ' ' + String(msg).slice(0, 200) }, resp.status, origin);
+  }
+  if (!resp || !resp.ok) return jsonResponse({ error: 'OpenRouter did not answer. Please try again.' }, 502, origin);
+  const data = await resp.json();
+  const choice = data.choices && data.choices[0];
+  const m = choice && choice.message;
+  const text = m && typeof m.content === 'string' ? m.content : (m && Array.isArray(m.content) ? m.content.map((p) => (p && p.text) || '').join('') : '');
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a < 0 || b <= a) return jsonResponse({ error: choice && choice.finish_reason === 'length' ? 'The model ran out of room before finishing (it may have spent it thinking). Scan again.' : 'The model returned no usable answer. Scan again.' }, 502, origin);
+  let parsed;
+  try { parsed = JSON.parse(text.slice(a, b + 1)); }
+  catch (e) { return jsonResponse({ error: 'The model returned malformed JSON. Scan again.' }, 502, origin); }
+  const spec = sanitizeSpec(parsed);
+  spec._meta = { provider, model, tier: 'n/a', ms: Date.now() - t0, fallback: fallback.trim() };
+  return jsonResponse(spec, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -250,6 +314,9 @@ export default {
       if (body.image.length > MAX_BASE64_CHARS) return jsonResponse({ error: 'That file is too large. Try one under 15 MB.' }, 413, origin);
       const mime = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
       if (!ALLOWED_MIME.includes(mime)) return jsonResponse({ error: 'Unsupported file type. Use a JPG, PNG, WebP or PDF.' }, 415, origin);
+      const provider = body.provider === 'qwen' || body.provider === 'kimi' ? body.provider : 'gemini';
+      if (provider !== 'gemini') return await handleOpenRouter(env, provider, body.image, mime, typeof body.note === 'string' ? body.note.trim().slice(0, 500) : '', origin);
+      const t0 = Date.now();
       if (!env.GEMINI_API_KEY) return jsonResponse({ error: 'The server is missing its GEMINI_API_KEY secret (Worker Settings > Variables and Secrets).' }, 500, origin);
 
       const tier = body.tier === 'precise' ? 'precise' : 'fast';
@@ -288,7 +355,7 @@ export default {
         return jsonResponse({ error: why }, 502, origin);
       }
       const spec = sanitizeSpec(parsed);
-      spec._meta = { model, tier, fallback: fallback.trim() };
+      spec._meta = { provider: 'gemini', model, tier, ms: Date.now() - t0, fallback: fallback.trim() };
       return jsonResponse(spec, 200, origin);
     } catch (err) {
       return jsonResponse({ error: 'Unexpected server error: ' + (err && err.message ? err.message : 'unknown') }, 500, origin);
