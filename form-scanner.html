@@ -108,6 +108,11 @@
     .fs-runlog-btn { font-family: var(--font-body); font-size: 0.8rem; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); cursor: pointer; }
     .fs-runlog-btn:hover { background: var(--ink); color: #fff; }
 
+    .fs-pdf-frame { display: block; width: 100%; height: 620px; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin: 0 0 8px; }
+    .fs-details { margin-top: 14px; }
+    .fs-details summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--accent-dark); margin-bottom: 10px; }
+    @media (max-width: 800px) { .fs-pdf-frame { height: 440px; } }
+
     @media (min-width: 801px) {
       .fs-layout { display: grid; grid-template-columns: minmax(360px, 480px) 1fr; gap: 40px; align-items: start; }
       .fs-col-left { max-width: none; }
@@ -146,7 +151,7 @@
     <section class="calc-intro">
       <div class="wrap">
         <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
-        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.1 — 2026-09-30" title="v6.1 — 2026-09-30" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.1</span></h1>
+        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.2 — 2026-09-30" title="v6.2 — 2026-09-30" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.2</span></h1>
         <p class="lead">Photograph or upload a paper form — crooked, at an angle, whatever — and get back a straight, cleanly laid out PDF with real fillable fields, following the source form's own structure. Not an OCR text dump: an actual usable digital version, ready to type into.</p>
       </div>
     </section>
@@ -178,11 +183,11 @@
 
               <label class="fs-provider-row" for="fs-provider">Reading engine (test switch)
                 <select id="fs-provider" class="fs-select">
-                  <option value="gemini">Gemini (current)</option>
-                  <option value="qwen">Qwen 3.8 27B (free)</option>
-                  <option value="kimi">Kimi K2.6 (free)</option>
+                  <option value="auto">Auto: Qwen, then Gemini if it fails (recommended)</option>
+                  <option value="qwen">Qwen 3.8 27B only (free)</option>
+                  <option value="gemini">Gemini only</option>
                 </select>
-                <span class="fs-option-hint">Scan the same form with each engine, then compare in the log on the right. Qwen and Kimi take photos/screenshots only, not PDFs. Test with blank or sample forms — free engines may keep what you send.</span>
+                <span class="fs-option-hint">Auto tries Qwen first and falls back to Gemini if it fails. Pick one engine to compare them in the log on the right. PDFs are converted to a page image for Qwen automatically. Test with blank or sample forms — free engines may keep what you send.</span>
               </label>
 
               <label class="fs-option-row">
@@ -220,7 +225,9 @@
               <p class="fs-preview-ref" id="fs-preview-ref"></p>
               <p class="fs-preview-page" id="fs-preview-page"></p>
 
-              <div id="fs-bands"></div>
+              <iframe class="fs-pdf-frame no-print" id="fs-pdf-frame" title="Preview of the generated PDF" hidden></iframe>
+              <p class="fs-rescan-hint no-print">This is the PDF exactly as it will download. Preview blank (some phones can't show PDFs inline)? Use Download.</p>
+              <details class="fs-details"><summary>What was read (sections, fields, tables)</summary><div id="fs-bands"></div></details>
               <ul class="fs-warn-list" id="fs-warn-list" hidden></ul>
 
               <div class="fs-download-row no-print">
@@ -252,6 +259,6 @@
   <script src="nav-config.js?v=1" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
   <script src="form-scanner-engine.js?v=1" defer></script>
-  <script src="form-scanner.js?v=2" defer></script>
+  <script src="form-scanner.js?v=3" defer></script>
 </body>
 </html>

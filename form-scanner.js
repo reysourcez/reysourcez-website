@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.1 (2026-09-30) — engine switch + comparison log
+   Version: v6.2 (2026-09-30) — Auto engine (Qwen, then Gemini), PDF page rendering, live PDF preview
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the one Worker call: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.1 (2026-09-30)');
+console.info('[Form Scanner] page build: v6.2 (2026-09-30)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -113,6 +113,37 @@ async function readPdfMeta(bytes) {
   return { pages: n, width: size ? size.width : 0, height: size ? size.height : 0 };
 }
 
+/* ================= PDF page -> image (pdf.js 3.11.174 UMD from cdnjs, loaded only when a PDF is chosen) =================
+   Lets Qwen (images only) read PDFs, and gives the upload card a real page thumbnail. Gemini still gets the original PDF. */
+const PDFJS_BASE = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+let pdfjsPromise = null;
+function loadPdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if (!pdfjsPromise) pdfjsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = PDFJS_BASE + 'pdf.min.js';
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + 'pdf.worker.min.js'; resolve(window.pdfjsLib); };
+    s.onerror = () => { pdfjsPromise = null; reject(new Error('Could not load the PDF page renderer.')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsPromise;
+}
+async function rasterisePdfPage1(bytes) {
+  const lib = await loadPdfJs();
+  const pdf = await lib.getDocument({ data: bytes.slice(0) }).promise;
+  const pg = await pdf.getPage(1);
+  const v1 = pg.getViewport({ scale: 1 });
+  const vp = pg.getViewport({ scale: CFG.MAX_IMAGE_EDGE / Math.max(v1.width, v1.height) });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await pg.render({ canvasContext: ctx, viewport: vp }).promise;
+  const dataUrl = canvas.toDataURL('image/jpeg', CFG.JPEG_QUALITY);
+  pdf.destroy();
+  return dataUrl;
+}
+
 async function handleFileSelect(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -136,7 +167,13 @@ async function handleFileSelect(e) {
       const wide = meta.width > meta.height;
       const label = `${meta.pages} page${meta.pages === 1 ? '' : 's'} \u00b7 ${fmtMM(Math.min(meta.width, meta.height))} \u00d7 ${fmtMM(Math.max(meta.width, meta.height))} mm ${wide ? 'landscape' : 'portrait'}`;
       showPdfCard(file.name, label);
-      current = { kind: 'pdf', base64, mimeType: 'application/pdf', src: { kind: 'pdf', width: meta.width, height: meta.height } };
+      current = { kind: 'pdf', base64, mimeType: 'application/pdf', src: { kind: 'pdf', width: meta.width, height: meta.height }, raster: null };
+      rasterisePdfPage1(bytes).then((du) => {
+        if (mySel !== selId || !current) return;
+        current.raster = du.split(',')[1];
+        showImageCard(du);
+        setStatus(`PDF ready (${label}) \u2014 page 1 rendered, so Qwen and Gemini can both read it.${meta.pages > 1 ? ' Only page 1 is read.' : ''} Add a note if it helps, then scan.`);
+      }).catch(() => { if (mySel === selId) setStatus(`PDF ready (${label}) \u2014 its page could not be rendered as an image, so only Gemini can read this one.`, 'warn'); });
       setStatus(meta.pages > 1 ? 'This tool reads page 1 only \u2014 add a note above if a different page matters, then scan.' : 'PDF ready \u2014 add a note if it helps, then scan.', meta.pages > 1 ? 'warn' : null);
     } else {
       if (!/^image\//.test(file.type)) throw new Error("That file doesn't look like an image or a PDF.");
@@ -226,6 +263,7 @@ function renderPreview(spec, page) {
     warnEl.hidden = false;
   } else warnEl.hidden = true;
 
+  refreshPdfPreview(spec, page);
   $('fs-results-placeholder').hidden = true;
   $('fs-results-section').hidden = false;
   if (window.matchMedia && !window.matchMedia('(min-width: 801px)').matches) {
@@ -233,46 +271,78 @@ function renderPreview(spec, page) {
   }
 }
 
+/* ================= live PDF preview (the browser's own PDF viewer, so placement problems are visible at once) ================= */
+let pvUrl = null, pvSeq = 0;
+async function refreshPdfPreview(spec, page) {
+  const my = ++pvSeq;
+  try {
+    const res = await E.buildFillablePdf(PDFLib, spec, page, { shade: $('fs-shade').checked });
+    if (my !== pvSeq) return;
+    if (pvUrl) URL.revokeObjectURL(pvUrl);
+    pvUrl = URL.createObjectURL(new Blob([res.bytes], { type: 'application/pdf' }));
+    const fr = $('fs-pdf-frame');
+    fr.src = pvUrl + '#toolbar=0&navpanes=0&view=Fit';
+    fr.hidden = false;
+  } catch (err) { $('fs-pdf-frame').hidden = true; }
+}
+
 /* ================= scan flow ================= */
+const ENGINE_LABEL = { qwen: 'Qwen', gemini: 'Gemini' };
+const countItems = (spec) => spec.bands.reduce((a, b) => a + (b.kind === 'table' ? 1 : b.cells.reduce((n, c) => n + c.items.filter((it) => it.kind === 'F' || it.kind === 'C').length, 0)), 0);
+
+// One engine, one attempt: returns the result or throws. Every attempt (good or failed) lands in the comparison log.
+async function tryEngine(engine, note, precise) {
+  let image = current.base64, mime = current.mimeType;
+  if (engine === 'qwen' && current.kind === 'pdf') {
+    if (!current.raster) throw new Error('Qwen needs a page image and this PDF could not be rendered');
+    image = current.raster; mime = 'image/jpeg';
+  }
+  const thorough = engine === 'gemini' && precise;
+  const cost = thorough ? CFG.PRECISE_COST : 1;
+  if (getUsageToday() + cost > CFG.MAX_SCANS_PER_DAY) throw new Error('This browser has hit today\u2019s scan limit. Try again tomorrow.');
+  const t0 = performance.now();
+  try {
+    const raw = await scanForm({ image, mime_type: mime, note: note || undefined, tier: thorough ? 'precise' : 'fast', provider: engine });
+    recordUsage(cost);
+    const secs = (performance.now() - t0) / 1000, label = (raw._meta && raw._meta.model) || engine;
+    if (!raw.recognized) throw Object.assign(new Error('Model did not recognise a form'), { secs, label });
+    const spec = E.normalizeSpec(raw);
+    if (!spec.bands.length) throw Object.assign(new Error('No fields or tables found'), { secs, label });
+    const page = E.resolvePage(spec, current.src);
+    logRun({ label, secs, spec, page, items: countItems(spec) });
+    return { spec, page, label, secs };
+  } catch (err) {
+    logRun({ label: err.label || ENGINE_LABEL[engine], secs: err.secs != null ? err.secs : (performance.now() - t0) / 1000, error: err.message || 'Error' });
+    throw err;
+  }
+}
+
 async function runScan() {
   if (!current) { setStatus('Choose a photo or PDF first.', 'error'); return; }
-  const provider = $('fs-provider').value;
-  const precise = provider === 'gemini' && $('fs-precise').checked;
-  const cost = precise ? CFG.PRECISE_COST : 1;
-  if (getUsageToday() + cost > CFG.MAX_SCANS_PER_DAY) {
-    setStatus('This browser has hit today\u2019s scan limit. Try again tomorrow.', 'error');
-    return;
-  }
+  const choice = $('fs-provider').value; // auto | qwen | gemini
+  const precise = $('fs-precise').checked;
+  const engines = choice === 'auto' ? ['qwen', 'gemini'] : [choice];
   const btn = $('fs-scan-btn');
   btn.disabled = true;
-  setStatus(precise ? 'Reading the form thoroughly\u2026 this can take up to half a minute.' : 'Reading the form\u2026 this can take a few seconds.');
-  let t0 = performance.now(), secs = 0;
+  const note = $('fs-note').value.trim();
+  let lastErr = null;
   try {
-    const note = $('fs-note').value.trim();
-    const raw = await scanForm({ image: current.base64, mime_type: current.mimeType, note: note || undefined, tier: precise ? 'precise' : 'fast', provider });
-    secs = (performance.now() - t0) / 1000;
-    recordUsage(cost);
-    if (!raw.recognized) {
-      logRun({ label: (raw._meta && raw._meta.model) || provider, secs, error: 'Model did not recognise a form' });
-      setStatus('Couldn\u2019t make out a form in that file \u2014 try a straighter, closer, better-lit photo, or a clearer PDF.', 'error');
-      return;
+    for (let i = 0; i < engines.length; i++) {
+      const eng = engines[i];
+      setStatus(`Reading the form with ${ENGINE_LABEL[eng]}\u2026 ${eng === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
+      try {
+        const r = await tryEngine(eng, note, precise);
+        lastSpec = r.spec; lastPage = r.page;
+        renderPreview(r.spec, r.page);
+        setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it below, then download. (${r.label}, ${r.secs.toFixed(1)} s${i > 0 ? ', fallback engine' : ''})`);
+        return;
+      } catch (err) {
+        lastErr = err;
+        if (i < engines.length - 1) setStatus(`${ENGINE_LABEL[eng]} failed (${err.message}) \u2014 trying ${ENGINE_LABEL[engines[i + 1]]}\u2026`, 'warn');
+      }
     }
-    const spec = E.normalizeSpec(raw);
-    if (!spec.bands.length) {
-      logRun({ label: (raw._meta && raw._meta.model) || provider, secs, error: 'No fields or tables found' });
-      setStatus('Recognised a form, but couldn\u2019t make out any fields or tables on it. Try a clearer file.', 'error');
-      return;
-    }
-    const page = E.resolvePage(spec, current.src);
-    lastSpec = spec; lastPage = page;
-    renderPreview(spec, page);
-    const nFields = spec.bands.reduce((a, b) => a + (b.kind === 'table' ? 1 : b.cells.reduce((n, c) => n + c.items.filter((it) => it.kind === 'F' || it.kind === 'C').length, 0)), 0);
-    const label = (raw._meta && raw._meta.model) || provider;
-    logRun({ label, secs, spec, page, items: nFields });
-    setStatus(`Found ${spec.bands.length} section${spec.bands.length === 1 ? '' : 's'} on a ${page.label} page. Check it below, then download. (${label}, ${secs.toFixed(1)} s)`);
-  } catch (err) {
-    setStatus(err.message || 'Something went wrong. Try again.', 'error');
-    logRun({ label: $('fs-provider').selectedOptions[0].text, secs: (performance.now() - t0) / 1000, error: err.message || 'Error' });
+    const m = lastErr && lastErr.message ? lastErr.message : '';
+    setStatus(/recognise|No fields/.test(m) ? 'Couldn\u2019t make out a form in that file \u2014 try a straighter, closer, better-lit photo, or a clearer PDF.' : (m || 'Something went wrong. Try again.'), 'error');
   } finally {
     btn.disabled = false;
   }
@@ -332,6 +402,7 @@ function init() {
   $('fs-photo-input').addEventListener('change', handleFileSelect);
   $('fs-scan-btn').addEventListener('click', runScan);
   $('fs-download-btn').addEventListener('click', downloadPdf);
+  $('fs-shade').addEventListener('change', () => { if (lastSpec) refreshPdfPreview(lastSpec, lastPage); });
   $('fs-runlog').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;

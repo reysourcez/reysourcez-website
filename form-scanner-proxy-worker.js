@@ -1,10 +1,10 @@
 /* ============================================================
    Form Scanner — Gemini proxy (Cloudflare Worker)
-   Version: v6.1 (2026-09-30) — engine switch: Gemini / Qwen / Kimi. Returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.2 (2026-09-30) — engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). Holds the Gemini key as the
    encrypted secret GEMINI_API_KEY. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
-   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen" | "kimi" }
-   Qwen/Kimi go through OpenRouter (images only) and need a 2nd secret: OPENROUTER_API_KEY.
+   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen" }
+   Qwen goes through OpenRouter (images only) and needs a 2nd secret: OPENROUTER_API_KEY.
    Response: the spec (see FORM_SCHEMA) + _meta, or { error }
    ============================================================ */
 
@@ -21,11 +21,10 @@ const MAX_BASE64_CHARS = 20 * 1024 * 1024;      // ~15 MB file
 const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const UPSTREAM_TIMEOUT_MS = 55000;
 
-// OpenRouter models for the Qwen / Kimi switch (v6.1). Change the IDs here only.
-// Checked 2026-09-30 on openrouter.ai: qwen3.8-27b:free (vision, free), kimi-k2.6:free (multimodal, free).
-// Paid Kimi alternative: 'moonshotai/kimi-k3'. Free models are rate-limited by OpenRouter.
+// OpenRouter model for the Qwen engine. Change the ID here only.
+// Checked 2026-09-30 on openrouter.ai: qwen3.8-27b:free (vision, free, rate-limited). Kimi was tried and dropped.
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const OR_MODELS = { qwen: 'qwen/qwen3.8-27b:free', kimi: 'moonshotai/kimi-k2.6:free' };
+const OR_MODELS = { qwen: 'qwen/qwen3.8-27b:free' };
 
 /* ---------------- response schema (kept small: strings carry the item codes) ---------------- */
 const S = (description) => ({ type: 'string', description });
@@ -245,11 +244,11 @@ async function callGemini(env, model, parts, useSchema, useThinking) {
   } finally { clearTimeout(timer); }
 }
 
-/* OpenRouter path (Qwen / Kimi): images only; same PROMPT + same sanitizer as Gemini so results are comparable. */
+/* OpenRouter path (Qwen): images only; same PROMPT + same sanitizer as Gemini so results are comparable. */
 async function handleOpenRouter(env, provider, image, mime, note, origin) {
   const model = OR_MODELS[provider];
   if (!env.OPENROUTER_API_KEY) return jsonResponse({ error: 'The server is missing its OPENROUTER_API_KEY secret (Worker Settings > Variables and Secrets).' }, 500, origin);
-  if (mime === 'application/pdf') return jsonResponse({ error: 'Qwen and Kimi read photos or screenshots only. Screenshot the PDF page, or switch to Gemini for PDFs.' }, 415, origin);
+  if (mime === 'application/pdf') return jsonResponse({ error: 'Qwen reads page images only. The page converts PDFs to an image first, so if you see this the PDF page could not be rendered - use Gemini for this file.' }, 415, origin);
   const content = [
     { type: 'image_url', image_url: { url: 'data:' + mime + ';base64,' + image } },
     { type: 'text', text: PROMPT + '\n\nReply with ONLY the JSON object. No markdown fences, no commentary.' },
@@ -314,7 +313,7 @@ export default {
       if (body.image.length > MAX_BASE64_CHARS) return jsonResponse({ error: 'That file is too large. Try one under 15 MB.' }, 413, origin);
       const mime = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
       if (!ALLOWED_MIME.includes(mime)) return jsonResponse({ error: 'Unsupported file type. Use a JPG, PNG, WebP or PDF.' }, 415, origin);
-      const provider = body.provider === 'qwen' || body.provider === 'kimi' ? body.provider : 'gemini';
+      const provider = body.provider === 'qwen' ? 'qwen' : 'gemini';
       if (provider !== 'gemini') return await handleOpenRouter(env, provider, body.image, mime, typeof body.note === 'string' ? body.note.trim().slice(0, 500) : '', origin);
       const t0 = Date.now();
       if (!env.GEMINI_API_KEY) return jsonResponse({ error: 'The server is missing its GEMINI_API_KEY secret (Worker Settings > Variables and Secrets).' }, 500, origin);

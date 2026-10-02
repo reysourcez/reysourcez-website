@@ -101,3 +101,14 @@ Real end-to-end testing this round, not just static review — a genuine change 
 **How to test.** Same form, each engine in turn (screenshot a PDF page for Qwen/Kimi). Read the log: seconds, failures, and whether "sections/items" match the original. Click PDF on each row and compare placement against the source. If all engines detect the same structure but the PDFs still place it wrongly, the problem is the layout engine, not the model.
 
 **Limits / KIV.** Qwen/Kimi: images only (PDF reading would need page rasterising). Free OpenRouter models are rate-limited and may retain prompts, so use blank/sample forms while testing; data-policy routing not added because not verified. Reasoning models can be slow; the Worker asks for low reasoning and retries without it if rejected. Winner → set as default, remove the losers, re-check data policy.
+
+
+## 2026-09-30 — v6.2: Qwen-first Auto engine, PDF page rendering, live PDF preview
+
+**Why.** Testing showed Kimi unusable and Qwen better than Gemini at following source structure, but Qwen could not take PDFs (forms are mostly PDFs) and placement problems were only visible after downloading.
+
+**What changed.** (1) Kimi removed. Engine dropdown is now **Auto** (Qwen first, Gemini if Qwen fails or times out; both attempts show in the log), **Qwen only**, **Gemini only**. (2) Choosing a PDF now renders page 1 to an image in the browser (pdf.js 3.11.174 from cdnjs, loaded only when a PDF is chosen): Qwen reads that image, Gemini still gets the original PDF, and the upload card shows a real page thumbnail. If rendering fails, only Gemini can read that file and the status says so. (3) The generated PDF now previews in the page itself (browser PDF viewer) beside the source, so placement can be judged without downloading; the structure list moved into a collapsible "What was read". `form-scanner.js?v=2` → `?v=3`.
+
+**Deploy.** Replace the Worker code in Cloudflare (`OPENROUTER_API_KEY` secret stays as is), then replace `form-scanner.html` and `form-scanner.js` on GitHub and hard-refresh (Ctrl+F5).
+
+**Limits / KIV.** pdf.js rendering and the inline PDF preview were not exercised in a real browser here (no network). Some phones cannot show PDFs inline; Download still works. Next experiments depending on what the preview shows: a "double-check" second pass (model re-reads the image against its own first answer), or asking Qwen for bounding boxes so placement comes from measured positions instead of percentages.
