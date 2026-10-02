@@ -1,5 +1,5 @@
 /*
- * Crypto Radar — page logic for crypto-radar.html
+ * Crypto Radar v2.0 — page logic for crypto-radar.html
  * Vanilla JS, no build step, no dependencies — same rule as every other
  * tool on this site. Charts are hand-drawn SVG (see renderPriceChart etc.)
  * rather than a charting library, matching interactive-costing-analysis.js
@@ -155,6 +155,7 @@ const state = {
   news: [],
   selectedPair: null,
   timeframe: CONFIG.DEFAULT_TIMEFRAME,
+  candleCacheAt: {}, // v2.0: when each candleCache entry was stored (the cache is now read, not just written)
   candleCache: {}, // key: `${pair}:${duration}:${count}` -> candle array
   overviewScores: {}, // pair -> { confluence, blended, tier }
   overviewScoresComplete: false, // true once computeOverviewScores() has run at least once — lets the grid distinguish "still scoring" from "scored, genuinely unavailable"
@@ -552,11 +553,13 @@ async function loadCandles(pair, duration, lookbackCount) {
     state.candleCache[key] = candles;
     return candles;
   }
+  const fresh = state.candleCache[key];
+  if (fresh && Date.now() - (state.candleCacheAt[key] || 0) < Math.max(15000, Math.min(300000, duration * 1000 / 12))) return fresh; // v2.0
   try {
-    const since = Date.now() - duration * 1000 * count;
+    const step = duration * 1000, since = Math.floor((Date.now() - step * count) / step) * step; // v2.0: snapped so repeat calls share one Worker cache entry
     const data = await apiFetch(`/api/candles?pair=${pair}&duration=${duration}&since=${since}`);
     const candles = (data.candles || []).map(c => ({ timestamp: c.timestamp, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close), volume: Number(c.volume) }));
-    state.candleCache[key] = candles;
+    state.candleCache[key] = candles; state.candleCacheAt[key] = Date.now();
     return candles;
   } catch (err) {
     // Live mode, one coin's candles unavailable (wrong/renamed pair on
@@ -657,7 +660,8 @@ function liquidityTier(pair) {
 async function computeOverviewScores() {
   const duration = state.overviewDuration;
   const results = await Promise.allSettled(state.markets.map(async (m) => {
-    const candles = await loadCandles(m.pair, duration, CONFIG.OVERVIEW_LOOKBACK_COUNT);
+    const raw = await loadCandles(m.pair, duration, CONFIG.OVERVIEW_LOOKBACK_COUNT);
+    const candles = state.mode === 'live' ? raw.filter(c => c.timestamp + duration * 1000 <= Date.now()) : raw; // v2.0: closed candles only (the forming one repaints)
     if (candles.length < 20) return { pair: m.pair, confluence: null, blended: null, tier: liquidityTier(m.pair) };
     const computed = computeAll(candles);
     const tier = liquidityTier(m.pair);
@@ -1156,7 +1160,7 @@ async function renderDetail() {
     const first = candles[0].close, last = candles[candles.length - 1].close;
     const pct = ((last - first) / first) * 100;
     const tfLabel = (CONFIG.TIMEFRAMES.find(t => t.duration === state.timeframe) || {}).label || 'this view';
-    changeEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% over ${tfLabel}`;
+    changeEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}% over the last ${candles.length} x ${tfLabel} candles`;
     changeEl.classList.toggle('is-up', pct >= 0);
     changeEl.classList.toggle('is-down', pct < 0);
   } else {
@@ -1284,6 +1288,7 @@ function wireEvents() {
 
 let rzInitialized = false;
 async function init() {
+  if (!document.getElementById('cr-update-now')) return; // v2.0: the backtest page loads this file only for the indicator math
   if (rzInitialized) return;
   rzInitialized = true;
   document.title = `Reysourcez Enterprise — ${CONFIG.SITE_NAME} (Luno Malaysia)`;

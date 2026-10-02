@@ -1,5 +1,5 @@
 /*
- * Crypto Radar Worker — deploy this to Cloudflare Workers.
+ * Crypto Radar Worker v2.0 — deploy this to Cloudflare Workers.
  * See SETUP_AND_GLOSSARY.md for step-by-step deployment instructions.
  *
  * WHY THIS EXISTS (read this before changing anything):
@@ -107,6 +107,7 @@ async function handleCandles(env, pair, duration, since) {
   if (!env.LUNO_KEY_ID || !env.LUNO_KEY_SECRET) {
     return json({ error: 'Worker is missing LUNO_KEY_ID / LUNO_KEY_SECRET — see SETUP_AND_GLOSSARY.md' }, env, 500);
   }
+  since = Math.floor(since / (duration * 1000)) * duration * 1000; // v2.0: snap to the candle boundary so repeat requests share one cache entry
   const cacheKey = new Request(`https://cache.internal/candles/${pair}/${duration}/${since}`);
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
@@ -270,8 +271,12 @@ export default {
       }
 
       if (url.pathname === '/api/health') {
+        const probe = new Request('https://cache.internal/health-probe/' + Date.now());
+        await caches.default.put(probe, new Response('1', { headers: { 'Cache-Control': 'max-age=60' } }));
+        const cacheWorks = Boolean(await caches.default.match(probe)); // v2.0: false = the Cache API does nothing on this URL
         return json({
           ok: true,
+          cacheWorks,
           hasLunoKeys: Boolean(env.LUNO_KEY_ID && env.LUNO_KEY_SECRET),
           hasGeminiKey: Boolean(env.GEMINI_API_KEY),
         }, env);

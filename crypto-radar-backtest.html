@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reysourcez Enterprise — Crypto Radar (Luno Malaysia)</title>
+<title>Reysourcez Enterprise — Crypto Radar Backtest v1.0</title>
 <meta name="description" content="Live indicator dashboard for Luno Malaysia coins — RSI, MACD, Bollinger Bands, support/resistance and more, summarised into one confluence score per coin. Not financial advice.">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -169,6 +169,8 @@
   #cr-quick-nav { right: 12px; bottom: 12px; }
   .cr-quick-nav-btn { padding: 7px 12px; font-size: 0.76rem; }
 }
+.cr-topbar-field input[type="number"]{padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--surface);font:inherit;width:96px}
+#bt-json{width:100%;min-height:90px;font-family:"IBM Plex Mono",monospace;font-size:0.78rem}
 </style>
 </head>
 <body>
@@ -207,237 +209,28 @@ Reysourcez Enterprise
 </header>
 
 <main id="main">
-
-<section class="calc-intro">
-<div class="wrap">
-<span class="eyebrow">Free tool &middot; Luno Malaysia &middot; nothing saved on our side &middot; <a href="crypto-radar-backtest.html">Backtest</a> &middot; v2.0</span>
-<h1>Crypto Radar</h1>
-<p class="lead">Every MYR coin on Luno, scored across 14 indicators plus the Fear &amp; Greed Index, with support/resistance, liquidity, and a plain-English confluence read per coin. Built to help you read the chart faster — not to tell you what to do with your money.</p>
-</div>
-</section>
-
-<section class="calc-panel">
-<div class="wrap">
-<div class="cr-box">
+<section class="calc-intro"><div class="wrap">
+<span class="eyebrow">Crypto Radar &middot; Backtest v1.0 (suite v2.0) &middot; <a href="crypto-radar.html">back to Radar</a></span>
+<h1>Has the score actually worked?</h1>
+<p class="lead">Replays the live Crypto Radar score over past Luno candles without peeking ahead, then counts how often a signal reached your rally target before your stop. It measures the past; it cannot promise the future.</p>
+</div></section>
+<section class="calc-panel"><div class="wrap"><div class="cr-box">
 <div class="cr-topbar">
-<div class="cr-topbar-field">
-<label for="cr-refresh-interval">Auto-refresh</label>
-<select id="cr-refresh-interval">
-<option value="0">Off</option>
-<option value="30" selected>Every 30s</option>
-<option value="60">Every 1 min</option>
-<option value="300">Every 5 min</option>
-</select>
+<div class="cr-topbar-field"><label for="bt-preset">Rally definition</label><select id="bt-preset"><option value="swing" selected>Swing: +8% before -4% within 7 candles</option><option value="big">Big rally: +25% before -12% within 60</option><option value="huge">Huge: +40% before -15% within 90</option><option value="custom">Custom (edit the boxes)</option></select></div>
+<div class="cr-topbar-field"><label for="bt-target">Target %</label><input id="bt-target" type="number" value="8" min="0" step="any"></div><div class="cr-topbar-field"><label for="bt-stop">Stop %</label><input id="bt-stop" type="number" value="4" min="0" step="any"></div><div class="cr-topbar-field"><label for="bt-horizon">Within candles</label><input id="bt-horizon" type="number" value="7" min="0" step="any"></div><div class="cr-topbar-field"><label for="bt-cost">Round-trip cost %</label><input id="bt-cost" type="number" value="1" min="0" step="any"></div>
+<div class="cr-topbar-field"><label for="bt-duration">Candle size</label><select id="bt-duration"><option value="3600">1 hour</option><option value="14400">4 hours</option><option value="86400" selected>1 day</option><option value="259200">3 days</option></select></div>
+<div class="cr-topbar-field"><label for="bt-pairs">Coins (most traded first)</label><select id="bt-pairs"><option value="5">Top 5</option><option value="10" selected>Top 10</option><option value="20">Top 20</option><option value="all">All</option></select></div>
+<button type="button" id="bt-run" class="btn btn-primary">Run backtest</button>
 </div>
-<button type="button" id="cr-update-now" class="btn btn-primary">Update now</button>
-<span class="cr-status is-demo" id="cr-status"><span class="cr-status-dot" aria-hidden="true"></span><span id="cr-status-text">Demo data</span></span>
-</div>
-<p class="cr-source-note" id="cr-last-updated">Not updated yet.</p>
-</div>
-</div>
-</section>
-
-<div class="wrap" style="margin-top:16px;">
-<div class="cr-disclaimer" role="note">
-<strong>Not financial advice.</strong> Every score, level and "insight" below is a read of past price data using well-known technical-analysis formulas — none of it predicts the future. Indicators can and do give false signals, especially on thinly-traded coins. Treat this as a faster way to read a chart, not a substitute for your own judgement.
-</div>
-</div>
-
-<section class="calc-panel">
-<div class="wrap">
-<div class="cr-box">
-<div class="ica-results" id="cr-feargreed-card">
-<div class="result-card">
-<span class="result-label">Fear &amp; Greed Index<span class="tooltip-icon" data-tooltip="A daily 0-100 sentiment reading for the crypto market overall (from alternative.me) — not specific to any one coin.">?</span></span>
-<span class="result-value" id="cr-feargreed-value">—</span>
-</div>
-<div class="result-card">
-<span class="result-label">Coins tracked</span>
-<span class="result-value" id="cr-coin-count">—</span>
-</div>
-<div class="result-card">
-<span class="result-label">Most active (24h volume)<span class="tooltip-icon" data-tooltip="The MYR pair with the highest reported 24h trading volume right now — where buyers and sellers are actually showing up.">?</span></span>
-<span class="result-value" id="cr-most-active">—</span>
-</div>
-<div class="result-card">
-<span class="result-label">Thinnest liquidity<span class="tooltip-icon" data-tooltip="The tracked coin with the lowest 24h volume. Indicator signals here are less reliable — see the Liquidity entry in the glossary below.">?</span></span>
-<span class="result-value" id="cr-least-active">—</span>
-</div>
-</div>
-</div>
-</div>
-</section>
-
-<section class="calc-panel" id="cr-coins-section">
-<div class="wrap">
-<h2>All Luno MY coins</h2>
-<p class="structure-note">Grouped by liquidity, sorted within each group by blended score — confluence weighted down for thinner coins, since a big reading there is more often volatility noise than genuine conviction (see the Confluence score glossary entry). <span class="tooltip-icon" data-tooltip="Bu55/100 = raw confluence, 55 out of -100..100, leaning bullish. The bigger number above it is that same score after the liquidity discount — what actually decides sort order and gold stars.">?</span> Tap a coin to open its full breakdown.</p>
-
-<div class="cr-topbar-field" style="max-width:280px; margin-bottom:16px;">
-<label for="cr-overview-duration">Rank coins for<span class="tooltip-icon" data-tooltip="Changes what candles the whole grid's scores/sort/stars are computed from — a coin can look very different on a 1h chart than a 1d one. Day-trade options use recent, fast-moving candles; Hold options use slower ones. Doesn't affect a coin's own detail view — that has its own independent timeframe tabs.">?</span></label>
-<select id="cr-overview-duration">
-<option value="900">Day trade &mdash; 15m candles</option>
-<option value="3600">Day trade &mdash; 1h candles</option>
-<option value="14400">Swing &mdash; 4h candles</option>
-<option value="86400" selected>Hold / HODL &mdash; 1d candles</option>
-<option value="259200">Long-term &mdash; 3d candles</option>
-</select>
-</div>
-
-<details class="cr-tier-section" open id="cr-tier-active">
-<summary class="cr-tier-summary"><h3>Active <span class="cr-tier-count" id="cr-tier-active-count"></span></h3></summary>
-<div class="cr-market-grid" id="cr-market-grid-active"></div>
-</details>
-
-<details class="cr-tier-section" id="cr-tier-medium">
-<summary class="cr-tier-summary"><h3>Medium <span class="cr-tier-count" id="cr-tier-medium-count"></span></h3></summary>
-<div class="cr-market-grid" id="cr-market-grid-medium"></div>
-</details>
-
-<details class="cr-tier-section" id="cr-tier-thin">
-<summary class="cr-tier-summary"><h3>Thin <span class="cr-tier-count" id="cr-tier-thin-count"></span></h3></summary>
-<div class="cr-market-grid" id="cr-market-grid-thin"></div>
-</details>
-</div>
-</section>
-
-<!-- Moved above Coin/MYR Detail on purpose (was previously the first
-     collapsible inside the detail section, below the charts) — the
-     headline read should be visible before the technical detail, not
-     after it. Still entirely about whichever coin is currently selected;
-     renderConfluence()/renderScorecard() populate these same element ids
-     regardless of where in the DOM they now live. -->
-<section class="calc-panel" id="cr-confluence-section" hidden>
-<div class="wrap">
-<h2>Confluence read</h2>
-<div class="cr-box">
-<p class="structure-note" id="cr-confluence-summary">—</p>
-<div class="cr-confluence-meter"><div class="cr-confluence-needle" id="cr-confluence-needle" style="left:50%"></div></div>
-<div class="cr-confluence-labels"><span>Bearish confluence</span><span>Neutral</span><span>Bullish confluence</span></div>
-
-<div class="cr-regime-row">
-<span class="cr-scorecard-label">Trend Regime<span class="tooltip-icon" data-tooltip="A separate, simpler vote count across 10 moving-average and trend checks — deliberately kept apart from the weighted Confluence score above. See the glossary entry for why the two won't always agree.">?</span></span>
-<span id="cr-regime-label" class="cr-badge is-neutral">—</span>
-<span class="cr-source-note" id="cr-regime-votes"></span>
-<span class="cr-source-note" id="cr-regime-score" style="font-family:'IBM Plex Mono',monospace;"></span>
-</div>
-
-<div class="cr-watch-zones">
-<div class="result-card">
-<span class="result-label">Watch zone — entry side<span class="tooltip-icon" data-tooltip="Nearest support level combined with Bollinger lower band — a zone worth watching, not a guaranteed floor. Shown as a shaded band on the chart below too.">?</span></span>
-<span class="result-value" id="cr-entry-zone">—</span>
-</div>
-<div class="result-card">
-<span class="result-label">Watch zone — TP side<span class="tooltip-icon" data-tooltip="Nearest resistance level combined with Bollinger upper band — a zone worth watching, not a guaranteed ceiling. Shown as a shaded band on the chart below too.">?</span></span>
-<span class="result-value" id="cr-tp-zone">—</span>
-</div>
-</div>
-</div>
-</div>
-</section>
-
-<section class="calc-panel" id="cr-detail-section" hidden>
-<div class="wrap">
-<div class="calc-actions no-print" style="justify-content: space-between; align-items: center;">
-<h2 id="cr-detail-title">Coin detail</h2>
-<span class="cr-coin-change" id="cr-detail-change"></span>
-</div>
-
-<div class="cr-tabs" id="cr-timeframe-tabs" role="tablist" aria-label="Timeframe"></div>
-
-<div class="cr-chart-wrap">
-<svg id="cr-price-chart" width="640" height="320" viewBox="0 0 640 320" role="img" aria-label="Candlestick price chart with moving averages, Bollinger Bands, support/resistance, and entry/TP zones"></svg>
-<div class="cr-chart-legend" id="cr-price-legend"></div>
-</div>
-<div class="cr-chart-wrap">
-<svg id="cr-volume-chart" width="640" height="96" viewBox="0 0 640 96" role="img" aria-label="Trading volume per candle"></svg>
-</div>
-<div class="cr-chart-wrap">
-<svg id="cr-rsi-chart" width="640" height="130" viewBox="0 0 640 130" role="img" aria-label="Relative Strength Index"></svg>
-</div>
-<div class="cr-chart-wrap">
-<svg id="cr-macd-chart" width="640" height="130" viewBox="0 0 640 130" role="img" aria-label="MACD"></svg>
-</div>
-
-<div class="cr-box">
-<details class="cr-collapsible" open>
-<summary class="cr-collapsible-summary"><h3>Full indicator scorecard</h3></summary>
-<div class="cr-collapsible-body">
-<div class="cr-scorecard-grid" id="cr-scorecard-grid"><!-- populated by JS --></div>
-</div>
-</details>
-
-<details class="cr-collapsible">
-<summary class="cr-collapsible-summary"><h3>Order book snapshot<span class="tooltip-icon" data-tooltip="Top bid and ask levels right now — how much is waiting to buy vs sell at each price.">?</span></h3></summary>
-<div class="cr-collapsible-body">
-<div class="cr-orderbook">
-<div class="cr-orderbook-col is-bids"><h4>Bids (buyers)</h4><div id="cr-bids"></div></div>
-<div class="cr-orderbook-col is-asks"><h4>Asks (sellers)</h4><div id="cr-asks"></div></div>
-</div>
-</div>
-</details>
-
-<details class="cr-collapsible">
-<summary class="cr-collapsible-summary"><h3>News &amp; AI insight</h3></summary>
-<div class="cr-collapsible-body">
-<div class="cr-ai-box is-empty" id="cr-ai-insight">AI insight needs a Worker with a Gemini key set in CONFIG.WORKER_URL (crypto-radar.js). Optional — the scorecard above works fully without it.</div>
-<button type="button" id="cr-get-insight" class="btn btn-secondary" style="margin-top:10px;">Get AI insight for this coin</button>
-<h4 style="margin-top:20px;">Latest crypto headlines</h4>
-<ul class="cr-news-list" id="cr-news-list"><li class="cr-news-meta">Set CONFIG.WORKER_URL in crypto-radar.js to load live headlines.</li></ul>
-</div>
-</details>
-</div>
-
-</div>
-</section>
-
-<section class="calc-panel" id="cr-glossary-section">
-<div class="wrap">
-<details class="cr-collapsible">
-<summary class="cr-collapsible-summary"><h2>Glossary</h2></summary>
-<div class="cr-collapsible-body">
-<p class="structure-note">Every term used above, in plain language. Tap any <span class="tooltip-icon" data-tooltip="Like this — hover or tap for a quick definition wherever you see one.">?</span> icon on the page for a quick inline definition instead of coming back here.</p>
-<div class="cr-box">
-<div id="cr-glossary"><!-- populated by JS from GLOSSARY in crypto-radar.js, so the wording only needs to be maintained in one place --></div>
-</div>
-</div>
-</details>
-</div>
-</section>
-
-<section class="calc-panel" id="cr-settings-section">
-<div class="wrap">
-<details class="cr-collapsible">
-<summary class="cr-collapsible-summary"><h2>Settings reference</h2></summary>
-<div class="cr-collapsible-body">
-<p class="structure-note">Everything you can change without touching any code lives in the <code>CONFIG</code> block at the top of <code>crypto-radar.js</code> — column two below is what to type, column one is what's there now by default.</p>
-<div class="cr-box">
-<table class="cr-config-table">
-<thead><tr><th>Setting</th><th>Default</th><th>What it does</th></tr></thead>
-<tbody>
-<tr><td><code>SITE_NAME</code></td><td>Crypto Radar</td><td>Title shown in the browser tab and page header.</td></tr>
-<tr><td><code>WORKER_URL</code></td><td>(empty)</td><td>Your deployed Worker's URL — paste it here once, applies to every visitor. Empty = demo data.</td></tr>
-<tr><td><code>DEFAULT_REFRESH_SECONDS</code></td><td>30</td><td>Auto-refresh interval when the page first loads.</td></tr>
-<tr><td><code>DEFAULT_TIMEFRAME</code></td><td>86400 (1 day)</td><td>Candle size shown when a coin is first opened.</td></tr>
-<tr><td><code>SUPPORT_RESISTANCE_SENSITIVITY</code></td><td>3</td><td>How strict a swing high/low must be to count as a level. Lower = more levels found.</td></tr>
-<tr><td><code>ORDER_BLOCK_SWING_LOOKBACK</code></td><td>10</td><td>Candles checked on each side when deciding if a candle marks a genuine swing high/low, for the demand/supply zones on the chart.</td></tr>
-<tr><td><code>ORDER_BLOCK_IMPULSE_MULT</code></td><td>1.5</td><td>How much bigger than an average candle the breakout move must be to count as a real order block. Raise this for fewer, stronger zones.</td></tr>
-<tr><td><code>REGIME_ADX_THRESHOLD</code></td><td>25</td><td>ADX level required for the Trend Regime badge to say "Strong" Bull/Bear rather than just Bull/Bear.</td></tr>
-<tr><td><code>CANDLE_LOOKBACK_COUNT</code></td><td>220</td><td>How many candles are requested per timeframe. Must stay at 200+ or SMA 200 in the scorecard can't compute — this was bumped from 180 for exactly that reason.</td></tr>
-<tr><td><code>CHART_VISIBLE_CANDLES</code></td><td>90</td><td>How many recent candles the chart draws at once. Indicators still use the full history above; this only controls how many candlesticks are on screen.</td></tr>
-<tr><td><code>LIQUIDITY_MULTIPLIERS</code></td><td>1.0 / 0.7 / 0.45</td><td>How much confluence is discounted for Active / Medium / Thin coins when computing the blended score coins are sorted and starred by.</td></tr>
-<tr><td><code>GOLD_STAR_COUNT</code></td><td>5</td><td>How many coins (by blended score, across all tiers) get a gold star.</td></tr>
-<tr><td><code>INDICATOR_WEIGHTS</code></td><td>see file</td><td>How much each indicator counts toward the confluence score. All equal by default except MACD and support/resistance, weighted slightly higher.</td></tr>
-<tr><td><code>NEWS_HEADLINE_COUNT</code></td><td>15</td><td>How many headlines to show in the News panel.</td></tr>
-</tbody>
-</table>
-</div>
-<p class="cr-source-note">All of these — including <code>WORKER_URL</code> — live in one place: the <code>CONFIG</code> block at the very top of <code>crypto-radar.js</code>. One edit, applies to every visitor, no separate setup per browser.</p>
-</div>
-</details>
-</div>
-</section>
-
+<p class="cr-source-note" id="bt-status">Ready. Cost % is an ASSUMPTION for fees plus spread: check Luno's current fees and the coin's bid/ask gap.</p>
+</div></div></section>
+<section class="calc-panel"><div class="wrap">
+<div class="cr-disclaimer" role="note"><strong>Not financial advice.</strong> Hit rate = share of signals where price reached the target before the stop. "Median best / worst point" = the typical highest and lowest price inside the window, a data-based guide for profit-take and stop levels. Overlapping signals are not independent, so ranges are widened to compensate.</div>
+<h2 id="bt-verdict"></h2>
+<div id="bt-out"></div>
+<h3>Copy results for Claude</h3>
+<textarea id="bt-json" readonly placeholder="Results appear here after a run. Paste them into the chat so the next improvement is based on real numbers."></textarea>
+</div></section>
 </main>
 
 <footer class="site-footer no-print">
@@ -476,20 +269,8 @@ Reysourcez Enterprise
 </div>
 </footer>
 
-<div id="cr-quick-nav" class="no-print" hidden>
-<button type="button" class="cr-quick-nav-btn" data-target="cr-coins-section">All coins</button>
-<button type="button" class="cr-quick-nav-btn" data-target="cr-confluence-section" id="cr-quicknav-confluence" hidden>Confluence</button>
-<button type="button" class="cr-quick-nav-btn" data-target="cr-detail-section" id="cr-quicknav-detail" hidden>Coin detail</button>
-<button type="button" class="cr-quick-nav-btn" data-target="cr-glossary-section">Glossary</button>
-<button type="button" class="cr-quick-nav-btn" data-target="cr-settings-section">Settings ref</button>
-<button type="button" id="cr-back-to-top">&uarr; Top</button>
-</div>
-
-<!-- No costing-sync.js / #rz-switcher here on purpose — this tool doesn't
-     exchange cost data with the F&B calculators (crypto prices aren't a
-     "cost" in that system's sense), so per AI_BUILD_BRIEF.md it's left out
-     entirely rather than added as a switcher that would do nothing. -->
 <script src="nav-dropdown.js?v=1" defer></script>
 <script src="crypto-radar.js?v=10" defer></script>
+<script src="crypto-radar-backtest.js?v=1" defer></script>
 </body>
 </html>
