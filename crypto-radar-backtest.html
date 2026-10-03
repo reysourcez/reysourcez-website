@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reysourcez Enterprise — Crypto Radar Backtest v1.1</title>
+<title>Reysourcez Enterprise — Crypto Radar Backtest v1.2</title>
 <meta name="description" content="Live indicator dashboard for Luno Malaysia coins — RSI, MACD, Bollinger Bands, support/resistance and more, summarised into one confluence score per coin. Not financial advice.">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -210,7 +210,7 @@ Reysourcez Enterprise
 
 <main id="main">
 <section class="calc-intro"><div class="wrap">
-<span class="eyebrow">Crypto Radar &middot; Backtest v1.1 (suite v2.1) &middot; <a href="crypto-radar.html">back to Radar</a></span>
+<span class="eyebrow">Crypto Radar &middot; Backtest v1.2 (suite v2.2) &middot; <a href="crypto-radar.html">back to Radar</a></span>
 <h1>Has the score actually worked?</h1>
 <p class="lead">Replays the live Crypto Radar score over past Luno candles without peeking ahead, then counts how often a signal reached your rally target before your stop. It measures the past; it cannot promise the future.</p>
 </div></section>
@@ -220,12 +220,13 @@ Reysourcez Enterprise
 <div class="cr-topbar-field"><label for="bt-target">Target %</label><input id="bt-target" type="number" value="8" min="0" step="any"></div><div class="cr-topbar-field"><label for="bt-stop">Stop %</label><input id="bt-stop" type="number" value="4" min="0" step="any"></div><div class="cr-topbar-field"><label for="bt-horizon">Within candles</label><input id="bt-horizon" type="number" value="7" min="0" step="any"></div><div class="cr-topbar-field"><label for="bt-cost">Round-trip cost %</label><input id="bt-cost" type="number" value="1" min="0" step="any"></div>
 <div class="cr-topbar-field"><label for="bt-duration">Candle size</label><select id="bt-duration"><option value="3600">1 hour</option><option value="14400">4 hours</option><option value="86400" selected>1 day</option><option value="259200">3 days</option></select></div>
 <div class="cr-topbar-field"><label for="bt-pairs">Coins (most traded first)</label><select id="bt-pairs"><option value="5">Top 5</option><option value="10" selected>Top 10</option><option value="20">Top 20</option><option value="all">All</option></select></div>
+<div class="cr-topbar-field"><label for="bt-score">Include radar score (slow)</label><input id="bt-score" type="checkbox"></div>
 <button type="button" id="bt-run" class="btn btn-primary">Run backtest</button>
 </div>
 <p class="cr-source-note" id="bt-status">Ready. Cost % is an ASSUMPTION for fees plus spread: check Luno's current fees and the coin's bid/ask gap.</p>
 </div></div></section>
 <section class="calc-panel"><div class="wrap">
-<div class="cr-disclaimer" role="note"><strong>Not financial advice.</strong> Hit rate = share of signals where price reached the target before the stop. "Median best / worst point" = the typical highest and lowest price inside the window, a data-based guide for profit-take and stop levels. Overlapping signals are not independent, so ranges are widened to compensate. "Hold" = the average result of simply holding the whole window with no stop or target. The rules are fixed in advance, not tuned; because nine are compared at once, a tick mark needs a 99% range, not 95%.</div>
+<div class="cr-disclaimer" role="note"><strong>Not financial advice.</strong> Hit rate = share of signals where price reached the target before the stop. "Median best / worst point" = the typical highest and lowest price inside the window, a data-based guide for profit-take and stop levels. Overlapping signals are not independent, so ranges are widened to compensate. "Hold" = the average result of simply holding the whole window with no stop or target. The rules are fixed in advance, not tuned; because nine are compared at once, a tick mark needs a 99% range, not 95%. "(N mo)" = calendar months the rule fired in: many signals in few months is weaker evidence than it looks.</div>
 <h2 id="bt-verdict"></h2>
 <div id="bt-out"></div>
 <h3>Copy results for Claude</h3>
@@ -271,6 +272,6 @@ Reysourcez Enterprise
 
 <script src="nav-dropdown.js?v=1" defer></script>
 <script src="crypto-radar.js?v=10" defer></script>
-<script src="crypto-radar-backtest.js?v=2" defer></script>
+<script src="crypto-radar-backtest.js?v=3" defer></script>
 </body>
 </html>

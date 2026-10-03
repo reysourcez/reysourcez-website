@@ -425,3 +425,16 @@ any of it, per R's standing KIV preference (§1):
 **v1.1 adds:** nine fixed, pre-registered rules compared with the radar score (above 200-candle average; 20-candle breakout; pullback in uptrend = above 100-avg and RSI under 40; Bitcoin above its 200-avg alone and as a gate on each) plus a no-stops "hold" return. Pass bar: in BOTH halves the rule must beat random entry at 99% (nine rules compared) AND average above zero after costs. Rules are not to be tuned on these results; any new rule is a new, separately counted test.
 
 **KIV:** forward-tracking log (KV plus daily cron); real fee and spread numbers to replace the 1% placeholder; thin-coin gap check; exit study (take-profit and trailing stop) only for rules that pass; scoring changes only for rules that pass.
+
+
+---
+
+## 14. v2.2 (2026-10-02) — longer history; live dashboard still UNCHANGED
+
+**Versions:** crypto-radar-backtest.js v1.2 (?v=3) and crypto-radar-backtest.html v1.2 replace v1.1; everything else stays v2.0.
+
+**v1.1 result (R's run, 9 coins, 1d, +8/-4/7, 1% cost):** no rule cleared the pre-registered bar. Radar 25+ again unreliable (hit 19.7% later / 29.4% earlier vs random 24.2% / 26.8%). Only the breakout rules led random entry in BOTH halves: "Breakout and Bitcoin up" hit 41.8% / 38.6%, avg net +0.83% / +0.14% (random -0.96% / -1.07%), 7-day hold +6.0% / +5.6% (random -0.5% / 0.0%), but n=91 / 342 (about 13 / 49 independent), range 20-67% later. Bitcoin was above its 200-avg on only ~15% of later days vs ~69% earlier, so the sample holds roughly one bull and one bear stretch; the gate helped in the weak period (hold +6.2% vs -0.5%) and not in the strong one. The -4% stop destroys most of the edge (hold +6% vs target/stop +0.1% to +0.8%; median worst dip -3.9% to -5.0%). SANDMYR skipped (116 candles). With nine rules two or three looking good in both halves is expected by chance, so these are candidates for forward testing, not findings.
+
+**v1.2 adds:** pages up to ~4,000 candles per coin (multiple market cycles where Luno has them), "(N mo)" months-active count, optional radar score (off = much faster). Same nine rules, same strict bar, no tuning. The earlier half of a long run covers years not examined before.
+
+**KIV:** exit study for the breakout rules (wide or volatility-based stop, +8-10% target, trailing stop) after the long-history run; forward-tracking log (KV plus daily cron); real Luno fees and spread; scoring changes only for rules that pass.
