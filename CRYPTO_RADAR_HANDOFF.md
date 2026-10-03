@@ -412,3 +412,16 @@ any of it, per R's standing KIV preference (§1):
 **Backtest method:** walk-forward with the same computeAll over a rolling 220 closed candles; signal at close, entry at next open; stop checked before target within a candle; net of an assumed round-trip cost (placeholder, not Luno's fee schedule); chronological 60/40 split per pair; Wilson 95% range with n divided by the horizon. No parameter is fitted yet, so the 40% is a clean test of the CURRENT rules.
 
 **Open / KIV:** live forward-tracking log (needs Cloudflare KV plus a daily cron); second data source for longer history; scoring redesign (trend filter plus pullback, Bitcoin regime gate) only after backtest numbers; whether Luno omits no-trade candles (backtest page now reports gap rates); Worker has no auth or rate limit and CORS is open; live detail view still scores the forming candle.
+
+
+---
+
+## 13. v2.1 (2026-10-02) — backtest extended; live dashboard UNCHANGED
+
+**Versions:** crypto-radar-backtest.js v1.1 (loaded as ?v=2) and crypto-radar-backtest.html v1.1 are new; crypto-radar.html, crypto-radar.js and crypto-radar-worker.js stay at v2.0 (nothing changed, no need to re-upload).
+
+**First real-data result (R's run, v2.0, top 10 coins, 1d candles, +8%/-4%/7 candles, 1% cost placeholder):** verdict "No reliable edge detected". Random entry hit 24.7% (later 40%) and 26.2% (earlier 60%); of trades that resolved, 31% and 30% were wins vs about 33% for a driftless random walk at 2:1. Gross return about 0, net about -1% per trade (essentially the cost placeholder). Score buckets flipped sign between halves (25+: +2.7 to +3.0 pts earlier, -1.5 to -1.8 later; 0-24 the reverse); every range overlapped the baseline; 50+ rests on about 10-15 independent signals. Median 7-day best/worst point for random entries: +4.9%/-4.9% (later), +5.6%/-6.7% (earlier), so a -4% stop sits inside routine noise. No candle gaps in those 10 coins (thin coins untested). Caveats: one slice; universe = top 10 by TODAY's volume (hindsight); coins move together, so ranges are still optimistic.
+
+**v1.1 adds:** nine fixed, pre-registered rules compared with the radar score (above 200-candle average; 20-candle breakout; pullback in uptrend = above 100-avg and RSI under 40; Bitcoin above its 200-avg alone and as a gate on each) plus a no-stops "hold" return. Pass bar: in BOTH halves the rule must beat random entry at 99% (nine rules compared) AND average above zero after costs. Rules are not to be tuned on these results; any new rule is a new, separately counted test.
+
+**KIV:** forward-tracking log (KV plus daily cron); real fee and spread numbers to replace the 1% placeholder; thin-coin gap check; exit study (take-profit and trailing stop) only for rules that pass; scoring changes only for rules that pass.
