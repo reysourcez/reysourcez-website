@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.2 (2026-09-30) — Auto engine (Qwen, then Gemini), PDF page rendering, live PDF preview
+   Version: v6.3 (2026-10-03) — Qwen structure + Gemini wording, measured page geometry, small images enlarged
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the one Worker call: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.2 (2026-09-30)');
+console.info('[Form Scanner] page build: v6.3 (2026-10-03)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -88,14 +88,18 @@ function resizeImage(dataUrl) {
     img.onerror = () => reject(new Error("Couldn't open that image. Try a different file."));
     img.onload = () => {
       let { width, height } = img;
-      if (width > CFG.MAX_IMAGE_EDGE || height > CFG.MAX_IMAGE_EDGE) {
-        const scale = CFG.MAX_IMAGE_EDGE / Math.max(width, height);
+      const longEdge = Math.max(width, height);
+      if (longEdge > CFG.MAX_IMAGE_EDGE || longEdge < CFG.MIN_IMAGE_EDGE) {   // shrink big photos, enlarge small screenshots: text-reading models need pixels
+        const scale = (longEdge > CFG.MAX_IMAGE_EDGE ? CFG.MAX_IMAGE_EDGE : CFG.MIN_IMAGE_EDGE) / longEdge;
         width = Math.round(width * scale); height = Math.round(height * scale);
       }
       const canvas = document.createElement('canvas');
       canvas.width = width; canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      resolve({ dataUrl: canvas.toDataURL('image/jpeg', CFG.JPEG_QUALITY), width, height });
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);   // transparent PNGs would turn black as JPEG
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve({ dataUrl: canvas.toDataURL('image/jpeg', CFG.JPEG_QUALITY), width, height, content: E.measureContent(ctx.getImageData(0, 0, width, height).data, width, height) });
     };
     img.src = dataUrl;
   });
@@ -136,12 +140,13 @@ async function rasterisePdfPage1(bytes) {
   const vp = pg.getViewport({ scale: CFG.MAX_IMAGE_EDGE / Math.max(v1.width, v1.height) });
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
   await pg.render({ canvasContext: ctx, viewport: vp }).promise;
   const dataUrl = canvas.toDataURL('image/jpeg', CFG.JPEG_QUALITY);
+  const content = E.measureContent(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
   pdf.destroy();
-  return dataUrl;
+  return { dataUrl, content };
 }
 
 async function handleFileSelect(e) {
@@ -168,19 +173,20 @@ async function handleFileSelect(e) {
       const label = `${meta.pages} page${meta.pages === 1 ? '' : 's'} \u00b7 ${fmtMM(Math.min(meta.width, meta.height))} \u00d7 ${fmtMM(Math.max(meta.width, meta.height))} mm ${wide ? 'landscape' : 'portrait'}`;
       showPdfCard(file.name, label);
       current = { kind: 'pdf', base64, mimeType: 'application/pdf', src: { kind: 'pdf', width: meta.width, height: meta.height }, raster: null };
-      rasterisePdfPage1(bytes).then((du) => {
+      rasterisePdfPage1(bytes).then(({ dataUrl: du, content }) => {
         if (mySel !== selId || !current) return;
         current.raster = du.split(',')[1];
+        current.src.content = content;
         showImageCard(du);
         setStatus(`PDF ready (${label}) \u2014 page 1 rendered, so Qwen and Gemini can both read it.${meta.pages > 1 ? ' Only page 1 is read.' : ''} Add a note if it helps, then scan.`);
       }).catch(() => { if (mySel === selId) setStatus(`PDF ready (${label}) \u2014 its page could not be rendered as an image, so only Gemini can read this one.`, 'warn'); });
       setStatus(meta.pages > 1 ? 'This tool reads page 1 only \u2014 add a note above if a different page matters, then scan.' : 'PDF ready \u2014 add a note if it helps, then scan.', meta.pages > 1 ? 'warn' : null);
     } else {
       if (!/^image\//.test(file.type)) throw new Error("That file doesn't look like an image or a PDF.");
-      const { dataUrl: resized, width, height } = await resizeImage(dataUrl);
+      const { dataUrl: resized, width, height, content } = await resizeImage(dataUrl);
       if (mySel !== selId) return;
       showImageCard(resized);
-      current = { kind: 'image', base64: resized.split(',')[1], mimeType: 'image/jpeg', src: { kind: 'image', width, height } };
+      current = { kind: 'image', base64: resized.split(',')[1], mimeType: 'image/jpeg', src: { kind: 'image', width, height, content } };
       setStatus('Photo ready \u2014 add a note if it helps, then scan.');
     }
     $('fs-scan-btn').disabled = false;
@@ -263,12 +269,53 @@ function renderPreview(spec, page) {
     warnEl.hidden = false;
   } else warnEl.hidden = true;
 
+  renderWordingEditor(spec);
   refreshPdfPreview(spec, page);
   $('fs-results-placeholder').hidden = true;
   $('fs-results-section').hidden = false;
   if (window.matchMedia && !window.matchMedia('(min-width: 801px)').matches) {
     $('fs-results-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+
+/* ================= wording editor: every printed label, editable; the PDF preview follows ================= */
+let wordingSlots = [], editTimer = null;
+function renderWordingEditor(spec) {
+  wordingSlots = E.textSlots(spec);
+  const unc = new Map((spec.unconfirmed || []).map((u) => [E.normTxt(u.text), u]));
+  let unsure = 0;
+  $('fs-wording').innerHTML = wordingSlots.map((s, i) => {
+    const val = String(s.obj[s.key]), u = unc.get(E.normTxt(val.replace(/\s*:\s*$/, '')));
+    if (u) unsure++;
+    const field = val.includes('\n') ? `<textarea rows="2" data-slot="${i}">${escapeHTML(val)}</textarea>` : `<input type="text" data-slot="${i}" value="${escapeHTML(val)}">`;
+    const sug = u && u.suggest ? `<button type="button" class="fs-runlog-btn" data-use="${i}" data-val="${escapeHTML(u.suggest)}">use \u201c${escapeHTML(u.suggest)}\u201d</button>` : '';
+    return `<div class="fs-wrow${u ? ' is-unsure' : ''}"><span class="fs-wband">${s.band ? 'Section ' + s.band : (s.key === 'referenceCode' ? 'Ref. code' : 'Title')}</span>${field}${sug}</div>`;
+  }).join('');
+  $('fs-wording-count').textContent = unsure ? ` \u2014 ${unsure} to check` : '';
+}
+function updateUnsureCount() {
+  const n = document.querySelectorAll('#fs-wording .is-unsure').length;
+  $('fs-wording-count').textContent = n ? ` \u2014 ${n} to check` : '';
+}
+function queuePreviewRefresh() { clearTimeout(editTimer); editTimer = setTimeout(() => { if (lastSpec) refreshPdfPreview(lastSpec, lastPage); }, 400); }
+function onWordingEdit(e) {
+  const t = e.target.closest('[data-slot]');
+  const s = t && wordingSlots[+t.dataset.slot];
+  if (!s) return;
+  s.obj[s.key] = E.cleanText(t.value, 400);      // same cleaner as scanned text: standard PDF fonts are Latin-only
+  t.closest('.fs-wrow').classList.remove('is-unsure'); updateUnsureCount();
+  queuePreviewRefresh();
+}
+function onWordingClick(e) {
+  const b = e.target.closest('[data-use]');
+  const s = b && wordingSlots[+b.dataset.use];
+  if (!s) return;
+  const val = b.dataset.val + ((String(s.obj[s.key]).match(/\s*:\s*$/) || [''])[0]);
+  s.obj[s.key] = val;
+  const inp = document.querySelector(`[data-slot="${b.dataset.use}"]`);
+  if (inp) { inp.value = val; inp.closest('.fs-wrow').classList.remove('is-unsure'); }
+  b.remove(); updateUnsureCount();
+  queuePreviewRefresh();
 }
 
 /* ================= live PDF preview (the browser's own PDF viewer, so placement problems are visible at once) ================= */
@@ -289,6 +336,35 @@ async function refreshPdfPreview(spec, page) {
 /* ================= scan flow ================= */
 const ENGINE_LABEL = { qwen: 'Qwen', gemini: 'Gemini' };
 const countItems = (spec) => spec.bands.reduce((a, b) => a + (b.kind === 'table' ? 1 : b.cells.reduce((n, c) => n + c.items.filter((it) => it.kind === 'F' || it.kind === 'C').length, 0)), 0);
+
+// Wording read: Gemini transcribes every printed text item (cheap, fast). Never throws: returns { lines } or { error }.
+async function wordingRead(precise) {
+  const t0 = performance.now();
+  if (getUsageToday() + CFG.TEXT_COST > CFG.MAX_SCANS_PER_DAY) return { error: 'daily limit reached', secs: 0 };
+  try {
+    const data = await scanForm({ image: current.base64, mime_type: current.mimeType, mode: 'text', tier: precise ? 'precise' : 'fast', provider: 'gemini' });
+    recordUsage(CFG.TEXT_COST);
+    const secs = (performance.now() - t0) / 1000, lines = data.lines || [];
+    logRun({ label: ((data._meta && data._meta.model) || 'gemini') + ' (wording)', secs, info: `${lines.length} text lines read` });
+    return { lines, secs };
+  } catch (err) {
+    const secs = (performance.now() - t0) / 1000;
+    logRun({ label: 'Gemini (wording)', secs, error: err.message || 'Error' });
+    return { error: err.message || 'Error', secs };
+  }
+}
+
+// Qwen structure + Gemini wording: work on a copy so the plain Qwen row in the log stays available for comparison.
+function applyWording(r, tp) {
+  if (!tp || tp.error || !tp.lines || !tp.lines.length) return Object.assign({}, r, { note: ' Wording check unavailable.' });
+  const spec = structuredClone(r.spec);
+  const m = E.mergeWording(spec, tp.lines);
+  spec.unconfirmed = m.unconfirmed;
+  if (m.unconfirmed.length) spec.warnings.push(`${m.unconfirmed.length} label${m.unconfirmed.length === 1 ? '' : 's'} not confirmed by the second reading \u2014 compare with the original: ${m.unconfirmed.slice(0, 6).map((u) => '\u201c' + u.text + '\u201d').join(', ')}${m.unconfirmed.length > 6 ? '\u2026' : ''}`);
+  const label = r.label + ' + Gemini wording', secs = Math.max(r.secs, tp.secs);
+  logRun({ label, secs, spec, page: r.page, items: countItems(spec) });
+  return { spec, page: r.page, label, secs, note: m.fixed ? ` ${m.fixed} label${m.fixed === 1 ? '' : 's'} corrected.` : ' Wording confirmed.' };
+}
 
 // One engine, one attempt: returns the result or throws. Every attempt (good or failed) lands in the comparison log.
 async function tryEngine(engine, note, precise) {
@@ -329,12 +405,14 @@ async function runScan() {
   try {
     for (let i = 0; i < engines.length; i++) {
       const eng = engines[i];
-      setStatus(`Reading the form with ${ENGINE_LABEL[eng]}\u2026 ${eng === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
+      const wording = choice === 'auto' && eng === 'qwen' ? wordingRead(precise) : null;   // runs at the same time as Qwen
+      setStatus(`Reading the form with ${ENGINE_LABEL[eng]}${wording ? ' (Gemini reads the wording at the same time)' : ''}\u2026 ${eng === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
       try {
-        const r = await tryEngine(eng, note, precise);
+        let r = await tryEngine(eng, note, precise);
+        if (wording) { setStatus('Checking the wording\u2026'); r = applyWording(r, await wording); }
         lastSpec = r.spec; lastPage = r.page;
         renderPreview(r.spec, r.page);
-        setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it below, then download. (${r.label}, ${r.secs.toFixed(1)} s${i > 0 ? ', fallback engine' : ''})`);
+        setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it below, then download. (${r.label}, ${r.secs.toFixed(1)} s${i > 0 ? ', fallback engine' : ''}).${r.note || ''}`);
         return;
       } catch (err) {
         lastErr = err;
@@ -355,6 +433,7 @@ function renderRunLog() {
   $('fs-runlog-wrap').hidden = !runs.length;
   $('fs-runlog').innerHTML = runs.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHTML(r.label)}</td><td>${r.secs.toFixed(1)} s</td>` + (r.error
     ? `<td colspan="2" class="fs-runlog-err">Failed: ${escapeHTML(String(r.error).slice(0, 90))}</td>`
+    : r.info ? `<td colspan="2">${escapeHTML(r.info)}</td>`
     : `<td>${r.spec.bands.length} sections / ${r.items} items</td><td><button type="button" class="fs-runlog-btn" data-show="${i}">Show</button> <button type="button" class="fs-runlog-btn" data-pdf="${i}">PDF</button></td>`) + '</tr>').join('');
 }
 async function downloadRun(r) {
@@ -403,6 +482,8 @@ function init() {
   $('fs-scan-btn').addEventListener('click', runScan);
   $('fs-download-btn').addEventListener('click', downloadPdf);
   $('fs-shade').addEventListener('change', () => { if (lastSpec) refreshPdfPreview(lastSpec, lastPage); });
+  $('fs-wording').addEventListener('input', onWordingEdit);
+  $('fs-wording').addEventListener('click', onWordingClick);
   $('fs-runlog').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;

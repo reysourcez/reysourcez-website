@@ -112,6 +112,13 @@
     .fs-details { margin-top: 14px; }
     .fs-details summary { cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--accent-dark); margin-bottom: 10px; }
     @media (max-width: 800px) { .fs-pdf-frame { height: 440px; } }
+    .fs-sum-hint { font-weight: 400; color: var(--muted); font-size: 0.82rem; margin-left: 8px; }
+    .fs-wording { max-height: 360px; overflow: auto; }
+    .fs-wrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+    .fs-wband { font-size: 0.72rem; color: var(--muted); width: 66px; flex-shrink: 0; }
+    .fs-wrow input, .fs-wrow textarea { flex: 1 1 220px; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-family: var(--font-body); font-size: 0.85rem; color: var(--text); background: var(--surface); }
+    .fs-wrow input:focus-visible, .fs-wrow textarea:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+    .fs-wrow.is-unsure input, .fs-wrow.is-unsure textarea { border-color: #D4A017; background: #FFF8E6; }
 
     @media (min-width: 801px) {
       .fs-layout { display: grid; grid-template-columns: minmax(360px, 480px) 1fr; gap: 40px; align-items: start; }
@@ -151,7 +158,7 @@
     <section class="calc-intro">
       <div class="wrap">
         <span class="eyebrow">Free tool &middot; nothing saved on our side</span>
-        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.2 — 2026-09-30" title="v6.2 — 2026-09-30" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.2</span></h1>
+        <h1>Form Scanner <span class="fs-version-badge" data-tooltip="v6.3 — 2026-10-03" title="v6.3 — 2026-10-03" style="font-size:0.6em; color:var(--muted); font-family:var(--font-body); font-weight:500; vertical-align:middle;">v6.3</span></h1>
         <p class="lead">Photograph or upload a paper form — crooked, at an angle, whatever — and get back a straight, cleanly laid out PDF with real fillable fields, following the source form's own structure. Not an OCR text dump: an actual usable digital version, ready to type into.</p>
       </div>
     </section>
@@ -183,11 +190,11 @@
 
               <label class="fs-provider-row" for="fs-provider">Reading engine (test switch)
                 <select id="fs-provider" class="fs-select">
-                  <option value="auto">Auto: Qwen, then Gemini if it fails (recommended)</option>
+                  <option value="auto">Auto: Qwen reads structure, Gemini checks wording (recommended)</option>
                   <option value="qwen">Qwen 3.8 27B only (free)</option>
                   <option value="gemini">Gemini only</option>
                 </select>
-                <span class="fs-option-hint">Auto tries Qwen first and falls back to Gemini if it fails. Pick one engine to compare them in the log on the right. PDFs are converted to a page image for Qwen automatically. Test with blank or sample forms — free engines may keep what you send.</span>
+                <span class="fs-option-hint">Auto = Qwen reads the layout while Gemini reads the wording at the same time, then the two are merged (Gemini alone takes over if Qwen fails). Pick one engine to compare them in the log on the right. PDFs are converted to a page image for Qwen automatically. Upload the PDF itself (or a large, sharp image) rather than a small screenshot: blurry text is the main cause of misread words. Test with blank or sample forms — free engines may keep what you send.</span>
               </label>
 
               <label class="fs-option-row">
@@ -227,6 +234,7 @@
 
               <iframe class="fs-pdf-frame no-print" id="fs-pdf-frame" title="Preview of the generated PDF" hidden></iframe>
               <p class="fs-rescan-hint no-print">This is the PDF exactly as it will download. Preview blank (some phones can't show PDFs inline)? Use Download.</p>
+              <details class="fs-details" open><summary>Edit wording<span id="fs-wording-count"></span><span class="fs-sum-hint">Fix any misread label here; the preview above updates.</span></summary><div id="fs-wording" class="fs-wording"></div></details>
               <details class="fs-details"><summary>What was read (sections, fields, tables)</summary><div id="fs-bands"></div></details>
               <ul class="fs-warn-list" id="fs-warn-list" hidden></ul>
 
@@ -258,7 +266,7 @@
   <script src="site-config.js?v=1" defer></script>
   <script src="nav-config.js?v=1" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="form-scanner-engine.js?v=1" defer></script>
-  <script src="form-scanner.js?v=3" defer></script>
+  <script src="form-scanner-engine.js?v=2" defer></script>
+  <script src="form-scanner.js?v=4" defer></script>
 </body>
 </html>

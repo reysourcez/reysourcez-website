@@ -1,9 +1,9 @@
 /* ============================================================
    Form Scanner — Gemini proxy (Cloudflare Worker)
-   Version: v6.2 (2026-09-30) — engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.3 (2026-10-03) — engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). Holds the Gemini key as the
    encrypted secret GEMINI_API_KEY. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
-   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen" }
+   Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen", mode?: "text" (Gemini wording read, returns { lines }) }
    Qwen goes through OpenRouter (images only) and needs a 2nd secret: OPENROUTER_API_KEY.
    Response: the spec (see FORM_SCHEMA) + _meta, or { error }
    ============================================================ */
@@ -92,7 +92,7 @@ const BAND = {
     cells: { type: 'array', items: CELL, description: 'kind cells: the cells, column 1 first (top to bottom), then column 2, ...' },
     table: TABLE,
   },
-  required: ['kind', 'height_pct'],
+  required: ['kind', 'height_pct', 'cells'],   // v6.3: 'cells' required (empty [] for tables) - Gemini used to skip it and every non-table band vanished
 };
 
 const FORM_SCHEMA = {
@@ -139,7 +139,7 @@ TEXT: copy every printed word exactly as printed (same language, spelling, capit
 
 STRUCTURE, top to bottom
 1. bands: cut the form into full-width horizontal bands in reading order. Give a band to every distinct block: a top-corner reference label, the title block, each group of fields, each table, each one-line row, the signature area, footnotes, each reference table.
-   height_pct = the band's share of the total height of all bands (adds up to 100). gap = whitespace above it (none/small/medium/large). boxed = true when a rectangle outline is drawn around the band. frames = one big rectangle around several consecutive bands, as {from_band,to_band} (1-based band numbers).
+   height_pct = the band's share of the total height of all bands (adds up to 100). gap = whitespace above it (none/small/medium/large). boxed = true when a rectangle outline is drawn around the band. frames = one big rectangle around several consecutive bands, as {from_band,to_band} (1-based band numbers). Most printed forms have an outer border: when one rectangle encloses the whole form (or a block of consecutive bands, e.g. the title plus the fields), you MUST output a frame for it.
 2. kind "cells" (default): col_widths_pct lists the columns that sit side by side (adds up to 100; [100] for one full-width column; use an empty spacer column for blank margins). Each cell has col (its 1-based column), height_pct (its share of that column's height; the cells of one column add up to 100), boxed (a border around the cell) and fill ("none", or #RRGGBB for a coloured background). List the cells of column 1 first (top to bottom), then column 2, and so on. Content that sits left and right of each other MUST be in different columns; never put a left group and a right group in the same column. Use an empty cell (items []) for blank space above or below a box.
 3. Each cell has items, top to bottom, every item a short coded string  CODE[flags] text
    T[..] text      printed text (not fillable)
@@ -149,17 +149,17 @@ STRUCTURE, top to bottom
    SP[n]           empty stretchy space, n = 1 (small) to 5 (large); use it to leave room for signatures
    flags, comma separated, all optional: b bold; i italic; xs sm md lg xl text size (md is normal);
    left center right alignment; ul underline;
-   F only: line (default) | box | none = how the blank looks; wNN = blank width as % of the cell (w40); tall = multi-line blank that stretches; rl = right-align the label so labels line up with the blanks; ind = indent a label-less blank to line up with the other blanks;
+   F only: line (default) | box | none = how the blank looks; wNN = blank width as % of the cell, MEASURED from the picture: a short box or line is w15-w40, only a blank that really runs the full width of the cell has no wNN; tall = multi-line blank that stretches; rl = right-align the label so labels line up with the blanks; ind = indent a label-less blank to line up with the other blanks;
    C only: stack = options one under another (default is one row).
    Signature block: T[b] heading, SP[3], F[line,w70] (signature line), then F[none] rows for Name / Position / Date.
 4. kind "table": a ruled grid with a heading row. table.columns = printed headings + width_pct (+ align, fill); header_groups = headings spanning several columns (from_column, span; 1-based); static_rows = rows that are already printed (one string per column, "" = empty cell); blank_rows = empty rows to fill in; total_label + total_span = a total row whose label spans the first N columns; numbered = first column is pre-numbered; fillable=false for reference tables that are only read; width_pct when the table is narrower than the band; header_fill / fill for coloured headings.
 
-PAGE: page.size and page.orientation = the paper the form is printed on (A4 portrait unless it clearly is not); page.font = sans, serif or mono; margin_pct and fill_pct as described in the schema.
+PAGE: page.size and page.orientation = the paper the form is printed on (A4 portrait unless it clearly is not); page.font = sans, serif or mono; margin_pct and fill_pct as described in the schema (a form that fills its page has fill_pct 90-100; never copy the numbers of the example below).
 NOTE: the person may add a note. Only when it explicitly asks for a different paper size, orientation, font or text size, fill requested.*; otherwise leave requested as none / 0. Follow any other structural guidance in the note (for example "ignore the letterhead").
 If the image is not a form, return recognized=false, empty title, page A4 portrait sans and bands [].
 
 Tiny example of the SHAPE ONLY (never copy its content):
-{"recognized":true,"title":"LEAVE REQUEST","reference_code":"Form HR-2","page":{"size":"A4","orientation":"portrait","font":"sans","margin_pct":5,"fill_pct":60},"requested":{"size":"none","orientation":"none","font":"none","text_scale_pct":0},"frames":[{"from_band":1,"to_band":3}],"bands":[{"kind":"cells","height_pct":12,"boxed":false,"col_widths_pct":[100],"cells":[{"col":1,"height_pct":100,"items":["T[b,xl,center] LEAVE REQUEST","T[i,xs,center] (Company name)"]}]},{"kind":"cells","height_pct":30,"boxed":false,"col_widths_pct":[55,45],"cells":[{"col":1,"height_pct":100,"items":["F[box] Name","F[box] Department","F[box] Position"]},{"col":2,"height_pct":100,"items":["F[box] Date","C[stack] Type :: Annual ; Sick ; Other _"]}]},{"kind":"table","height_pct":30,"table":{"columns":[{"header":"No","width_pct":8,"align":"center"},{"header":"Date","width_pct":30},{"header":"Reason","width_pct":62}],"header_fill":"#D9D9D9","blank_rows":4,"numbered":true}},{"kind":"cells","height_pct":28,"boxed":true,"col_widths_pct":[50,50],"cells":[{"col":1,"height_pct":100,"boxed":true,"items":["T[b,sm] Requested by","SP[3]","F[line,w70]","F[none,sm] Name :","F[none,sm] Date :"]},{"col":2,"height_pct":100,"boxed":true,"items":["T[b,sm] Approved by","SP[3]","F[line,w70]","F[none,sm] Name :","F[none,sm] Date :"]}]}]}`;
+{"recognized":true,"title":"LEAVE REQUEST","reference_code":"Form HR-2","page":{"size":"A4","orientation":"portrait","font":"sans","margin_pct":5,"fill_pct":95},"requested":{"size":"none","orientation":"none","font":"none","text_scale_pct":0},"frames":[{"from_band":1,"to_band":3}],"bands":[{"kind":"cells","height_pct":12,"boxed":false,"col_widths_pct":[100],"cells":[{"col":1,"height_pct":100,"items":["T[b,xl,center] LEAVE REQUEST","T[i,xs,center] (Company name)"]}]},{"kind":"cells","height_pct":30,"boxed":false,"col_widths_pct":[55,45],"cells":[{"col":1,"height_pct":100,"items":["F[box] Name","F[box] Department","F[box] Position"]},{"col":2,"height_pct":100,"items":["F[box,w30] Date","C[stack] Type :: Annual ; Sick ; Other _"]}]},{"kind":"table","height_pct":30,"table":{"columns":[{"header":"No","width_pct":8,"align":"center"},{"header":"Date","width_pct":30},{"header":"Reason","width_pct":62}],"header_fill":"#D9D9D9","blank_rows":4,"numbered":true}},{"kind":"cells","height_pct":28,"boxed":true,"col_widths_pct":[50,50],"cells":[{"col":1,"height_pct":100,"boxed":true,"items":["T[b,sm] Requested by","SP[3]","F[line,w70]","F[none,sm] Name :","F[none,sm] Date :"]},{"col":2,"height_pct":100,"boxed":true,"items":["T[b,sm] Approved by","SP[3]","F[line,w70]","F[none,sm] Name :","F[none,sm] Date :"]}]}]}`;
 
 /* ---------------- helpers ---------------- */
 function corsHeaders(origin) {
@@ -301,6 +301,40 @@ async function handleOpenRouter(env, provider, image, mime, note, origin) {
   return jsonResponse(spec, 200, origin);
 }
 
+/* Wording read (v6.3): Gemini transcribes every printed text item as a flat list; the page merges it into Qwen's structure. */
+const TEXT_SCHEMA = { type: 'object', properties: { lines: { type: 'array', items: { type: 'string' }, description: 'every printed text item, one entry each, reading order' } }, required: ['lines'] };
+const TEXT_PROMPT = 'Transcribe ALL printed text on this form exactly as printed, as a JSON list in reading order (top to bottom, left to right). One entry per separate text item: a heading, a label, a column heading, a table cell, a note line. Never merge text from different columns, boxes or cells into one entry. Keep the original language, spelling, capitals and punctuation (including " :"). Skip handwriting, stamps, signatures, scanner noise and the photo background. Reply as {"lines":[...]}.';
+async function handleGeminiText(env, image, mime, tier, origin) {
+  if (!env.GEMINI_API_KEY) return jsonResponse({ error: 'The server is missing its GEMINI_API_KEY secret (Worker Settings > Variables and Secrets).' }, 500, origin);
+  const model = MODELS[tier], t0 = Date.now();
+  let useThinking = true, resp = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const generationConfig = { responseMimeType: 'application/json', responseSchema: TEXT_SCHEMA, maxOutputTokens: 8192 };
+    if (useThinking) generationConfig.thinkingConfig = { thinkingLevel: THINKING_LEVEL };
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
+    try {
+      resp = await fetch(`${GEMINI_API_BASE}/${model}:generateContent`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
+        body: JSON.stringify({ contents: [{ parts: [{ inlineData: { mimeType: mime, data: image } }, { text: TEXT_PROMPT }] }], generationConfig }), signal: ctl.signal,
+      });
+    } catch (e) { return jsonResponse({ error: e && e.name === 'AbortError' ? 'The wording read took too long.' : 'Could not reach Gemini.' }, 502, origin); }
+    finally { clearTimeout(timer); }
+    if (resp.ok) break;
+    const errText = await resp.text();
+    if (resp.status === 400 && useThinking && /thinking/i.test(errText)) { useThinking = false; continue; }
+    if ((resp.status === 429 || resp.status === 503) && attempt < 2) { await new Promise((r) => setTimeout(r, 1200)); continue; }
+    return jsonResponse({ error: 'Gemini error ' + resp.status + ': ' + errText.slice(0, 200) }, resp.status, origin);
+  }
+  if (!resp || !resp.ok) return jsonResponse({ error: 'Gemini did not answer.' }, 502, origin);
+  const { text } = extractText(await resp.json());
+  let parsed;
+  try { parsed = JSON.parse(text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/```\s*$/, '')); }
+  catch (e) { return jsonResponse({ error: 'Gemini returned an unreadable wording list.' }, 502, origin); }
+  const lines = list(parsed && parsed.lines, 600).filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 300)).filter(Boolean);
+  return jsonResponse({ lines, _meta: { provider: 'gemini', model, mode: 'text', ms: Date.now() - t0 } }, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get('Origin') || '';
@@ -313,6 +347,7 @@ export default {
       if (body.image.length > MAX_BASE64_CHARS) return jsonResponse({ error: 'That file is too large. Try one under 15 MB.' }, 413, origin);
       const mime = typeof body.mime_type === 'string' ? body.mime_type : 'image/jpeg';
       if (!ALLOWED_MIME.includes(mime)) return jsonResponse({ error: 'Unsupported file type. Use a JPG, PNG, WebP or PDF.' }, 415, origin);
+      if (body.mode === 'text') return await handleGeminiText(env, body.image, mime, body.tier === 'precise' ? 'precise' : 'fast', origin);
       const provider = body.provider === 'qwen' ? 'qwen' : 'gemini';
       if (provider !== 'gemini') return await handleOpenRouter(env, provider, body.image, mime, typeof body.note === 'string' ? body.note.trim().slice(0, 500) : '', origin);
       const t0 = Date.now();

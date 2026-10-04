@@ -112,3 +112,27 @@ Real end-to-end testing this round, not just static review — a genuine change 
 **Deploy.** Replace the Worker code in Cloudflare (`OPENROUTER_API_KEY` secret stays as is), then replace `form-scanner.html` and `form-scanner.js` on GitHub and hard-refresh (Ctrl+F5).
 
 **Limits / KIV.** pdf.js rendering and the inline PDF preview were not exercised in a real browser here (no network). Some phones cannot show PDFs inline; Download still works. Next experiments depending on what the preview shows: a "double-check" second pass (model re-reads the image against its own first answer), or asking Qwen for bounding boxes so placement comes from measured positions instead of percentages.
+
+
+## 2026-10-03 — v6.3: Qwen structure + Gemini wording, measured page geometry, wording editor, Gemini fix
+
+**What the 2026-10-03 test screenshots showed (Resit Rasmi, Baucar Bayaran; Qwen vs Gemini).**
+1. **Gemini returned almost nothing** ("No fields or tables found" on Resit; only the two tables on Baucar). Cause: in the response schema `cells` was optional, so Gemini skipped it and every non-table band vanished. Fixed: `cells` is now required (empty `[]` for tables).
+2. **Qwen got the structure but the wording was weaker** ("BALIC BAYARAN", invented labels) while Gemini read words well. The source screenshots were small and blurry; text-reading models fail first on small text.
+3. **Qwen's Resit came out portrait with the form squeezed into the top part, no outer border, and a full-width "NO RESIT" box.** The model's page guesses were trusted blindly (it copied `fill_pct: 60` from the prompt example).
+
+**What changed.**
+- **Auto = Qwen reads the structure while Gemini reads the wording at the same time** (new Worker `mode: "text"`, flat list of every printed text item). The page matches each label to the closest wording line and corrects it only when the match is convincing (`mergeWording` in the engine). Labels nothing backs up are never silently changed: they are highlighted amber in the new **Edit wording** panel, with a one-click suggestion where there is a near match. The plain Qwen row stays in the log next to the merged "Qwen + Gemini wording" row so the two PDFs can be compared. If the wording read fails, the Qwen result is shown unchanged.
+- **Edit wording panel**: every printed label in an editable box; edits update the spec and the live PDF preview (text is cleaned to the Latin set the standard PDF fonts can draw).
+- **Page geometry measured from the picture** (`measureContent`): orientation from the picture's real shape, margins (min 4% so nothing prints edge to edge), vertical fill, and an outer border when long unbroken rules run the full height at both sides. A dark viewer surround is ignored (the paper is found first). For PDFs it measures the rendered page.
+- **Small images are enlarged to 1600 px** (long edge) before sending; transparent PNGs are flattened to white.
+- **Labels now sit on their rule** (like the printed form) instead of floating mid-row.
+- **Prompt**: stronger instruction for outer borders (`frames`), blank widths (`wNN`, measured), example `fill_pct` 95 (was 60).
+- **Deploy (four files change this time, including the engine):** (1) Cloudflare: replace the Worker code with the new `form-scanner-proxy-worker.js` and Deploy (no new secret needed). (2) GitHub: replace `form-scanner.html`, `form-scanner.js` and **`form-scanner-engine.js`** (the engine changed, don't skip it). (3) Hard refresh the page (Ctrl+F5). Script versions bumped: `form-scanner.js?v=4`, `form-scanner-engine.js?v=2`.
+- **New settings** (top of `form-scanner-engine.js`, `FS_CONFIG`): `MIN_IMAGE_EDGE` 1600, `TEXT_COST` 0.5 (usage-cap cost of the wording read; an Auto scan costs 1.5 of the 20 per browser per day).
+
+**Tested.** Engine functions on your two real source pictures (page measured, border detected on Resit and correctly not on Baucar, landscape from the picture), the wording merge on the real Baucar misreads (fixes "BALIC BAYARAN" and the "Surat ... Mkt." address line; flags invented labels), a rendered Resit PDF, the Worker's new modes with mocked Gemini, and the whole page in real Chromium with a mocked Worker (12 checks: enlarge, orientation, border, merge, editor, suggestion click, fallback, PDF raster). **Not tested:** real Qwen/Gemini answers and real pdf.js (no network here); inline PDF preview in headless Chrome.
+
+**Known limits.** The merge fixes small misreads; it cannot repair a structure that was invented from an unreadable picture, so feed it the PDF itself or a large sharp image. Auto-border only when the border encloses almost everything (partial borders are left to the model). Wording read cannot tell which duplicate label is which (identical labels are all treated alike).
+
+**KIV.** Second "structure double-check" pass; Qwen bounding boxes for measured placement; compare Qwen reasoning on/off for speed; check Qwen/OpenRouter data policy before making it the permanent default.

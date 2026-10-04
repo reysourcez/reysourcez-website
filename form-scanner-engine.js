@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — browser engine
-   Version: v6.0 (2026-09-24) — layout-spec rebuild on the v4.3 baseline
+   Version: v6.3 (2026-10-03) — layout-spec rebuild on the v4.3 baseline
    Flow: photo/PDF -> Worker (Gemini) -> layout spec -> pdf-lib fillable PDF.
    All tunables live in FS_CONFIG. Full notes: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    and FORM_SCANNER_HANDOFF.md. Nothing here is sent anywhere except the one
@@ -9,7 +9,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'v6.0 (2026-09-24)';
+const VERSION = 'v6.3 (2026-10-03)';
 
 /* ---------------- CONFIG (edit here only) ---------------- */
 const FS_CONFIG = {
@@ -23,6 +23,8 @@ const FS_CONFIG = {
   FIELD_TINT: [0.86, 0.91, 1],   // RGB 0-1, used ONLY when "shade fields" is ticked
   SIZES: { xs: 6.5, sm: 7.5, md: 8.5, lg: 10.5, xl: 13.5 }, // pt, before scaling
   MIN_FONT_SCALE: 0.55,          // smallest automatic shrink-to-fit
+  MIN_IMAGE_EDGE: 1600,          // px, smaller pictures are enlarged to this (text-reading models need pixels)
+  TEXT_COST: 0.5,                // the cheap Gemini wording read counts as this many scans
   MAX_FIELDS: 1500,              // safety cap on fillable fields per form
 };
 
@@ -264,14 +266,23 @@ function resolvePage(spec, src) {
     if (rq.orientation !== 'none') origin = 'your note';
   } else {
     [W, H] = PAGE_SIZES[spec.page.size]; origin = 'photo';
-    const aspectWide = src && src.width && src.height ? src.width > src.height : false;
-    orient = rq.orientation !== 'none' ? rq.orientation
-      : (spec.page.orientation || (aspectWide ? 'landscape' : 'portrait'));
+    const ar = src && src.content && src.content.aspect ? src.content.aspect : (src && src.width && src.height ? src.width / src.height : 0);   // the picture's own shape beats the model's guess
+    const shape = ar > 1.08 ? 'landscape' : (ar && ar < 0.92 ? 'portrait' : '');
+    orient = rq.orientation !== 'none' ? rq.orientation : (shape || spec.page.orientation || 'portrait');
     if (rq.orientation !== 'none') origin = 'your note';
   }
   const lo = Math.min(W, H), hi = Math.max(W, H);
   if (!(srcPdf && rq.size === 'none' && rq.orientation === 'none')) {
     W = orient === 'landscape' ? hi : lo; H = orient === 'landscape' ? lo : hi;
+  }
+  // v6.3: margins, vertical fill and outer border are MEASURED on the source picture, not guessed by the model.
+  const ct = src && src.content;
+  if (ct) {
+    const M = clamp(((ct.x0 + (1 - ct.x1)) / 2) * 100, 4, 12);
+    const marginPt = clamp(W * M / 100, 14, 60);
+    spec.page.marginPct = M;
+    spec.page.fillPct = clamp(Math.round((ct.y1 - ct.y0) / ((H - 2 * marginPt) / H) * 100), 40, 100);
+    if (ct.frame && !spec.frames.length && spec.bands.length) spec.frames.push({ from: 0, to: spec.bands.length - 1 });
   }
   return {
     W, H, origin, label: labelForSize(W, H),
@@ -487,7 +498,8 @@ function drawField(it, m, x, y, w, h, lblW, c) {
     gx = it.align === 'center' ? x + (w - gw) / 2 : x + w - gw;
   }
   if (!m.long && it.text) {
-    drawLabel(it, m, gx, (it.tall ? by + m.lh / 2 : by + bh / 2) + 0.35 * size, lw, c);
+    // label sits ON its rule (like the printed form); on a box or open row it is centred; multi-line blanks keep it at the top
+    drawLabel(it, m, gx, it.tall ? by + m.lh / 2 + 0.35 * size : (it.blank === 'line' ? by + bh - 2.6 * c.fs : by + bh / 2 + 0.35 * size), lw, c);
   }
   const bx = gx + lw;
   if (blankW > 4 && bh > 4) {
@@ -840,10 +852,155 @@ async function buildFillablePdf(PDFLib, spec, pageInfo, opts) {
   return { bytes, warnings, issues, stats: { fields: c.fields.length, checkboxes: c.checks, fontScale: plan.fontScale, fit: plan.fit } };
 }
 
+/* ---------------- where is the form on its source picture? (v6.3) ----------------
+   rgba = canvas pixels. Finds the paper (the bright block, so a dark viewer surround or table never counts as content), then the
+   ink on it. Returns fractions of the PAPER, the paper's aspect ratio, and whether an outer border encloses (almost) everything. */
+function measureContent(rgba, w, h) {
+  if (!rgba || !(w > 0) || !(h > 0) || rgba.length < w * h * 4) return null;
+  const lum = new Uint8Array(w * h), rowB = new Uint32Array(h), colB = new Uint32Array(w);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0, i = y * w * 4, k = y * w; x < w; x++, i += 4, k++) {
+      const l = rgba[i + 3] > 128 ? 0.299 * rgba[i] + 0.587 * rgba[i + 1] + 0.114 * rgba[i + 2] : 255;   // transparent counts as paper
+      lum[k] = l;
+      if (l >= 190) { rowB[y]++; colB[x]++; }
+    }
+  }
+  const rb = Math.max(2, Math.round(w * 0.03)), cb = Math.max(2, Math.round(h * 0.03));
+  let py0 = 0, py1 = h - 1, px0 = 0, px1 = w - 1;
+  while (py0 < h && rowB[py0] < rb) py0++;
+  while (py1 > py0 && rowB[py1] < rb) py1--;
+  while (px0 < w && colB[px0] < cb) px0++;
+  while (px1 > px0 && colB[px1] < cb) px1--;
+  const pw = px1 - px0 + 1, ph = py1 - py0 + 1;
+  if (pw < w * 0.25 || ph < h * 0.25) return null;
+  const rowInk = new Uint32Array(h), colInk = new Uint32Array(w);
+  let inkTotal = 0;
+  for (let y = py0; y <= py1; y++) for (let x = px0, k = y * w + px0; x <= px1; x++, k++) if (lum[k] < 150) { rowInk[y]++; colInk[x]++; inkTotal++; }
+  if (inkTotal > 0.35 * pw * ph) return null;      // mostly dark: not a form on white paper, nothing reliable to measure
+  const rmin = Math.max(2, Math.round(pw * 0.01)), cmin = Math.max(2, Math.round(ph * 0.01));
+  let y0 = py0, y1 = py1, x0 = px0, x1 = px1;
+  while (y0 < py1 && rowInk[y0] < rmin) y0++;
+  while (y1 > y0 && rowInk[y1] < rmin) y1--;
+  while (x0 < px1 && colInk[x0] < cmin) x0++;
+  while (x1 > x0 && colInk[x1] < cmin) x1--;
+  if (y1 - y0 < ph * 0.25 || x1 - x0 < pw * 0.25) return null;
+  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+  // outer border = long unbroken vertical rules at BOTH side edges that run (almost) the full height of the content
+  const run = (xa, xb) => {
+    let best = [0, -1];
+    for (let x = xa; x <= xb; x++) {
+      let s = -1, last = -1;
+      for (let y = y0; y <= y1 + 1; y++) {
+        if (y <= y1 && lum[y * w + x] < 150) { if (s < 0) s = y; last = y; }
+        else if (s >= 0 && (y > last + 2 || y > y1)) { if (last - s > best[1] - best[0]) best = [s, last]; s = -1; }
+      }
+    }
+    return best;
+  };
+  const okRun = (r) => r[1] - r[0] >= bh * 0.8 && r[0] - y0 <= bh * 0.12 && y1 - r[1] <= Math.max(3, bh * 0.05);
+  const frame = okRun(run(x0, Math.min(x1, x0 + 3))) && okRun(run(Math.max(x0, x1 - 3), x1));
+  return { x0: (x0 - px0) / pw, y0: (y0 - py0) / ph, x1: (x1 + 1 - px0) / pw, y1: (y1 + 1 - py0) / ph, frame, aspect: pw / ph };
+}
+
+/* ---------------- wording check (v6.3) ----------------
+   The structure reader (Qwen) is better at layout, the text reader (Gemini) at spelling. `lines` is Gemini's flat list of every
+   printed text item. Each label in the spec is matched to the closest line and corrected when the match is convincing; labels
+   with no support anywhere are reported, never silently changed. Mutates spec; returns { fixed, unconfirmed }. */
+const normTxt = (s) => String(s == null ? '' : s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+function editDistance(a, b) {
+  if (a === b) return 0;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+const similarity = (a, b) => { const m = Math.max(a.length, b.length); return m ? 1 - editDistance(a, b) / m : 1; };
+const COLON_TAIL = /\s*:\s*$/;
+
+// every editable piece of printed text in the spec: [{ obj, key, band }] (band 0 = title block); obj[key] holds the text
+function textSlots(spec) {
+  const out = [];
+  const add = (obj, key, band) => { if (obj && typeof obj[key] === 'string' && obj[key].trim()) out.push({ obj, key, band }); };
+  add(spec, 'title', 0); add(spec, 'referenceCode', 0);
+  spec.bands.forEach((b, bi) => {
+    const n = bi + 1;
+    if (b.kind === 'table') {
+      const t = b.table;
+      t.columns.forEach((c) => add(c, 'header', n));
+      t.groups.forEach((g) => add(g, 'text', n));
+      t.rows.forEach((r) => r.forEach((_, j) => add(r, j, n)));
+      add(t, 'totalLabel', n);
+    } else {
+      b.cells.forEach((cell) => cell.items.forEach((it) => {
+        if (it.kind === 'T' || it.kind === 'F' || it.kind === 'C') add(it, 'text', n);
+        if (it.kind === 'C') it.options.forEach((o) => add(o, 'label', n));
+      }));
+    }
+  });
+  return out;
+}
+
+function mergeWording(spec, lines) {
+  const L = (Array.isArray(lines) ? lines : []).map((x) => String(x == null ? '' : x).replace(/\s+/g, ' ').trim().slice(0, 300)).filter((x) => normTxt(x));
+  const pool = L.map((d) => ({ d, n: normTxt(d), win: false }));
+  for (let i = 0; i + 1 < L.length; i++) {            // 2- and 3-line windows, for notes the two readers split differently
+    const two = L[i] + ' ' + L[i + 1];
+    pool.push({ d: two, n: normTxt(two), win: true });
+    if (i + 2 < L.length) { const three = two + ' ' + L[i + 2]; pool.push({ d: three, n: normTxt(three), win: true }); }
+  }
+  const jobs = textSlots(spec).map((s) => {
+    const parts = s.obj[s.key].split('\n').map((p) => ({ core: p.replace(COLON_TAIL, ''), tail: (p.match(COLON_TAIL) || [''])[0], qn: '' }));
+    parts.forEach((p) => { p.qn = normTxt(p.core); });
+    return { obj: s.obj, key: s.key, parts };
+  });
+  const exact = new Set();
+  jobs.forEach((j) => j.parts.forEach((p) => { if (p.qn) exact.add(p.qn); }));
+  const free = pool.filter((p) => !exact.has(p.n));      // lines nothing in the spec already reads exactly: the only fix candidates
+  const freeSingles = free.filter((p) => !p.win);
+  const byN = new Map();
+  pool.forEach((p) => { if (!p.win && !byN.has(p.n)) byN.set(p.n, p); });
+  const rank = (qn, cands) => {
+    const sc = [];
+    for (const c of cands) {
+      if (c.win && qn.length < 30) continue;
+      if (Math.abs(c.n.length - qn.length) > 0.45 * Math.max(c.n.length, qn.length)) continue;
+      sc.push({ c, s: similarity(qn, c.n) });
+    }
+    sc.sort((a, b) => b.s - a.s);
+    const top = sc[0] || null, other = top ? sc.find((x) => x.c.n !== top.c.n) : null;
+    return { top, second: other ? other.s : 0 };
+  };
+  let fixed = 0;
+  const unconfirmed = [], seen = new Set();
+  jobs.forEach((job) => {
+    job.obj[job.key] = job.parts.map((p) => {
+      if (p.qn.length < 3) return p.core + p.tail;
+      const ex = byN.get(p.qn);
+      if (ex) return ex.d.replace(COLON_TAIL, '') + p.tail;            // same words: adopt the text reader's capitals/punctuation
+      const { top, second } = rank(p.qn, free);
+      const thr = p.qn.length < 6 ? 2 : p.qn.length < 13 ? 0.7 : 0.64;
+      if (top && top.s >= thr && top.s - second >= 0.04) {
+        fixed++;
+        return top.c.d.replace(COLON_TAIL, '') + (p.tail || (top.c.d.match(COLON_TAIL) || [''])[0]);
+      }
+      if (p.qn.length >= 4 && !seen.has(p.qn)) {                        // nothing in the second reading backs this label up
+        seen.add(p.qn);
+        const near = rank(p.qn, freeSingles).top;
+        unconfirmed.push({ text: p.core, suggest: near && near.s >= 0.45 ? near.c.d.replace(COLON_TAIL, '') : '' });
+      }
+      return p.core + p.tail;
+    }).join('\n');
+  });
+  return { fixed, unconfirmed };
+}
+
 /* ---------------- exports (browser global + Node tests) ---------------- */
 const ENGINE = {
   VERSION, FS_CONFIG, PAGE_SIZES, parseItem, normalizeSpec, resolvePage, buildFillablePdf,
-  wrapLines, qaFields, labelForSize,
+  wrapLines, qaFields, labelForSize, measureContent, mergeWording, similarity, textSlots, normTxt, cleanText,
 };
 root.FormScannerEngine = ENGINE;
 if (typeof module !== 'undefined' && module.exports) module.exports = ENGINE;
