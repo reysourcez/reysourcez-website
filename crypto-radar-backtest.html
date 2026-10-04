@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reysourcez Enterprise — Crypto Radar Backtest v1.2</title>
+<title>Reysourcez Enterprise — Crypto Radar Backtest v1.2 + Big Movers v1.0</title>
 <meta name="description" content="Live indicator dashboard for Luno Malaysia coins — RSI, MACD, Bollinger Bands, support/resistance and more, summarised into one confluence score per coin. Not financial advice.">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -170,7 +170,7 @@
   .cr-quick-nav-btn { padding: 7px 12px; font-size: 0.76rem; }
 }
 .cr-topbar-field input[type="number"]{padding:8px 10px;border:1px solid var(--line);border-radius:4px;background:var(--surface);font:inherit;width:96px}
-#bt-json{width:100%;min-height:90px;font-family:"IBM Plex Mono",monospace;font-size:0.78rem}
+#bt-json,#bg-json{width:100%;min-height:90px;font-family:"IBM Plex Mono",monospace;font-size:0.78rem}
 </style>
 </head>
 <body>
@@ -210,7 +210,7 @@ Reysourcez Enterprise
 
 <main id="main">
 <section class="calc-intro"><div class="wrap">
-<span class="eyebrow">Crypto Radar &middot; Backtest v1.2 (suite v2.2) &middot; <a href="crypto-radar.html">back to Radar</a></span>
+<span class="eyebrow">Crypto Radar &middot; Backtest v1.2 &middot; Big movers v1.0 (suite v2.3) &middot; <a href="crypto-radar.html">back to Radar</a></span>
 <h1>Has the score actually worked?</h1>
 <p class="lead">Replays the live Crypto Radar score over past Luno candles without peeking ahead, then counts how often a signal reached your rally target before your stop. It measures the past; it cannot promise the future.</p>
 </div></section>
@@ -232,6 +232,22 @@ Reysourcez Enterprise
 <h3>Copy results for Claude</h3>
 <textarea id="bt-json" readonly placeholder="Results appear here after a run. Paste them into the chat so the next improvement is based on real numbers."></textarea>
 </div></section>
+<section class="calc-panel"><div class="wrap"><div class="cr-box">
+<h2>Big-mover study</h2>
+<p class="structure-note">Looks at the days followed by a big rally (for example a coin closing +25% within 7 days) and asks what simple rules showed the day before, and how many false alarms came with each catch. Includes new coins with only a few months of history.</p>
+<div class="cr-topbar">
+<div class="cr-topbar-field"><label for="bg-big">Big rally %</label><input id="bg-big" type="number" value="25" min="0" step="any"></div>
+<div class="cr-topbar-field"><label for="bg-horizon">Within candles</label><input id="bg-horizon" type="number" value="7" min="0" step="any"></div>
+<div class="cr-topbar-field"><label for="bg-duration">Candle size</label><select id="bg-duration"><option value="3600">1 hour</option><option value="14400">4 hours</option><option value="86400" selected>1 day</option><option value="259200">3 days</option></select></div>
+<div class="cr-topbar-field"><label for="bg-pairs">Coins (most traded first)</label><select id="bg-pairs"><option value="10">Top 10</option><option value="20">Top 20</option><option value="all" selected>All</option></select></div>
+<button type="button" id="bg-run" class="btn btn-primary">Run big-mover study</button>
+</div>
+<p class="cr-source-note" id="bg-status">Ready. Moves are measured on closing prices from the next open, so a one-trade spike on a thin book does not count.</p>
+<h2 id="bg-verdict"></h2>
+<div id="bg-out"></div>
+<h3>Copy results for Claude</h3>
+<textarea id="bg-json" readonly placeholder="Results appear here after a run."></textarea>
+</div></div></section>
 </main>
 
 <footer class="site-footer no-print">
@@ -273,5 +289,6 @@ Reysourcez Enterprise
 <script src="nav-dropdown.js?v=1" defer></script>
 <script src="crypto-radar.js?v=10" defer></script>
 <script src="crypto-radar-backtest.js?v=3" defer></script>
+<script src="crypto-radar-bigmovers.js?v=1" defer></script>
 </body>
 </html>

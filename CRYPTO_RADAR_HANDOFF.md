@@ -438,3 +438,16 @@ any of it, per R's standing KIV preference (§1):
 **v1.2 adds:** pages up to ~4,000 candles per coin (multiple market cycles where Luno has them), "(N mo)" months-active count, optional radar score (off = much faster). Same nine rules, same strict bar, no tuning. The earlier half of a long run covers years not examined before.
 
 **KIV:** exit study for the breakout rules (wide or volatility-based stop, +8-10% target, trailing stop) after the long-history run; forward-tracking log (KV plus daily cron); real Luno fees and spread; scoring changes only for rules that pass.
+
+
+---
+
+## 15. v2.3 (2026-10-02) — big-mover study; live dashboard still UNCHANGED
+
+**Versions:** NEW crypto-radar-bigmovers.js v1.0 (loaded as ?v=1, after the backtest script); crypto-radar-backtest.html v1.2 (adds the second box); crypto-radar-backtest.js stays v1.2; crypto-radar.html/js and the Worker stay v2.0. Trigger: SANDMYR rose about 40% in a day and was invisible to every test (116 candles, below the 257 the backtest needs).
+
+**What it does:** takes every day followed by a big rally (default: a CLOSE at least +25% above the next open within 7 candles, closes not highs so one-trade spikes on thin books don't count) and measures five fixed rules on the day before (20-candle breakout; volume 3x its 20-candle average; both together; Bollinger-width squeeze = narrowest 10% of the last 60 candles; already up 10%+ in 3 candles). Reports precision (share of firings followed by a big rally, 95% range), lift vs a random day, catch rate (share of all big rallies preceded by the rule) and false alarms per catch. First signal at candle 80, so coins with a few months of history are included. Pass bar: beat a random day at 99% in BOTH chronological halves (five rules compared). Rules not tuned; a new rule is a new, counted test.
+
+**Caveats:** overlapping windows and coins moving together make ranges optimistic; big rallies are rare, so expect few events per half; thin-book closes can still be hard to trade in size; entry price in the study is the next open, not a fillable order.
+
+**KIV:** a "fired today" watchlist using only rules that pass; combine with the Bitcoin gate; exit study for passing rules; forward-tracking log (KV plus cron); real Luno fees and spread.
