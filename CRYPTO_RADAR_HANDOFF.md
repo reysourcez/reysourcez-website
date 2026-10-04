@@ -451,3 +451,52 @@ any of it, per R's standing KIV preference (§1):
 **Caveats:** overlapping windows and coins moving together make ranges optimistic; big rallies are rare, so expect few events per half; thin-book closes can still be hard to trade in size; entry price in the study is the next open, not a fillable order.
 
 **KIV:** a "fired today" watchlist using only rules that pass; combine with the Bitcoin gate; exit study for passing rules; forward-tracking log (KV plus cron); real Luno fees and spread.
+
+
+---
+
+## 16. v2.4 (2026-10-04) — backtest covers ALL coins; live dashboard still UNCHANGED
+
+**Files to keep in the Project, with versions** (filenames stay stable on purpose, see §12; the version is in each file header and on the page):
+
+| File | Version | This round |
+|---|---|---|
+| crypto-radar.html, crypto-radar.js (loaded as ?v=10) | v2.0 | unchanged |
+| crypto-radar-worker.js | v2.0 | unchanged, no redeploy |
+| crypto-radar-backtest.html | v1.3 (suite v2.4) | CHANGED, re-upload |
+| crypto-radar-backtest.js (loaded as ?v=4) | v1.3 | CHANGED, re-upload |
+| crypto-radar-bigmovers.js (loaded as ?v=1) | v1.0 | unchanged |
+| CRYPTO_RADAR_HANDOFF.md | adds §16 | CHANGED |
+| SETUP_AND_GLOSSARY.md, AI_BUILD_BRIEF.md, NAV_ORDER_STANDARD.md, wrangler.toml | as before | unchanged |
+
+**Why this round.** R asked that studies not be scoped to the coin that prompted them (SANDMYR) and that backtests cover every Luno MY coin so the result generalises. The big-mover study already did (51 coins). The swing backtest did not: it took the top 10 by volume and skipped any coin under 257 candles, so 8 coins were tested (SANDMYR and STRKMYR had 117).
+
+**Changes, backtest v1.2 -> v1.3** (verified by the test log below):
+- Every coin is scored from its 80th candle (`BT.START`), same as the big-mover study. The radar score still needs 220 candles and is only computed from candle 220 on (`score = null` before that).
+- Each rule has an eligibility test (`SIGNALS` entry = `[label, test, eligible]`). Its random-entry baseline is computed over the SAME eligible days only (200-avg rules need 200 candles, pullback rules 100, Bitcoin rules need BTC's own 200-avg to exist, radar rules need a score). The "Any day" row is all scored days. The table shows "(vs X%)" = that matched baseline. A rule never guesses on a coin that lacks the history.
+- Cost per round trip = the fees box (now "Round-trip fees %", default 1.0) + that coin's live bid-ask gap from `/api/markets` (checkbox, default on). A coin with no live bid/ask gets the 90th-percentile gap, never zero. Per-coin costs are in the JSON (`costsUsed`). Today's gap stands in for the past, so thin coins are probably still flattered.
+- `btHistory` retries 429/5xx/network errors (3 tries, backoff), so a rate limit can no longer silently shorten a coin's history. Persistent failures on an old page are written to `notes`; a failure on the newest page still aborts that coin. Candles with a zero price are dropped. `btHistory(pair, duration, notes)` is also used by the big-mover study (the `notes` argument is optional).
+- Hold return shows average / median. Default coin list = All.
+- Regression: on days with 220+ candles v1.3 reproduces v1.2 row for row (same outcomes, same flags, same `sigStats`).
+
+**Luno MY exchange fees** (Luno help centre, "Luno fees and limits in Malaysia", fetched 2026-10-04; third-party 2026 reviews are consistent with it). By 30-day volume, taker / maker %: RM0-5k 0.60 / 0.35; 5k-200k 0.50 / 0.25; 200k-400k 0.45 / 0.20; 400k-1M 0.40 / 0.10; 1M-2M 0.35 / 0; 2M-4M 0.30 / 0; 4M-8M 0.25 / 0; 8M-14M 0.15 / 0; over 14M 0.13 / 0. A taker round trip is 2 x the taker fee (1.2% on tier 1, 1.0% on tier 2). The old 1% placeholder was tier-2 taker with no spread. Re-check the page before relying on the lower tiers. R's own tier is not known.
+
+**Results received this round (R's runs).**
+- Swing backtest v1.2: 8 coins, 1d candles, +8% / -4% / 7 candles, 1% cost, radar score off. Random entry hit 23.2% (later 40%) / 27.9% (earlier 60%). No rule cleared the pre-registered bar (beat random at 99% AND positive net return, in BOTH halves). Closest: "Breakout and Bitcoin up": hit 36.1% / 40.0%, net +0.49% / +0.50%, 7-day hold +4.64% / +5.52% (random -0.54% / +0.61%); its 99% lower bound in the later half was 22.3% vs 23.2% random (missed by under one point); it passed the earlier half. "20-candle breakout" alone: 30.2% / 38.6%, net -0.15% / +0.32%, fails the later half. 200-avg and Bitcoin-up rules: no lift. Pullback rules: only 50-145 signals, inconclusive. Holding 7 days beat the +8/-4 target/stop by 4-5 points: the median worst dip inside the window (-3.7% to -4.7% for the breakout rules) is as large as the 4% stop. SANDMYR and STRKMYR skipped (117 candles).
+- Big-mover study v1.0: 51 coins, 28,945 coin-days; big rally = a CLOSE at least +25% above the next open within 7 candles; base rate 4.3% (later) / 4.6% (earlier). Only "Already up 10%+ in the last 3 candles" beat a random day at the 99% bar in BOTH halves: followed by a big rally 12.2% / 10.9% of the time (lift 2.8x / 2.4x), caught 19.0% / 18.8% of all big rallies, 7.2 / 8.2 false alarms per catch. "20-candle breakout" lift 1.9x / 2.1x (passes the earlier half only). "Breakout with volume surge" 2.5x / 2.9x (earlier half only, catches under 5%). Volume surge alone about 2x, fails the bar. "Volatility squeeze" 0.7x / 0.8x: LESS likely than a random day to precede a big rally.
+- Reading: chart-only rules catch at most about a quarter of big rallies, with 6-11 false alarms per catch, so SAND-type jumps are mostly not predictable from price and volume alone. The one passing big-mover rule may be mostly a volatility detector (volatile days are more likely to contain ANY big move, up or down); direction has NOT been tested. So far the evidence favours buying strength (breakouts, with the Bitcoin gate) over picking bottoms. All results use coins Luno lists TODAY (delisted coins are absent), which flatters long-only rules; coins also move together, so ranges are still optimistic.
+
+**Altcoin-season / macro indicators (R's proposal; NOT built, awaiting go-ahead).** R suggested USDT dominance, Bitcoin, Bitcoin dominance, XAU gold and USD strength. Checked 2026-10-04:
+- Luno MY has no USDT/MYR exchange market (USDT only appears in send/receive limits). Luno's Malaysia page lists PAXG and XAUT among supported coins, so a gold price in MYR may already exist in the Luno data (check whether PAXGMYR is in the 51-coin list; history only from its listing date).
+- CoinGecko's free Demo plan limits history to the past 365 days (its pricing page), and historical global market cap is a plan feature. Free BTC.D / USDT.D history across several cycles is therefore not available from CoinGecko; options are forward logging (Worker cron + KV) from today, or another source.
+- Fed Nominal Broad US Dollar Index (FRED `DTWEXBGS`): official, free, daily since 2006, weekdays only, posted about one business day late (lag it in any backtest). It is a 26-currency index, not the 6-currency ICE DXY.
+- A free long-history XAU/USD feed was NOT verified (the search returned only commercial API pages). Test candidates from the Worker before promising.
+- Cautions: USDT.D and BTC.D are partly mechanical mirrors of price (USDT.D rises when the rest of the market falls), so they describe a regime more than they predict one; gold/USD links to crypto are regime-dependent, so test, do not assume; a macro gate flips only a few times a year, so the evidence rests on a handful of episodes; every new rule raises the multiple-comparison bar (raise `BT.Z_BAR` with the rule count); lag daily macro data to avoid look-ahead.
+- Proposed staging: A (no new data) "alt breadth" = share of tracked Luno coins whose 90-candle return beats XBTMYR's, one fixed gate (breadth above 50%) applied to the breakout rule and the "up 10% in 3 candles" rule, alone and with Bitcoin-up. B (external) Worker endpoint for the USD index, then gold and dominance logging, same fixed-gate tests. C forward log.
+
+**Proposed next round (needs R's go-ahead; thresholds are DRAFT and are fixed only before the first run).**
+1. Big-mover direction check on the existing five rules (no new rules): add the mirror "big drop" (close at least 20% below the next open within the window, the mirror of +25%), median 7-candle return of firing days vs all days, number of coins with hits, share of hits from the top 3 coins. Draft bar for calling a passing rule directional: in BOTH halves rally-lift divided by drop-lift is at least 1.5 AND the median 7-candle return of its firing days beats the all-days median.
+2. Macro Stage A as above.
+3. Exit study for the breakout rules (wide or volatility-based stop, +8-10% target, trailing stop), only for rules that pass; R's real fee tier; forward log (KV + cron).
+
+**Test log (2026-10-04).** Node 22; the real shipped files were loaded in a vm sandbox with a stubbed DOM and a stubbed Worker serving synthetic candles. 23 checks passed: regression vs v1.2; a 120-candle coin gets 34 rows from candle 80 and never fires 200-avg/pullback rules early; matched baselines; a planted breakout drift is detected (+17.5 pts, passes the 99% bar) while the unrelated 200-avg rule shows 0.4 pts; end-to-end `runBacktest` tests 3 coins and skips a 60-candle coin with a note; per-coin cost = fee + gap (flat fee when the gap box is off); a 429 is retried, a plain 400 is not, a persistent 429 is reported, a newest-page failure aborts; every element id used by the scripts exists in the HTML; cache-busters correct. NOT covered: no browser exists in this environment, so layout and real Luno rate-limit behaviour are unverified. The first live "All" run (about 51 coins x up to 4 pages) is the real test.
