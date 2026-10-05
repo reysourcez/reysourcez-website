@@ -136,3 +136,44 @@ Real end-to-end testing this round, not just static review — a genuine change 
 **Known limits.** The merge fixes small misreads; it cannot repair a structure that was invented from an unreadable picture, so feed it the PDF itself or a large sharp image. Auto-border only when the border encloses almost everything (partial borders are left to the model). Wording read cannot tell which duplicate label is which (identical labels are all treated alike).
 
 **KIV.** Second "structure double-check" pass; Qwen bounding boxes for measured placement; compare Qwen reasoning on/off for speed; check Qwen/OpenRouter data policy before making it the permanent default.
+
+
+## 2026-10-04 — v6.4: source and output side by side, comparison log by source, tooltips, clean slate on a new file
+
+**Why.** The v6.3 test went well (Qwen structure + Gemini wording confirmed as the approach: structure ~95%, wording ~90-95% even on the poor-quality Baucar source, page size matches the source on Resit). The requests were about the page itself: compare source and output without downloading, make the comparison log usable across files, clear the result when a new file is analysed, and move descriptive text into tooltips.
+
+**What changed.**
+- **Source | Output side by side.** Same-size boxes with one shared shape (taken from the source picture before a scan, from the output page after it), so they line up; stacked on phones. The empty source pane doubles as the "choose a file" target.
+- **Comparison log.** Collapsible, **open by default**. New **Source** column: thumbnail + file name, one cell spanning every run of that file, so all engines' readings of the same form sit together. The run currently on the right is highlighted ("Showing"). **Show now also brings back that run's own source picture.** Engine names shortened (`qwen3.8-27b (free)`; full id on hover).
+- **New file = clean slate.** Choosing a file, or starting a scan, empties the output pane (PDF frame, wording editor, list, download button, header) and shows an idle or busy state. A scan still running for the previous file can no longer paint over the new one (its runs are still logged under the right file, and the fallback engine is not started for it). Download can no longer hand out the previous file's form.
+- **Tooltips.** Every description moved into a "?" tooltip (hover, keyboard focus, tap on phones; clamped to the screen). Page-scoped `.fs-tip` + one popover instead of the shared `.tooltip-icon`, because that one is hover-only and hidden under 600px, so phones would have lost every description. **FLAG for central review:** candidate to promote into `styles.css` + a shared script.
+- **Source header** now says the picture's real size and whether it was enlarged or reduced for reading (small screenshots are the main cause of misread words).
+- **Bugs found in the 2026-10-04 screenshots, fixed:**
+  1. An **empty PDF card showed under the source picture** (present since v6.0): the page's `display` rules overrode the `hidden` attribute. `[hidden]{display:none!important}` added.
+  2. **Title and Ref. code were flagged "to check"** although they are never printed (e.g. "Lampiran 6 [Ruj. 52 (a)]", a misread "SCF-EIT-WS01"). They are no longer flagged and are labelled as file-name-only in the tooltip. Engine change: `mergeWording` skips band 0 when listing unconfirmed labels.
+  3. A **double quote inside a label** cut the wording editor's `value="..."` short (and editing then wrote the short text back). `escapeHTML` now escapes quotes.
+  4. Choosing **the same file twice** did nothing (the input kept its value). Now reset.
+- **Worker:** header label only, no functional change since v6.3. Redeploying is optional.
+
+**Files and versions.**
+| File | Version | Cache-bust in HTML |
+|---|---|---|
+| `form-scanner.html` | v6.4 | n/a |
+| `form-scanner.js` | v6.4 | `?v=5` |
+| `form-scanner-engine.js` | v6.4 | `?v=3` |
+| `form-scanner-proxy-worker.js` | v6.4 label, functionally v6.3 | n/a |
+| `nav-config.js`, `site-config.js`, `styles.css` | unchanged (`styles.css?v=19`) | |
+
+**Tested (headless Chromium, real pdf-lib, Worker mocked, pdf.js stubbed): 52 checks, all pass.** First-load state; hidden attribute really hides; tooltip hover / click-to-pin / keyboard / Escape / stays on screen; file chosen (picture, size text, shared aspect); Auto scan (busy state, blob preview, 3 log rows under one spanning source cell, "Showing" highlight, thumbnail, misread label corrected, invented label flagged, Title/Ref never flagged); log collapses and reopens, and a tooltip inside the summary does not toggle it; second file clears the right side at once; Show on an older run restores its source; scan interrupted by a new file paints nothing but is logged; Qwen failure falls back to Gemini and the failed attempt is logged; PDF source (name, pages, mm, rendered page, Qwen gets the picture, wording read gets the PDF); download is a valid fillable PDF (8 fields, no duplicate names, no field background with Shade off, `qpdf --check` clean); phone viewport (panes stack, tap opens and closes the tooltip on screen); no script errors. Engine unit test for the `mergeWording` change.
+
+**Not tested here:** real Qwen/Gemini answers; real pdf.js rendering of a real PDF (stubbed); the inline PDF viewer (headless Chromium has none, so the Output pane is blank in the test screenshots); Safari / Firefox.
+
+**Deploy.** Replace `form-scanner.html`, `form-scanner.js` and `form-scanner-engine.js` on GitHub (the engine changed, don't skip it), hard-refresh (Ctrl+F5). Worker: nothing to do. Replace `FORM_SCANNER_CHANGE_NOTES.md` and `FORM_SCANNER_SETUP_AND_GLOSSARY.md` (the glossary was refreshed to the current state, it had been stuck at v6.0).
+
+**KIV.**
+- Render the generated PDF to a picture (pdf.js) instead of the browser's PDF viewer: pixel-aligned compare, and works on phones that can't show PDFs inline.
+- Overlay mode: source semi-transparent over the output with a slider.
+- Claude as a third engine in the Worker (`provider: 'claude'`, `ANTHROPIC_API_KEY` secret); worth a trial in the log.
+- Bounding-box grounding if proportions are off (e.g. the NO RESIT box is wider than the source).
+- Structure is still read-only (only printed wording is editable).
+- Promote `.fs-tip` to the shared stylesheet.

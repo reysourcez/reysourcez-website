@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — Gemini proxy (Cloudflare Worker)
-   Version: v6.3 (2026-10-03) — engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.4 (2026-10-04, header label only: no functional change since v6.3) — engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). Holds the Gemini key as the
    encrypted secret GEMINI_API_KEY. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen", mode?: "text" (Gemini wording read, returns { lines }) }

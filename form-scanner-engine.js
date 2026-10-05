@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — browser engine
-   Version: v6.3 (2026-10-03) — layout-spec rebuild on the v4.3 baseline
+   Version: v6.4 (2026-10-04) — layout-spec rebuild on the v4.3 baseline
    Flow: photo/PDF -> Worker (Gemini) -> layout spec -> pdf-lib fillable PDF.
    All tunables live in FS_CONFIG. Full notes: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    and FORM_SCANNER_HANDOFF.md. Nothing here is sent anywhere except the one
@@ -9,7 +9,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'v6.3 (2026-10-03)';
+const VERSION = 'v6.4 (2026-10-04)';
 
 /* ---------------- CONFIG (edit here only) ---------------- */
 const FS_CONFIG = {
@@ -954,7 +954,7 @@ function mergeWording(spec, lines) {
   const jobs = textSlots(spec).map((s) => {
     const parts = s.obj[s.key].split('\n').map((p) => ({ core: p.replace(COLON_TAIL, ''), tail: (p.match(COLON_TAIL) || [''])[0], qn: '' }));
     parts.forEach((p) => { p.qn = normTxt(p.core); });
-    return { obj: s.obj, key: s.key, parts };
+    return { obj: s.obj, key: s.key, band: s.band, parts };
   });
   const exact = new Set();
   jobs.forEach((j) => j.parts.forEach((p) => { if (p.qn) exact.add(p.qn); }));
@@ -986,7 +986,7 @@ function mergeWording(spec, lines) {
         fixed++;
         return top.c.d.replace(COLON_TAIL, '') + (p.tail || (top.c.d.match(COLON_TAIL) || [''])[0]);
       }
-      if (p.qn.length >= 4 && !seen.has(p.qn)) {                        // nothing in the second reading backs this label up
+      if (job.band > 0 && p.qn.length >= 4 && !seen.has(p.qn)) {        // nothing in the second reading backs this label up (band 0 = title / ref. code: never printed, so never flagged: v6.4)
         seen.add(p.qn);
         const near = rank(p.qn, freeSingles).top;
         unconfirmed.push({ text: p.core, suggest: near && near.s >= 0.45 ? near.c.d.replace(COLON_TAIL, '') : '' });
