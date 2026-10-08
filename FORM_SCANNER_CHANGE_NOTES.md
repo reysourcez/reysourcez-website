@@ -138,7 +138,7 @@ Real end-to-end testing this round, not just static review — a genuine change 
 **KIV.** Second "structure double-check" pass; Qwen bounding boxes for measured placement; compare Qwen reasoning on/off for speed; check Qwen/OpenRouter data policy before making it the permanent default.
 
 
-## 2026-10-04 — v6.4: source and output side by side, comparison log by source, tooltips, clean slate on a new file
+## 2026-10-07 — v6.4: source and output side by side, comparison log by source, tooltips, clean slate on a new file
 
 **Why.** The v6.3 test went well (Qwen structure + Gemini wording confirmed as the approach: structure ~95%, wording ~90-95% even on the poor-quality Baucar source, page size matches the source on Resit). The requests were about the page itself: compare source and output without downloading, make the comparison log usable across files, clear the result when a new file is analysed, and move descriptive text into tooltips.
 
@@ -148,7 +148,7 @@ Real end-to-end testing this round, not just static review — a genuine change 
 - **New file = clean slate.** Choosing a file, or starting a scan, empties the output pane (PDF frame, wording editor, list, download button, header) and shows an idle or busy state. A scan still running for the previous file can no longer paint over the new one (its runs are still logged under the right file, and the fallback engine is not started for it). Download can no longer hand out the previous file's form.
 - **Tooltips.** Every description moved into a "?" tooltip (hover, keyboard focus, tap on phones; clamped to the screen). Page-scoped `.fs-tip` + one popover instead of the shared `.tooltip-icon`, because that one is hover-only and hidden under 600px, so phones would have lost every description. **FLAG for central review:** candidate to promote into `styles.css` + a shared script.
 - **Source header** now says the picture's real size and whether it was enlarged or reduced for reading (small screenshots are the main cause of misread words).
-- **Bugs found in the 2026-10-04 screenshots, fixed:**
+- **Bugs found in the 2026-10-07 screenshots, fixed:**
   1. An **empty PDF card showed under the source picture** (present since v6.0): the page's `display` rules overrode the `hidden` attribute. `[hidden]{display:none!important}` added.
   2. **Title and Ref. code were flagged "to check"** although they are never printed (e.g. "Lampiran 6 [Ruj. 52 (a)]", a misread "SCF-EIT-WS01"). They are no longer flagged and are labelled as file-name-only in the tooltip. Engine change: `mergeWording` skips band 0 when listing unconfirmed labels.
   3. A **double quote inside a label** cut the wording editor's `value="..."` short (and editing then wrote the short text back). `escapeHTML` now escapes quotes.
@@ -177,3 +177,39 @@ Real end-to-end testing this round, not just static review — a genuine change 
 - Bounding-box grounding if proportions are off (e.g. the NO RESIT box is wider than the source).
 - Structure is still read-only (only printed wording is editable).
 - Promote `.fs-tip` to the shared stylesheet.
+
+
+## 2026-10-07 — v6.5: Qwen outage handling (404), full errors in the log, plain fallback message
+
+**What prompted this.** Two Auto scans in a row fell back to Gemini and the layout came out bad (1 to 2 sections instead of the 5 Qwen reads on the same form). The comparison log showed why: both Qwen rows were "Failed: That model is not available on OpenRouter right now", after 0.8 s.
+
+**Diagnosis.**
+- **Not tokens and not a usage cap.** A scan is roughly 5k tokens in and a few thousand out (our estimate) against a very large context, and a request-cap hit comes back as 429 (the Worker words that differently: "rate-limited"), not 404. It also failed in 0.8 s, before any model work.
+- It is an OpenRouter **404 on the free model** `qwen/qwen3.8-27b:free`. The model was still listed on OpenRouter when checked (2026-10-07), so it was not retired. A free model can have no provider for a while ("no endpoints found"), and a 404 is also what OpenRouter returns when the account's privacy settings block free models (two toggles at openrouter.ai/settings/privacy).
+- **Which of the two it was could not be told from the log**: the log cut every error at 90 characters, and the Worker's old hint blamed the model id for every 404.
+- The Gemini fallback is simply weaker at layout (flash-lite returned 1-2 sections on the form Qwen read as 5).
+
+**What changed.**
+- **Worker:** a 404 is retried once after 1.5 s (a free-pool blip often clears). A 404 that mentions the data policy is not retried and now tells you to switch on the two free-endpoint options in OpenRouter's privacy settings. Any other 404 says "no provider for this free model right now" instead of blaming the model id. OpenRouter's own sentence is appended (up to 300 characters), so the cause is visible next time.
+- **Page:** the log shows the whole error (hover shows it in full). When Auto falls back, the status line is amber and says Qwen failed, Gemini made this layout, it is usually rougher, and to try again later.
+- Engine: version label only.
+
+**Files and versions.**
+| File | Version | Cache-bust in HTML |
+|---|---|---|
+| `form-scanner.html` | v6.5 | n/a |
+| `form-scanner.js` | v6.5 | `?v=6` |
+| `form-scanner-engine.js` | v6.5 (label only) | `?v=4` |
+| `form-scanner-proxy-worker.js` | v6.5, **functional change: redeploy** | n/a |
+| `nav-config.js`, `site-config.js`, `styles.css` | unchanged (`styles.css?v=19`) | |
+
+**Tested.** Worker, 6 checks with a mocked fetch: 404 retried once then explained; data-policy 404 not retried; a 404 blip that clears on the retry still returns a result; 402 and 429 unchanged; a very long upstream message is capped. Page: the 52 v6.4 checks plus one for the fallback status and the full error in the log, 53 in headless Chromium, all pass. **Not tested:** the real OpenRouter (no network here), so which of the two 404 causes it was is still unconfirmed.
+
+**Deploy.** Redeploy the **Worker** (paste `form-scanner-proxy-worker.js` into Cloudflare, Deploy). Replace `form-scanner.html`, `form-scanner.js`, `form-scanner-engine.js` on GitHub, hard-refresh (Ctrl+F5). Replace the two `.md` docs.
+
+**To find out which 404 it is.** Scan again: the log row now shows OpenRouter's own sentence. If it mentions the data policy, switch on both free-endpoint options at openrouter.ai/settings/privacy. If it says no endpoints were found, wait a few minutes, or change `OR_MODELS` in the Worker to the paid id `qwen/qwen3.8-27b` (same model, larger pool, needs a little OpenRouter credit).
+
+**KIV.**
+- Stronger automatic fallback: test first by ticking Thorough reading while Qwen is down (the fallback then uses `gemini-3.8-flash`); if the layout is clearly better, make that the automatic fallback.
+- Optional paid-Qwen fallback inside the Worker (only when the free model has no provider), off by default.
+- Second free vision model as a backup (untested, quality unknown).

@@ -1,4 +1,4 @@
-# Form Scanner — Setup & Glossary (current state: v6.4, 2026-10-04)
+# Form Scanner — Setup & Glossary (current state: v6.5, 2026-10-07)
 
 Companion doc for the Form Scanner page. Read `AI_BUILD_BRIEF.md` first if you haven't touched this site before. What changed and why, round by round: `FORM_SCANNER_CHANGE_NOTES.md`. This file only describes the **current** state.
 
@@ -12,10 +12,10 @@ Scope on purpose: rebuilds the **blank template** (labels, tables, sign-off bloc
 
 | File | Version | Notes |
 |---|---|---|
-| `form-scanner.html` | v6.4 | Page, page-scoped CSS (`fs-` prefix), script tags |
-| `form-scanner.js` | v6.4 (`?v=5`) | Page wiring: files, Worker calls, panes, log, editor, tooltips |
-| `form-scanner-engine.js` | v6.4 (`?v=3`) | Layout engine + wording merge. No DOM code; runs under Node for tests |
-| `form-scanner-proxy-worker.js` | functionally v6.3 | Cloudflare Worker. Holds both API keys. v6.4 changed only its header label |
+| `form-scanner.html` | v6.5 | Page, page-scoped CSS (`fs-` prefix), script tags |
+| `form-scanner.js` | v6.5 (`?v=6`) | Page wiring: files, Worker calls, panes, log, editor, tooltips |
+| `form-scanner-engine.js` | v6.5 (`?v=4`) | Layout engine + wording merge. No DOM code; runs under Node for tests. v6.5: label only |
+| `form-scanner-proxy-worker.js` | v6.5 | Cloudflare Worker. Holds both API keys. **v6.5 changed it (404 handling): redeploy** |
 | `nav-config.js`, `site-config.js`, `styles.css` | unchanged | Shared site files (`styles.css?v=19`) |
 
 Script order in the HTML: pdf-lib (CDN, pinned 1.17.1), `site-config.js`, `nav-config.js`, `nav-dropdown.js`, `form-scanner-engine.js`, `form-scanner.js`. pdf.js 3.11.174 is loaded from cdnjs only when a PDF is chosen.
@@ -23,7 +23,7 @@ Script order in the HTML: pdf-lib (CDN, pinned 1.17.1), `site-config.js`, `nav-c
 ## Deploy steps
 
 1. **Worker** (Cloudflare dashboard → Workers & Pages → your `form-scanner-proxy` Worker → Edit code): paste `form-scanner-proxy-worker.js` → Deploy.
-2. **Secrets** (Settings → Variables and Secrets → Secret): `GEMINI_API_KEY` and `OPENROUTER_API_KEY` (Qwen goes through OpenRouter).
+2. **Secrets** (Settings → Variables and Secrets → Secret): `GEMINI_API_KEY` and `OPENROUTER_API_KEY` (Qwen goes through OpenRouter). Also, at openrouter.ai/settings/privacy switch ON both free-endpoint options (may train on request data, may publish prompts): with them off, every `:free` request fails with a 404.
 3. `PROXY_ENDPOINT` in `form-scanner-engine.js` (`FS_CONFIG`) must match the Worker's `*.workers.dev` URL.
 4. GitHub repo root: add/replace `form-scanner.html`, `form-scanner.js`, `form-scanner-engine.js` (three files). Hard-refresh the page (Ctrl+F5).
 5. Nav: `form-scanner.html` reads `nav-config.js` (see `NAV_RETROFIT_HOWTO.md`). Its label there is currently "Form Creator", not "Form Scanner": flagged, not changed.
@@ -69,11 +69,25 @@ Controls card (file, note, engine, shade, thorough, scan) → status line → **
 1. **"Shade fillable fields" (checkbox).** Off by default. When off, the PDF's fields carry **no background at all**.
 2. **Chrome's and Edge's own PDF viewer** highlights every fillable field on screen by default. It is a viewer setting, not part of the file: it does not show when printed (confirmed: prints colourless) or in Acrobat with highlighting off.
 
+## Troubleshooting: "Qwen failed" in the comparison log
+
+The log now shows OpenRouter's own sentence (hover for the full text). Not a token problem: a scan is a few thousand tokens against a huge context, and a usage cap shows up as a 429, not a 404.
+
+| What the log says | What it means | What to do |
+|---|---|---|
+| 404, "no provider for this free model right now" / "No endpoints found" | The free model has no live provider for a while (or the id was retired) | Wait a few minutes (the Worker already retried once). If it never returns, change `OR_MODELS` to the paid id `qwen/qwen3.8-27b` (needs a little OpenRouter credit) |
+| 404, "blocking free models for this account" / "data policy" | OpenRouter privacy settings block free models | openrouter.ai/settings/privacy: switch ON both free-endpoint options |
+| 429, "rate-limited" | Too many free requests per minute or day | Wait, or add credit to raise the free allowance |
+| 402, "credit or free-usage limit" | Out of credit or allowance | Add credit |
+| 401 / 403, "rejected the key" | `OPENROUTER_API_KEY` is wrong or revoked | Re-add the secret in the Worker |
+
+When Qwen fails, Auto falls back to Gemini, whose layout reading is usually rougher (1-2 sections where Qwen finds 5). Ticking Thorough reading makes the fallback use the stronger Gemini model: untested, worth trying.
+
 ## Known limitations / KIV
 
 - Qwen needs a picture: PDFs are rendered to a page image in the browser first. If that render fails, only Gemini can read that PDF.
 - Only page 1 of a PDF is read. One file in, one form out.
-- Free Qwen via OpenRouter is rate-limited, can be slow (up to ~2 minutes seen) and may keep what you send: test with blank or sample forms; check the data policy before making it the permanent default.
+- Free Qwen via OpenRouter is rate-limited, can be slow (up to ~2 minutes seen), can have no provider for a while (404, see Troubleshooting) and may keep what you send: test with blank or sample forms; check the data policy before making it the permanent default.
 - Small or blurry sources cause most misread words; use the PDF itself or a large, sharp image.
 - Structure is read-only; proportions can be off on some blocks (a box wider than the source).
 - Ideas queued in the change notes: PDF-to-picture output preview, overlay compare, Claude as a third engine, bounding boxes.

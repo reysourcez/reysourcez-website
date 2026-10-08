@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.4 (2026-10-04) — source and output side by side, comparison log grouped by source, tooltips, output clears on a new file
+   Version: v6.5 (2026-10-07) — full engine errors in the log and a plain message when the fallback engine takes over (on top of v6.4: source/output side by side, log grouped by source, tooltips)
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the Worker calls: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.4 (2026-10-04)');
+console.info('[Form Scanner] page build: v6.5 (2026-10-07)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -526,12 +526,13 @@ async function runScan() {
         lastSpec = r.spec; lastPage = r.page;
         paintSource(entry);
         renderPreview(r.spec, r.page, r);
-        setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it against the source, then download. (${shortEngine(r.label)}, ${r.secs.toFixed(1)} s${i > 0 ? ', fallback engine' : ''}).${r.note || ''}`);
+        const fb = i > 0 ? ` ${ENGINE_LABEL[engines[0]]} failed, so ${ENGINE_LABEL[eng]} made this layout. It is usually rougher: the log says why, and trying again later may bring ${ENGINE_LABEL[engines[0]]} back.` : '';
+        setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it against the source, then download. (${shortEngine(r.label)}, ${r.secs.toFixed(1)} s).${r.note || ''}${fb}`, fb ? 'warn' : undefined);
         return;
       } catch (err) {
         lastErr = err;
         if (!live()) return;                                  // never start the fallback engine for a scan nobody is waiting for
-        if (i < engines.length - 1) progress(`${ENGINE_LABEL[eng]} failed (${err.message}). Trying ${ENGINE_LABEL[engines[i + 1]]}\u2026`, 'warn');
+        if (i < engines.length - 1) progress(`${ENGINE_LABEL[eng]} failed (${String(err.message || '').slice(0, 140)}). Trying ${ENGINE_LABEL[engines[i + 1]]}, whose layout is usually rougher\u2026`, 'warn');
       }
     }
     const m = lastErr && lastErr.message ? lastErr.message : '';
@@ -561,7 +562,7 @@ function renderRunLog() {
       html += `<tr class="${k === i ? 'fs-grp-start' : ''}${shown ? ' is-shown' : ''}">`;
       if (k === i) html += `<td class="fs-src-cell" rowspan="${j - i}">${s.thumb ? `<img class="fs-src-thumb" src="${s.thumb}" alt="">` : ''}<span class="fs-src-name" title="${escapeHTML(s.name || '')}">${escapeHTML(s.name || 'source')}</span></td>`;
       html += `<td>${r.n}</td><td title="${escapeHTML(r.label)}">${escapeHTML(shortEngine(r.label))}</td><td>${r.secs.toFixed(1)} s</td>`;
-      html += r.error ? `<td colspan="2" class="fs-runlog-err">Failed: ${escapeHTML(String(r.error).slice(0, 90))}</td>`
+      html += r.error ? `<td colspan="2" class="fs-runlog-err" title="${escapeHTML(String(r.error))}">Failed: ${escapeHTML(String(r.error).slice(0, 320))}</td>`
         : r.info ? `<td colspan="2">${escapeHTML(r.info)}</td>`
         : `<td>${r.spec.bands.length} sections, ${r.items} items</td><td class="fs-act">${shown ? '<button type="button" class="fs-mini" disabled>Showing</button>' : `<button type="button" class="fs-mini" data-show="${k}">Show</button>`} <button type="button" class="fs-mini" data-pdf="${k}">PDF</button></td>`;
       html += '</tr>';

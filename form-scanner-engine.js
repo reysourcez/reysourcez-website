@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — browser engine
-   Version: v6.4 (2026-10-04) — layout-spec rebuild on the v4.3 baseline
+   Version: v6.5 (2026-10-07) — layout-spec rebuild on the v4.3 baseline (v6.5: version label only, no functional change since v6.4)
    Flow: photo/PDF -> Worker (Gemini) -> layout spec -> pdf-lib fillable PDF.
    All tunables live in FS_CONFIG. Full notes: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    and FORM_SCANNER_HANDOFF.md. Nothing here is sent anywhere except the one
@@ -9,7 +9,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'v6.4 (2026-10-04)';
+const VERSION = 'v6.5 (2026-10-07)';
 
 /* ---------------- CONFIG (edit here only) ---------------- */
 const FS_CONFIG = {

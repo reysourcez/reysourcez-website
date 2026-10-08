@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — Gemini proxy (Cloudflare Worker)
-   Version: v6.4 (2026-10-04, header label only: no functional change since v6.3) — engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.5 (2026-10-07) — OpenRouter 404 handling (retry once, real reason in the message); engine switch: Gemini / Qwen. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). Holds the Gemini key as the
    encrypted secret GEMINI_API_KEY. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: "gemini" | "qwen", mode?: "text" (Gemini wording read, returns { lines }) }
@@ -23,6 +23,7 @@ const UPSTREAM_TIMEOUT_MS = 55000;
 
 // OpenRouter model for the Qwen engine. Change the ID here only.
 // Checked 2026-09-30 on openrouter.ai: qwen3.8-27b:free (vision, free, rate-limited). Kimi was tried and dropped.
+// Free models can have no provider for a while (404). If Qwen keeps failing, the same model without ":free" (qwen/qwen3.8-27b) runs on a larger paid pool; it needs OpenRouter credit (roughly 2 cents a scan, our estimate).
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const OR_MODELS = { qwen: 'qwen/qwen3.8-27b:free' };
 
@@ -255,7 +256,7 @@ async function handleOpenRouter(env, provider, image, mime, note, origin) {
   ];
   if (note) content.push({ type: 'text', text: 'Note from the person scanning this form (follow it as described above): ' + note });
   const t0 = Date.now();
-  let useReasoning = true, useJsonMode = true, resp = null, fallback = '';
+  let useReasoning = true, useJsonMode = true, resp = null, fallback = '', retried404 = false;
   for (let attempt = 0; attempt < 4; attempt++) {
     const payload = { model, messages: [{ role: 'user', content }], max_tokens: 16384, temperature: 0 };
     if (useJsonMode) payload.response_format = { type: 'json_object' };
@@ -279,12 +280,16 @@ async function handleOpenRouter(env, provider, image, mime, note, origin) {
     if ((resp.status === 429 || resp.status === 502 || resp.status === 503) && attempt < 3) { await new Promise((r) => setTimeout(r, 1500)); continue; }
     let msg = errText;
     try { msg = (JSON.parse(errText).error || {}).message || errText; } catch (e) { /* keep raw */ }
+    // v6.5: a 404 is either a short free-pool blip ("no endpoints found": retry once) or the account's privacy settings blocking free models (retrying never fixes that)
+    const policy404 = resp.status === 404 && /data policy|guardrail|privacy/i.test(String(msg));
+    if (resp.status === 404 && !policy404 && !retried404) { retried404 = true; await new Promise((r) => setTimeout(r, 1500)); continue; }
     const hint = resp.status === 401 || resp.status === 403 ? 'OpenRouter rejected the key.'
       : resp.status === 402 ? 'OpenRouter says the credit or free-usage limit was reached.'
-      : resp.status === 404 ? 'That model is not available on OpenRouter right now (edit OR_MODELS).'
+      : policy404 ? 'OpenRouter is blocking free models for this account. At openrouter.ai/settings/privacy switch ON both free-endpoint options (the one that may train on request data and the one that may publish prompts), then try again.'
+      : resp.status === 404 ? 'OpenRouter has no provider for this free model right now. This usually clears within minutes; if it never does, the id in OR_MODELS may be retired.'
       : resp.status === 429 ? 'The free model is rate-limited; wait a minute and retry.'
       : 'OpenRouter error ' + resp.status + '.';
-    return jsonResponse({ error: hint + ' ' + String(msg).slice(0, 200) }, resp.status, origin);
+    return jsonResponse({ error: hint + ' OpenRouter said: ' + String(msg).slice(0, 300) }, resp.status, origin);
   }
   if (!resp || !resp.ok) return jsonResponse({ error: 'OpenRouter did not answer. Please try again.' }, 502, origin);
   const data = await resp.json();
