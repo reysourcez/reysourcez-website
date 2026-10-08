@@ -1,5 +1,6 @@
 /*
- * Crypto Radar Worker v2.0 — deploy this to Cloudflare Workers.
+ * Crypto Radar Worker v2.1 — deploy this to Cloudflare Workers.
+ * v2.1: new /api/macro?series=dxy|gold (free, keyless daily history for the backtest page; no new secrets).
  * See SETUP_AND_GLOSSARY.md for step-by-step deployment instructions.
  *
  * WHY THIS EXISTS (read this before changing anything):
@@ -238,6 +239,73 @@ Hard rules: never state a price target, never say "buy" or "sell", never claim c
   return json({ pair, text, model }, env);
 }
 
+// ---- Macro series (v2.1) ----------------------------------------------------
+// Free, keyless daily history for the backtest page. The dollar index is rebuilt from ECB reference
+// rates (via Frankfurter, frankfurter.dev) with the public ICE weights; gold is the daily close of
+// PAX Gold (a gold-backed token) on Binance's market-data host. Both are cached at the edge for 6 hours.
+const MACRO_SERIES = ['dxy', 'gold'];
+const FRANKFURTER = 'https://api.frankfurter.dev/v2';
+const BINANCE_HOSTS = ['https://data-api.binance.vision', 'https://api.binance.com'];
+const DAY_MS = 86400000;
+
+// r = ECB reference rates (units of each currency per 1 EUR). Returns the synthetic dollar index, or null if a leg is missing.
+function dxyFromEur(r) {
+  const { USD, JPY, GBP, CAD, SEK, CHF } = r;
+  if (![USD, JPY, GBP, CAD, SEK, CHF].every(v => v > 0)) return null;
+  return 50.14348112 * Math.pow(USD, -0.576) * Math.pow(JPY / USD, 0.136) * Math.pow(USD / GBP, -0.119) * Math.pow(CAD / USD, 0.091) * Math.pow(SEK / USD, 0.042) * Math.pow(CHF / USD, 0.036);
+}
+
+async function buildDxy() {
+  const today = new Date().toISOString().slice(0, 10), thisYear = Number(today.slice(0, 4)), byDate = new Map();
+  for (let y = 2015; y <= thisYear; y += 2) {   // two-year windows keep every response small
+    const end = `${y + 1}-12-31`, to = end > today ? today : end;
+    const r = await safeFetch(`${FRANKFURTER}/rates?from=${y}-01-01&to=${to}&quotes=USD,JPY,GBP,CAD,SEK,CHF&providers=ecb`, {}, 'Frankfurter');
+    if (!r.ok) throw new Error(r.error);
+    for (const x of Array.isArray(r.data) ? r.data : []) {
+      if (!x || !x.date || !(x.rate > 0)) continue;
+      const row = byDate.get(x.date) || {}; row[String(x.quote).toUpperCase()] = Number(x.rate); byDate.set(x.date, row);
+    }
+  }
+  return [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([d, row]) => [Date.parse(d + 'T00:00:00Z'), dxyFromEur(row)]).filter(b => b[1] > 0);
+}
+
+async function buildGold() {
+  const now = Date.now(); let lastErr = 'Binance unreachable';
+  for (const host of BINANCE_HOSTS) {   // the market-data-only host first; the main host is the fallback
+    const out = []; let t = Date.UTC(2020, 7, 1), failed = false;   // PAX Gold started trading on Binance in Aug 2020
+    for (let page = 0; page < 6; page++) {
+      const r = await safeFetch(`${host}/api/v3/klines?symbol=PAXGUSDT&interval=1d&startTime=${t}&limit=1000`, {}, 'Binance');
+      if (!r.ok) { lastErr = r.error; failed = true; break; }
+      const k = Array.isArray(r.data) ? r.data : [];
+      out.push(...k);
+      if (k.length < 1000) break;
+      t = k[k.length - 1][0] + DAY_MS;
+    }
+    if (!failed && out.length) return out.filter(k => k[6] < now).map(k => [k[0], Number(k[4])]).filter(b => b[1] > 0);   // finished daily candles only
+  }
+  throw new Error(lastErr);
+}
+
+async function handleMacro(env, series) {
+  if (!MACRO_SERIES.includes(series)) return json({ error: 'Unknown series. Use dxy or gold.' }, env, 400);
+  const cache = caches.default, cacheKey = new Request('https://cache.internal/macro/' + series);
+  const cached = await cache.match(cacheKey);
+  if (cached) return cached;
+  try {
+    const bars = series === 'dxy' ? await buildDxy() : await buildGold();
+    if (bars.length < 200) return json({ error: `${series} feed returned only ${bars.length} days` }, env, 502);
+    const iso = ms => new Date(ms).toISOString().slice(0, 10);
+    const source = series === 'dxy' ? 'synthetic US dollar index from ECB reference rates (Frankfurter), ICE weights' : 'PAXGUSDT daily close on Binance (PAX Gold, a gold-backed token)';
+    const response = json({ series, source, from: iso(bars[0][0]), to: iso(bars[bars.length - 1][0]), days: bars.length, bars }, env);
+    response.headers.set('Cache-Control', 'public, max-age=21600');
+    await cache.put(cacheKey, response.clone());
+    return response;
+  } catch (err) {
+    console.log(`[macro ${series}]`, err.message);
+    return json({ error: `${series}: ${err.message}` }, env, 502);
+  }
+}
+
 // ---- Router --------------------------------------------------------------
 
 export default {
@@ -264,6 +332,7 @@ export default {
 
       if (url.pathname === '/api/feargreed') return await handleFearGreed(env);
       if (url.pathname === '/api/news') return await handleNews(env);
+      if (url.pathname === '/api/macro') return await handleMacro(env, (url.searchParams.get('series') || '').toLowerCase());
 
       if (url.pathname === '/api/insight' && request.method === 'POST') {
         const body = await request.json().catch(() => null);
@@ -279,6 +348,7 @@ export default {
           cacheWorks,
           hasLunoKeys: Boolean(env.LUNO_KEY_ID && env.LUNO_KEY_SECRET),
           hasGeminiKey: Boolean(env.GEMINI_API_KEY),
+          macroSeries: MACRO_SERIES,
         }, env);
       }
 
