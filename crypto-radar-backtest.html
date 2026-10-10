@@ -1,9 +1,10 @@
 <!DOCTYPE html>
+<!-- Crypto Radar Backtest page v1.6 + Big Movers v1.2 (suite v2.7). Loads crypto-radar.js v2.0 (unchanged); needs Worker v2.1 (unchanged). -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Reysourcez Enterprise — Crypto Radar Backtest v1.5 + Big Movers v1.1</title>
+<title>Reysourcez Enterprise — Crypto Radar Backtest v1.6 + Big Movers v1.2</title>
 <meta name="description" content="Live indicator dashboard for Luno Malaysia coins — RSI, MACD, Bollinger Bands, support/resistance and more, summarised into one confluence score per coin. Not financial advice.">
 <link rel="icon" href="favicon.ico" sizes="32x32">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -210,7 +211,7 @@ Reysourcez Enterprise
 
 <main id="main">
 <section class="calc-intro"><div class="wrap">
-<span class="eyebrow">Crypto Radar &middot; Backtest v1.5 &middot; Big movers v1.1 (suite v2.6) &middot; <a href="crypto-radar.html">back to Radar</a></span>
+<span class="eyebrow">Crypto Radar &middot; Backtest v1.6 &middot; Big movers v1.2 (suite v2.7) &middot; <a href="crypto-radar.html">back to Radar</a></span>
 <h1>Has the score actually worked?</h1>
 <p class="lead">Replays the live Crypto Radar score over past Luno candles without peeking ahead, then counts how often a signal reached your rally target before your stop. It measures the past; it cannot promise the future.</p>
 </div></section>
@@ -226,9 +227,9 @@ Reysourcez Enterprise
 </div>
 <p class="cr-source-note" id="bt-status">Ready. Fees: Luno MY exchange taker is 0.60% under RM5,000 of 30-day volume (a round trip is 1.2%) and 0.50% from RM5,000 to RM200,000 (1.0%); maker orders are 0.35% / 0.25% each way (source: guide.luno.com, checked 2026-10-04). The box starts at 1.0, so set it for your own tier. The live bid-ask gap is added on top.</p>
 <details class="cr-collapsible" style="margin-top:14px"><summary class="cr-collapsible-summary"><h3>Macro context (optional): USDT dominance, Bitcoin dominance, dollar, gold</h3></summary><div class="cr-collapsible-body">
-<p class="structure-note">The dollar index and gold are fetched automatically from your Worker (free ECB and Binance data; redeploy the Worker file from this release first). USDT dominance and Bitcoin dominance have no verified free long history, so the page uses two stand-ins built from Luno prices: "Market rising" for falling USDT dominance and "Alts leading" for falling Bitcoin dominance. If you have your own daily CSV files you can load them below instead; they override the automatic data. Load daily CSV files to test whether these regimes help. In TradingView, open the chart on the 1D timeframe, use the layout menu at the top right, then Export chart data (TradingView offers export on paid plans; if yours cannot, leave these empty and the macro rules simply stay hidden). Suggested charts: CRYPTOCAP:USDT.D, CRYPTOCAP:BTC.D, TVC:DXY and a spot gold chart such as TVC:GOLD or OANDA:XAUUSD. Any CSV with a time (or date) column and a close column works. Each series becomes a yes/no regime (below its own 50-day average for falling USDT.D, falling Bitcoin dominance and a weakening dollar; above it for rising gold) and is lagged one day so it cannot look ahead. Use market-close data such as TradingView's: a series that is published late (some government indexes post a day or more after the date) would need a longer lag than the one day built in. The page reports the date range it read, so you can check it covers enough years.</p>
+<p class="structure-note">The dollar index is fetched automatically from your Worker (free ECB data). Gold is tried from the Worker first (Binance data; Binance blocks Cloudflare Workers with an HTTP 403 or 451 error, so this often fails) and is then taken from Luno's own PAX Gold market (PAXGMYR, gold priced in ringgit), which only reaches back to when Luno listed it, so the gold rules are a short-sample look, not a full test. The Worker file is unchanged in this release (v2.1): no redeploy is needed. USDT dominance and Bitcoin dominance have no verified free long history, so the page uses two stand-ins built from Luno prices: "Market rising" for falling USDT dominance and "Alts leading" for falling Bitcoin dominance. If you have your own daily CSV files you can load them below instead; they override the automatic data. Load daily CSV files to test whether these regimes help. In TradingView, open the chart on the 1D timeframe, use the layout menu at the top right, then Export chart data (TradingView offers export on paid plans; if yours cannot, leave these empty and the macro rules simply stay hidden). Suggested charts: CRYPTOCAP:USDT.D, CRYPTOCAP:BTC.D, TVC:DXY and a spot gold chart such as TVC:GOLD or OANDA:XAUUSD. Any CSV with a time (or date) column and a close column works. Each series becomes a yes/no regime (below its own 50-day average for falling USDT.D, falling Bitcoin dominance and a weakening dollar; above it for rising gold) and is lagged one day so it cannot look ahead. Use market-close data such as TradingView's: a series that is published late (some government indexes post a day or more after the date) would need a longer lag than the one day built in. The page reports the date range it read, so you can check it covers enough years.</p>
 <div class="cr-topbar">
-<div class="cr-topbar-field"><label for="bt-m-auto">Fetch dollar and gold from the Worker</label><input id="bt-m-auto" type="checkbox" checked></div>
+<div class="cr-topbar-field"><label for="bt-m-auto">Fetch dollar and gold automatically</label><input id="bt-m-auto" type="checkbox" checked></div>
 <div class="cr-topbar-field"><label for="bt-m-usdtd">USDT dominance CSV</label><input id="bt-m-usdtd" type="file" accept=".csv,text/csv"></div>
 <div class="cr-topbar-field"><label for="bt-m-btcd">Bitcoin dominance CSV</label><input id="bt-m-btcd" type="file" accept=".csv,text/csv"></div>
 <div class="cr-topbar-field"><label for="bt-m-dxy">US dollar (DXY) CSV</label><input id="bt-m-dxy" type="file" accept=".csv,text/csv"></div>
@@ -236,7 +237,7 @@ Reysourcez Enterprise
 </div></div></details>
 </div></div></section>
 <section class="calc-panel"><div class="wrap">
-<div class="cr-disclaimer\" role="note"><strong>Not financial advice.</strong> Hit rate = share of signals where price reached the target before the stop. "Median best / worst point" = the typical highest and lowest price inside the window, a data-based guide for profit-take and stop levels. Overlapping signals are not independent, so ranges are widened to compensate. "Hold" = the average result of simply holding the whole window with no stop or target. The rules are fixed in advance, not tuned; because up to 22 are compared at once, a tick mark needs a stricter one-sided 99.77% range (z = 2.84), not 95%. "Alts leading Bitcoin" = more than half of the loaded Luno alt coins beat Bitcoin's 90-candle return (needs the All setting). Macro rules use the CSV files above, lagged one day. The "tight-spread" table repeats the test on coins whose live bid-ask gap is 0.5% or less, the ones you could realistically trade. "(N mo)" = calendar months the rule fired in: many signals in few months is weaker evidence than it looks. "vs random entry (same days)" compares each rule with random entries on the days that rule could actually have fired: coins are scored from their 80th candle, and rules that need 100 or 200 candles only count once a coin has them. Today's bid-ask gap stands in for the past, so thin coins are probably still flattered.</div>
+<div class="cr-disclaimer" role="note"><strong>Not financial advice.</strong> Hit rate = share of signals where price reached the target before the stop. "Median best / worst point" = the typical highest and lowest price inside the window, a data-based guide for profit-take and stop levels. Overlapping signals are not independent, so ranges are widened to compensate. "Hold" = the average result of simply holding the whole window with no stop or target. The rules are fixed in advance, not tuned; because up to 22 are compared at once, a tick mark needs a stricter one-sided 99.77% range (z = 2.84), not 95%. "Alts leading Bitcoin" = more than half of the loaded Luno alt coins beat Bitcoin's 90-candle return (needs the All setting). Macro rules use the automatic feeds or the CSV files above, lagged one day. The "tight-spread" table repeats the test on coins whose live bid-ask gap is 0.5% or less, the ones you could realistically trade. "(N mo)" = calendar months the rule fired in: many signals in few months is weaker evidence than it looks. "vs random entry (same days)" compares each rule with random entries on the days that rule could actually have fired: coins are scored from their 80th candle, and rules that need 100 or 200 candles only count once a coin has them. Today's bid-ask gap stands in for the past, so thin coins are probably still flattered.</div>
 <h2 id="bt-verdict"></h2>
 <div id="bt-out"></div>
 <h3>Copy results for Claude</h3>
@@ -298,7 +299,7 @@ Reysourcez Enterprise
 
 <script src="nav-dropdown.js?v=1" defer></script>
 <script src="crypto-radar.js?v=10" defer></script>
-<script src="crypto-radar-backtest.js?v=6" defer></script>
-<script src="crypto-radar-bigmovers.js?v=2" defer></script>
+<script src="crypto-radar-backtest.js?v=7" defer></script>
+<script src="crypto-radar-bigmovers.js?v=3" defer></script>
 </body>
 </html>

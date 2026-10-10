@@ -1,9 +1,10 @@
-/* Crypto Radar Backtest v1.5 (suite v2.6) — loads AFTER crypto-radar.js and reuses its computeAll()/sma()/rsi(), so it tests exactly what the live page computes.
+/* Crypto Radar Backtest v1.6 (suite v2.7) — loads AFTER crypto-radar.js and reuses its computeAll()/sma()/rsi(), so it tests exactly what the live page computes.
    Rules: closed candles only; signal at a candle's close, entry at the NEXT open (no look-ahead); stop is checked before target inside a candle (pessimistic).
    Every rule below was fixed in advance and is NOT tuned on the data. Output describes the past. It is not a forecast.
    v1.3: covers ALL coins (scoring starts at candle 80, so new listings count); each rule is compared with random entry over the SAME eligible days; cost = fees + each coin's live bid-ask gap; rate-limit errors are retried; median hold return added.
    v1.4: Stage A = alt-breadth gate from the loaded Luno coins; Stage B = optional macro CSVs (USDT.D, BTC.D, DXY, gold), every value lagged one day; 20-rule family so the bar rises to z = 2.81; tight-spread cut.
-   v1.5: dollar index and gold from the Worker's free feeds (ECB rates via Frankfurter, Binance PAXGUSDT); a Luno-basket "market rising" stand-in for falling USDT dominance; 22-rule family (z = 2.84). */
+   v1.5: dollar index and gold from the Worker's free feeds (ECB rates via Frankfurter, Binance PAXGUSDT); a Luno-basket "market rising" stand-in for falling USDT dominance; 22-rule family (z = 2.84).
+   v1.6: when the Worker's gold feed fails (Binance answers 403/451 to Cloudflare), gold comes from Luno's own PAX Gold market (PAXGMYR, gold priced in ringgit; history only since its listing) instead of being dropped; a failed feed is now reported as "skipped", not "ignored". */
 const BT = {
   PAGE: 1000, PAGES: 4,   // Luno returns at most ~1000 candles per call; 4 pages = up to ~4,000 candles (about 11 years of daily candles, where Luno has them)
   TRAIN_FRACTION: 0.6,    // first 60% of each pair's history = earlier period; last 40% = the fairer test
@@ -206,7 +207,7 @@ async function runBacktest() {
         else if (btEl('bt-m-auto').checked && BT.WORKER_MACRO.includes(key)) { const wm = await workerMacro(key); sr = wm.series; source = 'Worker: ' + wm.source; }
         else continue;
         macro[key] = macroRegime(sr, BT.MACRO_ABOVE[key]); macroUsed[key] = { source, days: sr.length, from: new Date(sr[0].d).toISOString().slice(0, 10), to: new Date(sr[sr.length - 1].d).toISOString().slice(0, 10) };
-      } catch (e) { notes.push(`${fl ? fl.name : key + ' Worker feed'}: ${e.message}, so that macro series was ignored`); }
+      } catch (e) { notes.push(`${fl ? fl.name : key + ' Worker feed'}: ${e.message}, so that source was skipped`); }
     }
     try { btc = btcMap(await btHistory('XBTMYR', o.duration, notes)); } catch (e) { notes.push(`Bitcoin regime unavailable (${e.message}): rules marked "Bitcoin up" will show no signals`); }
     for (let p = 0; p < pairs.length; p++) {   // phase 1: fetch every coin (the alt-breadth gate needs them all before scoring starts)
@@ -219,6 +220,16 @@ async function runBacktest() {
       const gaps = c.slice(1).filter((x, k) => x.timestamp - c[k].timestamp !== o.duration * 1000).length / (c.length - 1);
       if (gaps > 0.02) gappy.push(`${pair} ${(gaps * 100).toFixed(0)}%`);
       hist[pair] = c;
+    }
+    if (macro.gold === undefined && btEl('bt-m-auto').checked && !(btEl('bt-m-gold').files && btEl('bt-m-gold').files[0])) {   // v1.6: Binance answers 403/451 to Cloudflare Workers, so gold falls back to Luno's own PAX Gold market (gold priced in ringgit; history only since its listing). A gold file you loaded, or a working Worker feed, always wins
+      try {
+        const pg = (o.duration === 86400 && hist.PAXGMYR) || await btHistory('PAXGMYR', 86400, notes);   // always daily candles, whatever candle size the run uses
+        if (pg.length >= 60) {
+          const sr = pg.map(x => ({ d: Math.floor(x.timestamp / 86400000) * 86400000, close: x.close }));
+          macro.gold = macroRegime(sr, BT.MACRO_ABOVE.gold);
+          macroUsed.gold = { source: 'Luno PAXGMYR (PAX Gold priced in ringgit)', days: sr.length, from: new Date(sr[0].d).toISOString().slice(0, 10), to: new Date(sr[sr.length - 1].d).toISOString().slice(0, 10) };
+        } else notes.push(`gold: Luno PAXGMYR has only ${pg.length} daily candles, so the gold rules are not shown`);
+      } catch (e) { notes.push(`gold: Luno PAXGMYR unavailable (${e.message}), so the gold rules are not shown`); }
     }
     const have = Object.keys(hist), breadth = breadthMap(hist, o.duration), market = basketRegime(hist, o.duration);
     for (let p = 0; p < have.length; p++) {   // phase 2: score every coin
@@ -235,7 +246,7 @@ async function runBacktest() {
     if (notes.length) btEl('bt-out').innerHTML += `<p class="cr-source-note">${notes.join(' &middot; ')}</p>`;
     if (rows.length) { const cv = Object.entries(costs).sort((a, b) => b[1] - a[1]); btEl('bt-out').innerHTML += `<p class="cr-source-note">Cost per round trip used: fees ${o.cost}%${o.useSpread ? ' + each coin live bid-ask gap (median total ' + cv[Math.floor(cv.length / 2)][1].toFixed(2) + '%, widest ' + cv[0][0] + ' ' + cv[0][1].toFixed(2) + '%)' : ' flat'}. Alt breadth available on ${breadth.size} days${Object.keys(macroUsed).length ? '. Macro series read: ' + Object.entries(macroUsed).map(([k, v]) => `${k} ${v.from} to ${v.to} (${v.days} days; ${v.source})`).join(', ') : ''}.</p>`; }
     const slim = a => a.map(b => ({ label: b.label, n: b.n, p: b.p, baseP: b.baseP, lift: b.lift, beats: b.beats, avg: b.avg, hold: b.hold, holdMed: b.holdMed }));
-    btEl('bt-json').value = JSON.stringify({ suite: 'v2.6', backtest: 'v1.5', params: o, costsUsed: costs, macroUsed, breadthDays: breadth.size, coinsTested: tested, signalsScored: rows.length, later40: sigStats(later, o.horizon), earlier60: sigStats(earlier, o.horizon), tightSpread: { coins: tightCoins, later40: slim(sigStats(tL, o.horizon)), earlier60: slim(sigStats(tE, o.horizon)) }, gappyCoins: gappy, notes }, (k, v) => typeof v === 'number' ? +v.toFixed(4) : v, 1);
+    btEl('bt-json').value = JSON.stringify({ suite: 'v2.7', backtest: 'v1.6', params: o, costsUsed: costs, macroUsed, breadthDays: breadth.size, coinsTested: tested, signalsScored: rows.length, later40: sigStats(later, o.horizon), earlier60: sigStats(earlier, o.horizon), tightSpread: { coins: tightCoins, later40: slim(sigStats(tL, o.horizon)), earlier60: slim(sigStats(tE, o.horizon)) }, gappyCoins: gappy, notes }, (k, v) => typeof v === 'number' ? +v.toFixed(4) : v, 1);
     btStatus(`Done: ${rows.length} signals scored across ${tested} coins at ${new Date().toLocaleTimeString('en-MY')}.`);
   } catch (e) { btStatus('Backtest failed: ' + e.message); }
   finally { btn.disabled = false; }

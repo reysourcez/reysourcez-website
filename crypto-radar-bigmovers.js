@@ -1,7 +1,8 @@
-/* Crypto Radar Big-Mover Study v1.1 (suite v2.5) — loads AFTER crypto-radar-backtest.js and reuses its btHistory()/wilson()/BT.
+/* Crypto Radar Big-Mover Study v1.2 (suite v2.7) — loads AFTER crypto-radar-backtest.js and reuses its btHistory()/wilson()/BT.
    Question: of the days followed by a big rally, what did simple fixed rules show on the day before, and how many false alarms came with each catch?
    Rules are fixed in advance and NOT tuned. Signal at a candle's close; the move is measured from the NEXT open, on CLOSES (a one-trade spike on a thin book does not count).
-   Short-history coins are included (first signal at candle 80). Output describes the past. It is not a forecast. */
+   Short-history coins are included (first signal at candle 80). Output describes the past. It is not a forecast.
+   v1.2: the direction verdict lists the rules that failed the direction check as well as the ones that passed (v1.1 hid the failures whenever one rule passed). */
 const BG = {
   MIN_CANDLES: 80,
   Z_BAR: 2.576,   // stage-1 bar, unchanged from v1.0 (five rules compared)
@@ -59,13 +60,14 @@ function bgDirTable(rows, o) {   // v1.1 direction check: are the same days also
     : `<tr><td>${b.label}</td><td colspan="6">no signals</td></tr>`;
   return `<p class="cr-source-note">Direction check: a big drop = a close at least ${f(dropPct, 0)}% below the next open within ${o.horizon} candles (the mirror of the +${o.big}% rally). A random day: ${f(s.base * 100)}% big rally, ${f(s.baseDrop * 100)}% big drop. A genuinely bullish rule needs the rally-to-drop ratio ${BG.DIR_BAR}x or more in both halves.</p><table class="cr-config-table"><thead><tr><th>Rule</th><th>Followed by a big rally</th><th>Followed by a big drop</th><th>Rally lift &divide; drop lift</th><th>Median ${o.horizon}-candle return <small>(firing days)</small></th><th>Coins with a rally hit</th><th>Top 3 coins' share of hits</th></tr></thead><tbody>${s.rules.map(tr).join('')}</tbody></table>`;
 }
-function bgDirVerdict(later, early, H) {   // stage 2 (see BG.DIR_BAR): only for rules that passed stage 1 in both halves
+function bgDirVerdict(later, early, H) {   // stage 2 (see BG.DIR_BAR): only for rules that passed stage 1 in both halves. v1.2: names the rules that passed AND the ones that did not (v1.1 listed only one side)
   const L = bgStats(later, H), E = bgStats(early, H), s1 = L.rules.map((b, k) => [b, E.rules[k]]).filter(([b, e]) => b.beats && e.beats);
   if (!s1.length) return '';
   const f = v => v == null ? 'n/a' : v.toFixed(2), dir = (b, S) => b.dirRatio != null && b.dirRatio >= BG.DIR_BAR && b.medFwd != null && b.medFwd > S.medAll;
-  const yes = s1.filter(([b, e]) => dir(b, L) && dir(e, E)).map(([b]) => b.label);
-  return yes.length ? `Direction check passed in BOTH halves: ${yes.join('; ')}.`
-    : `Direction check: NOT shown to be bullish. ${s1.map(([b, e]) => `${b.label}: rally lift / drop lift = ${f(b.dirRatio)} (later) and ${f(e.dirRatio)} (earlier), needs ${BG.DIR_BAR} or more in both, plus a median return above the all-days median`).join('; ')}.`;
+  const yes = s1.filter(([b, e]) => dir(b, L) && dir(e, E)), no = s1.filter(([b, e]) => !(dir(b, L) && dir(e, E)));
+  const why = ([b, e]) => `${b.label}: rally lift / drop lift = ${f(b.dirRatio)} (later) and ${f(e.dirRatio)} (earlier); median ${H}-candle return ${f(b.medFwd)}% / ${f(e.medFwd)}% against ${f(L.medAll)}% / ${f(E.medAll)}% on all days`;
+  return (yes.length ? `Direction check passed in BOTH halves: ${yes.map(([b]) => b.label).join('; ')}.` : '')
+    + (no.length ? `${yes.length ? ' ' : ''}Direction check: NOT shown to be bullish (needs ${BG.DIR_BAR} or more in both halves and a median return above the all-days median): ${no.map(why).join('; ')}.` : '');
 }
 
 async function runBigMovers() {
@@ -89,7 +91,7 @@ async function runBigMovers() {
     const later = rows.filter(r => r.split === 'out'), early = rows.filter(r => r.split === 'in');
     g('bg-verdict').textContent = rows.length ? [bgVerdict(later, early, o.horizon), bgDirVerdict(later, early, o.horizon)].filter(Boolean).join(' ') : 'No coin had enough history.';
     g('bg-out').innerHTML = rows.length ? `<h3>Later 40% of each coin's history: the fairer test</h3>${bgTable(later, o.horizon)}${bgDirTable(later, o)}<h3>Earlier 60%</h3>${bgTable(early, o.horizon)}${bgDirTable(early, o)}` + (notes.length ? `<p class="cr-source-note">${notes.join(' &middot; ')}</p>` : '') : '';
-    g('bg-json').value = JSON.stringify({ suite: 'v2.5', bigMovers: 'v1.1', params: o, coinsTested: tested, daysScored: rows.length, later40: bgStats(later, o.horizon), earlier60: bgStats(early, o.horizon), notes }, (k, v) => typeof v === 'number' ? +v.toFixed(4) : v, 1);
+    g('bg-json').value = JSON.stringify({ suite: 'v2.7', bigMovers: 'v1.2', params: o, coinsTested: tested, daysScored: rows.length, later40: bgStats(later, o.horizon), earlier60: bgStats(early, o.horizon), notes }, (k, v) => typeof v === 'number' ? +v.toFixed(4) : v, 1);
     st(`Done: ${rows.length} days scored across ${tested} coins at ${new Date().toLocaleTimeString('en-MY')}.`);
   } catch (e) { st('Study failed: ' + e.message); }
   finally { btn.disabled = false; }
