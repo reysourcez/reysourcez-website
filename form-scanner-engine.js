@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — browser engine
-   Version: v6.5 (2026-10-07) — layout-spec rebuild on the v4.3 baseline (v6.5: version label only, no functional change since v6.4)
+   Version: v6.6 (2026-10-10) — layout-spec rebuild on the v4.3 baseline (v6.6: engine-planning helpers + four new tunables; layout and PDF code unchanged since v6.4)
    Flow: photo/PDF -> Worker (Gemini) -> layout spec -> pdf-lib fillable PDF.
    All tunables live in FS_CONFIG. Full notes: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    and FORM_SCANNER_HANDOFF.md. Nothing here is sent anywhere except the one
@@ -9,7 +9,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'v6.5 (2026-10-07)';
+const VERSION = 'v6.6 (2026-10-10)';
 
 /* ---------------- CONFIG (edit here only) ---------------- */
 const FS_CONFIG = {
@@ -26,6 +26,15 @@ const FS_CONFIG = {
   MIN_IMAGE_EDGE: 1600,          // px, smaller pictures are enlarged to this (text-reading models need pixels)
   TEXT_COST: 0.5,                // the cheap Gemini wording read counts as this many scans
   MAX_FIELDS: 1500,              // safety cap on fillable fields per form
+  // ---- v6.6: engines. The list of engines itself comes from the Worker (any engine with a key shows up); these only say how to use them.
+  AUTO_ORDER: ['groq', 'qwen', 'gemini'],   // Auto = structure engines, best first: the first that is set up AND answers wins. Gemini last (its layout reading is usually rougher).
+  WORDING_ORDER: ['gemini', 'mistral', 'cfscout'],   // Auto: who reads the printed words at the same time; the first that answers wins
+  COMPARE_COST_EACH: 0.5,        // "Compare all": every engine counts this much against the daily cap
+  SMALL_IMAGE_KB: 150,           // an engine that says the picture is too big gets one retry with a copy this small
+  ENGINES_FALLBACK: [            // used only if the Worker cannot be asked for its list (offline, or an older Worker)
+    { id: 'qwen', label: 'Qwen3.8-27B · OpenRouter free', ready: true, needs: '', free: true },
+    { id: 'gemini', label: 'Gemini', ready: true, needs: '', free: true },
+  ],
 };
 
 const PAGE_SIZES = {           // portrait points (w, h)
@@ -997,10 +1006,22 @@ function mergeWording(spec, lines) {
   return { fixed, unconfirmed };
 }
 
+/* ---------------- engine planning (v6.6) ----------------
+   `engines` is the Worker's list [{ id, label, ready, ... }]. Pure functions: they run under Node for tests, no DOM. */
+const readySet = (engines) => new Set(arr(engines).filter((e) => e && e.ready).map((e) => e.id));
+const inOrder = (order, engines) => { const ready = readySet(engines); return arr(order).filter((id, i, a) => ready.has(id) && a.indexOf(id) === i); };
+const planAuto = (order, engines) => inOrder(order, engines);        // structure engines for Auto: the preferred ones that are set up, in that order
+const planWording = (order, engines) => inOrder(order, engines);     // wording readers: same rule
+function planAll(engines, order) {                                   // Compare all: every ready engine, preferred ones first
+  const first = inOrder(order, engines);
+  return first.concat(arr(engines).filter((e) => e && e.ready && !first.includes(e.id)).map((e) => e.id));
+}
+
 /* ---------------- exports (browser global + Node tests) ---------------- */
 const ENGINE = {
   VERSION, FS_CONFIG, PAGE_SIZES, parseItem, normalizeSpec, resolvePage, buildFillablePdf,
   wrapLines, qaFields, labelForSize, measureContent, mergeWording, similarity, textSlots, normTxt, cleanText,
+  planAuto, planWording, planAll,
 };
 root.FormScannerEngine = ENGINE;
 if (typeof module !== 'undefined' && module.exports) module.exports = ENGINE;

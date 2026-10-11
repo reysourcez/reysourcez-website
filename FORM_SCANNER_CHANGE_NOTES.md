@@ -213,3 +213,54 @@ Real end-to-end testing this round, not just static review — a genuine change 
 - Stronger automatic fallback: test first by ticking Thorough reading while Qwen is down (the fallback then uses `gemini-3.8-flash`); if the layout is clearly better, make that the automatic fallback.
 - Optional paid-Qwen fallback inside the Worker (only when the free model has no provider), off by default.
 - Second free vision model as a backup (untested, quality unknown).
+
+
+
+## 2026-10-10 — v6.6: more engines (Qwen on Groq, Mistral, Workers AI, NVIDIA, …), Compare all, and the two failures in the log explained
+
+**What prompted this.** A comparison log from a scan of `daily wastage source.png` (run numbers as in the log):
+1. **Run 2, Qwen (OpenRouter free): "This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3.8-27b".** This settles the question left open in v6.5 ("which of the two 404 causes was it"): neither. It was not a short outage and not the privacy toggles: OpenRouter has ended the free listing of that model. The v6.5 hint ("usually clears within minutes") was wrong for this case, and the Worker's retry-once-after-404 only added a second wasted call.
+2. **Runs 1, 3 and (probably) 5, Gemini: `400 FAILED_PRECONDITION: User location is not supported for the API use`, while run 4 (Gemini only) worked in between.** That error is Google judging the **caller's address**. The caller is the Cloudflare data center that ran the Worker for that request, not the visitor. Which data center that is can change from request to request, which fits "sometimes works". It also took out the wording read and the Gemini fallback, so Auto had nothing left. Run 5 was cut off in the paste, so its real reason is unknown (its 15.9 s also points to something other than the 0.7 s location refusals).
+3. Constraint stated with the log: only free engines. The paid Qwen slug was deliberately not adopted (`OR_MODELS` left as it was).
+
+**Diagnosis notes (sources read 2026-10-10).**
+- Cloudflare's placement docs: the dashboard offers **Smart Placement** only; exact-region hints (`placement.region`, changelog 2026-01-22) are a config-file (Wrangler) feature. Smart Placement needs steady traffic from several locations and only considers data centers the Worker has already run in, so for a low-traffic Worker it will probably change nothing. Not claimed as a fix.
+- Google's own forum threads show the same error from cloud and proxy addresses that Google mislabels or does not serve. Nothing in our request can influence it.
+- The location of the Cloudflare data center has **not** been confirmed yet. v6.6 reports it (see below), so the next failure names the city code instead of guessing.
+
+**What changed.**
+- **Worker = engine registry.** One entry per engine in `PROVIDERS` (label, url, secret name, model id, a few flags); one shared handler for every engine that is not Gemini; adapters for OpenAI-style APIs (Groq, OpenRouter, Mistral, NVIDIA, DeepSeek), Anthropic and the Workers AI binding. An engine with no key (or binding) stays off. New request `{ mode: "engines" }` returns which engines are ready; the page builds its Engine list from it. Unknown engine names are refused (own-property check, so `__proto__`/`constructor` cannot slip through).
+- **Engines added:** `groq` Qwen3.8-27B (same model as before, vision, free plan 30 req/min, 1,000/day, 8K tokens/min: the Worker shrinks the answer cap to fit that, about 3.4K tokens), `orfree` (OpenRouter's free router: survives the free list rotating, label shows the model it picked), `mistral`, `cfscout` (Llama 4 Scout through a Workers AI binding: no key, runs inside Cloudflare so no location problem), `nvllama` and `kimi` (NVIDIA's hosted catalogue, one key: this is how Kimi is reachable for free), `deepseek` (paid, `deepseek-v4-flash-vision-exp`) and `claude` (paid: Anthropic's billing page says prepaid credits are bought before use, no ongoing free tier). The last two stay off until a key is added. `qwen` (OpenRouter free) is kept, as asked, in case the free listing returns.
+- **Errors say what happened.** One plain sentence plus the provider's own words (300 characters) for every engine. Recognised and named: location, retired free model, rate limit (with the wait), picture too big, bad key, no credit, no provider, model id not found, ran out of room, Workers AI daily allowance, Workers AI license. A retired-free reply is not retried. A 429 that says "wait 28 s" is not retried (a second call 1.5 s later cannot work); one that says "wait 1 s" is.
+- **Gemini location refusal** is detected in both Gemini paths and explained, with the Cloudflare city code (`request.cf.colo`). `_meta.colo` is now on every answer.
+- **Page:** the Engine list comes from the Worker (greyed-out entries say which secret is missing). **Auto** = engines in `AUTO_ORDER` that are set up, tried in order (default `groq`, `qwen`, `gemini`); the wording read now tries `WORDING_ORDER` (`gemini`, `mistral`, `cfscout`) so a refused Gemini no longer costs the wording merge. **Compare all** = every ready engine at the same time, raw reads (no merge, so each is judged on its own), first answer shown at once, the rest in the log. An engine that answers "picture too big" gets one retry with a 150 KB copy. Log rows now carry the engine's own label (`Qwen3.8-27B · Groq`, merged rows read `… + Mistral Small wording`).
+- **Settings:** `AUTO_ORDER`, `WORDING_ORDER`, `COMPARE_COST_EACH` (0.5), `SMALL_IMAGE_KB` (150), `ENGINES_FALLBACK` in `FS_CONFIG`. The daily cap stays 20 per browser; Compare all costs 0.5 per engine that answers.
+
+**Files and versions.**
+| File | Version | Cache-bust in HTML |
+|---|---|---|
+| `form-scanner.html` | v6.6 | n/a |
+| `form-scanner.js` | v6.6 | `?v=7` |
+| `form-scanner-engine.js` | v6.6 (planning helpers + tunables; layout/PDF code untouched) | `?v=5` |
+| `form-scanner-proxy-worker.js` | v6.6, **functional change: redeploy** | n/a |
+| `nav-config.js`, `site-config.js`, `styles.css` | unchanged (`styles.css?v=19`) | |
+
+**Tested (all mocked: this sandbox has no network).**
+- **Worker, 105 checks** with a mocked `fetch`: engine list and readiness (incl. a binding without `run`); guards (unknown engines incl. `__proto__`, bad bodies, size, MIME, CORS, PDF to an image-only engine); Groq (request shape, `reasoning_effort: none`, `max_completion_tokens` shrunk to the token plan, ladder dropping reasoning then JSON mode, long vs short 429, TPM 413 treated as rate limit, truncation message, bad key, text mode); OpenRouter (retired-free not retried, plain no-endpoints retried once, data-policy not retried, blip that clears, router label, 200-with-error body, 402); Mistral (string `image_url`), NVIDIA (no JSON mode, 4096 cap), Kimi on the same key, DeepSeek, timeouts and network errors, think-block/fence stripping; Claude (headers, image block, 529 retries, `max_tokens`, 403); Workers AI (input shape, three response shapes, allowance, license, other errors); Gemini (default engine, tiers, note, **location refusal with city code in both modes, one call only**, unchanged attempt ladder, busy, blocked, MAX_TOKENS, PDF inline).
+- **Engine, 15 checks** (planning helpers, junk input, and the v6.4/6.5 wording merge and normaliser still behave).
+- **Page, 77 checks** in headless Chromium with real pdf-lib and the Worker mocked: engine list (order, paid label, greyed-out entries with their secret, tooltip text, version badge), older Worker fallback, Auto happy path (Groq structure + Gemini wording, three log rows, misread label fixed, invented label flagged, usage 1.5, download passes `qpdf --check`, fillable fields with no duplicate names), Auto falling back to Gemini (amber status), Qwen on Groq failing while Qwen on OpenRouter answers (both named in full), wording fallback to Mistral after a Gemini location refusal, wording unavailable, Compare all (4 calls, no merge, first answer shown, summary, usage 0.5 each, Show swaps the output), all engines failing, one engine, only Gemini ready, nothing ready, picture too big (retry with a smaller copy) and still too big (one retry only), PDF source (Gemini gets the PDF, others the rendered page), daily cap, new file mid-scan, phone width. Run twice, same result.
+
+**Not tested here:** any real provider (Groq, Mistral, NVIDIA, OpenRouter, Workers AI, Gemini, DeepSeek, Anthropic): model ids, parameter acceptance and answer quality are from each provider's docs, not from live calls. Specifically open: whether Groq honours `reasoning_effort: none` together with JSON mode on this model; whether NVIDIA accepts a full-size inline picture (the old limit was 180 KB: the page retries smaller if told); the response shape of Llama 4 Scout on Workers AI (the adapter accepts three shapes); the first-time Meta license prompt on Workers AI; Kimi K2.6's speed. A wrong guess shows up as one plain log row, not a broken page.
+
+**Deploy.** (1) Cloudflare: paste `form-scanner-proxy-worker.js` into the Worker and Deploy. (2) Add secrets only for engines you want (Setup doc, Engines table; Groq first). Add the Workers AI binding named `AI` if you want that engine (no key). (3) GitHub: replace `form-scanner.html`, `form-scanner.js`, `form-scanner-engine.js`; hard-refresh (Ctrl+F5). (4) Replace the two `.md` docs.
+
+**How to choose the winner.** Scan the same file with **Compare all**, then use Show and PDF on each row. When one engine is clearly best, put its id first in `AUTO_ORDER`.
+
+**KIV.**
+- **Location errors:** read the city code the next failure shows. If it is a data center Google does not serve and it keeps happening, the options are: Smart Placement (dashboard, low odds), exact-region placement (needs a Wrangler config deploy, e.g. a Git-connected Worker from a **private** repo), or relying on engines that do not care (Workers AI, Groq, Mistral).
+- **Public Worker:** the free keys are shared by anyone who finds the URL. Add a Cloudflare rate-limiting rule (free plan allows one) or Turnstile.
+- **Wording quality per engine:** the text read exists for every engine; a "wording engine" picker would let the log compare them.
+- **Default Auto order** after Compare all (edit `AUTO_ORDER`).
+- **Groq's Qwen is a Preview model** and may be withdrawn; its 8K tokens/min means one scan a minute. A paid developer plan lifts both limits, not needed now.
+- Considered, not added: Z.ai GLM-4.6V-Flash (free, one request at a time), GitHub Models (8K input limit, too small for this prompt), Cohere trial (non-commercial), Moonshot's own Kimi API (paid; Kimi is reachable free through NVIDIA).
+- Earlier items still open: PDF-to-picture output preview, overlay compare, bounding boxes, structure is read-only, promote `.fs-tip` to the shared stylesheet.

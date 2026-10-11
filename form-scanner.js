@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.5 (2026-10-07) — full engine errors in the log and a plain message when the fallback engine takes over (on top of v6.4: source/output side by side, log grouped by source, tooltips)
+   Version: v6.6 (2026-10-10) — engines come from the Worker (any engine with a key shows up), Auto tries them best-first, Compare all runs every ready engine, the wording read falls back across engines (on top of v6.5: full engine errors in the log; v6.4: source/output side by side, log by source, tooltips)
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the Worker calls: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.5 (2026-10-07)');
+console.info('[Form Scanner] page build: v6.6 (2026-10-10)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -95,6 +95,36 @@ function getUsageToday() {
 function recordUsage(cost) {
   try { localStorage.setItem(CFG.USAGE_KEY, JSON.stringify({ day: new Date().toDateString(), count: getUsageToday() + cost })); }
   catch (e) { /* private browsing etc.: soft cap only, fine to skip */ }
+}
+
+/* ================= engines (v6.6): the Worker says which engines it has keys for ================= */
+let engines = [], enginesPromise = null;
+const eng = (id) => engines.find((e) => e.id === id) || null;
+const engLabel = (id) => (eng(id) ? eng(id).label : id);
+const shortName = (label) => String(label || '').split(' \u00b7 ')[0];     // "Mistral Small", "Gemini": how to name an engine inside a sentence
+
+async function loadEngines() {
+  let list = null;
+  try {
+    const r = await fetch(CFG.PROXY_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'engines' }) });
+    const d = await r.json();
+    if (r.ok && d && Array.isArray(d.engines) && d.engines.length) list = d.engines;
+  } catch (e) { /* offline, or an older Worker that does not know this request: use the built-in list */ }
+  engines = list || CFG.ENGINES_FALLBACK.map((x) => Object.assign({ needs: '', free: true }, x));
+  fillEngineSelect();
+  if (!list) setStatus('Could not ask the server which engines are set up, so the basic list is shown. If this stays, redeploy the Worker (setup doc).', 'warn');
+}
+
+function fillEngineSelect() {
+  const sel = $('fs-provider'), keep = sel.value;
+  const ready = engines.filter((e) => e.ready), off = engines.filter((e) => !e.ready);
+  const opt = (v, t, dis) => `<option value="${escapeHTML(v)}"${dis ? ' disabled' : ''}>${escapeHTML(t)}</option>`;
+  let html = opt('auto', 'Auto: best available (recommended)');
+  if (ready.length > 1) html += opt('all', `Compare all ready engines (${ready.length})`);
+  if (ready.length) html += `<optgroup label="One engine">${ready.map((e) => opt(e.id, e.label + (e.free === false ? ' (paid)' : ''))).join('')}</optgroup>`;
+  if (off.length) html += `<optgroup label="Not set up yet (see the setup doc)">${off.map((e) => opt(e.id, `${e.label}: needs ${e.needs}`, true)).join('')}</optgroup>`;
+  sel.innerHTML = html;
+  sel.value = Array.from(sel.options).some((o) => o.value === keep && !o.disabled) ? keep : 'auto';
 }
 
 /* ================= source pane (left) and output pane (right) ================= */
@@ -309,7 +339,7 @@ async function scanForm(payload) {
   let data;
   try { data = await response.json(); }
   catch (e) { throw new Error('Got an unreadable response from the scanning service. Try again.'); }
-  if (!response.ok) throw new Error(data.error || ('Scan failed (error ' + response.status + '). Try again.'));
+  if (!response.ok) { const err = new Error(data.error || ('Scan failed (error ' + response.status + '). Try again.')); err.code = data.code || ''; throw err; }
   return data;
 }
 
@@ -438,53 +468,99 @@ async function refreshPdfPreview(spec, page) {
 }
 
 /* ================= scan flow ================= */
-const ENGINE_LABEL = { qwen: 'Qwen', gemini: 'Gemini' };
 const countItems = (spec) => spec.bands.reduce((a, b) => a + (b.kind === 'table' ? 1 : b.cells.reduce((n, c) => n + c.items.filter((it) => it.kind === 'F' || it.kind === 'C').length, 0)), 0);
 
-// Wording read: Gemini transcribes every printed text item (cheap, fast). Never throws: returns { lines } or { error }.
-async function wordingRead(precise, entry, cur) {
-  const t0 = performance.now();
-  if (getUsageToday() + CFG.TEXT_COST > CFG.MAX_SCANS_PER_DAY) return { error: 'daily limit reached', secs: 0 };
-  try {
-    const data = await scanForm({ image: cur.base64, mime_type: cur.mimeType, mode: 'text', tier: precise ? 'precise' : 'fast', provider: 'gemini' });
-    recordUsage(CFG.TEXT_COST);
-    const secs = (performance.now() - t0) / 1000, lines = data.lines || [];
-    logRun({ label: ((data._meta && data._meta.model) || 'gemini') + ' (wording)', secs, info: `${lines.length} text lines read`, srcId: entry.id });
-    return { lines, secs };
-  } catch (err) {
-    const secs = (performance.now() - t0) / 1000;
-    logRun({ label: 'Gemini (wording)', secs, error: err.message || 'Error', srcId: entry.id });
-    return { error: err.message || 'Error', secs };
-  }
+// Which picture an engine gets: Gemini reads the original PDF; every other engine needs a page image
+function imageFor(engine, cur) {
+  if (engine === 'gemini' || cur.kind !== 'pdf') return { image: cur.base64, mime: cur.mimeType };
+  return cur.raster ? { image: cur.raster, mime: 'image/jpeg' } : null;
 }
 
-// Qwen structure + Gemini wording: work on a copy so the plain Qwen row in the log stays available for comparison.
+// An engine that says "picture too big" gets one retry with a small copy of the same picture
+function loadImage(src) {
+  return new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error('Could not shrink the picture.')); i.src = src; });
+}
+async function smallVariant(b64, kb) {
+  const img = await loadImage('data:image/jpeg;base64,' + b64);
+  let edge = 1400, q = 0.65, out = '';
+  for (let i = 0; i < 5; i++) {
+    const s = Math.min(1, edge / Math.max(img.width, img.height));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(img.width * s)); c.height = Math.max(1, Math.round(img.height * s));
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(img, 0, 0, c.width, c.height);
+    out = c.toDataURL('image/jpeg', q).split(',')[1];
+    if (out.length * 0.75 <= kb * 1024) break;
+    edge = Math.round(edge * 0.85); q = Math.max(0.4, q - 0.08);
+  }
+  return out;
+}
+async function smallCopy(img, cur) {
+  cur.small = cur.small || {};
+  const key = img.image === cur.raster ? 'raster' : 'photo';
+  if (!cur.small[key]) cur.small[key] = await smallVariant(img.image, CFG.SMALL_IMAGE_KB);
+  return { image: cur.small[key], mime: 'image/jpeg' };
+}
+
+// Wording read: one engine transcribes every printed text item (cheap, fast). Tries WORDING_ORDER until one answers; every attempt is logged.
+// Never throws: returns { lines, secs, by } or { error, secs }.
+async function wordingRead(precise, entry, cur) {
+  const t0 = performance.now();
+  let lastErr = 'no engine for the wording read is set up';
+  for (const id of E.planWording(CFG.WORDING_ORDER, engines)) {
+    const img = imageFor(id, cur);
+    if (!img) continue;
+    if (getUsageToday() + CFG.TEXT_COST > CFG.MAX_SCANS_PER_DAY) return { error: 'daily limit reached', secs: 0 };
+    const t1 = performance.now();
+    try {
+      const data = await scanForm({ image: img.image, mime_type: img.mime, mode: 'text', tier: precise && id === 'gemini' ? 'precise' : 'fast', provider: id });
+      recordUsage(CFG.TEXT_COST);
+      const lines = data.lines || [];
+      logRun({ label: ((data._meta && (data._meta.label || data._meta.model)) || engLabel(id)) + ' (wording)', secs: (performance.now() - t1) / 1000, info: `${lines.length} text lines read`, srcId: entry.id });
+      if (!lines.length) { lastErr = 'no text lines came back'; continue; }
+      return { lines, secs: (performance.now() - t0) / 1000, by: shortName(engLabel(id)) };
+    } catch (err) {
+      lastErr = err.message || 'Error';
+      logRun({ label: engLabel(id) + ' (wording)', secs: (performance.now() - t1) / 1000, error: lastErr, srcId: entry.id });
+    }
+  }
+  return { error: lastErr, secs: (performance.now() - t0) / 1000 };
+}
+
+// Structure engine + wording reader: work on a copy so the plain engine row in the log stays available for comparison.
 function applyWording(r, tp, entry) {
   if (!tp || tp.error || !tp.lines || !tp.lines.length) return Object.assign({}, r, { note: ' Wording check unavailable.' });
   const spec = structuredClone(r.spec);
   const m = E.mergeWording(spec, tp.lines);
   spec.unconfirmed = m.unconfirmed;
   if (m.unconfirmed.length) spec.warnings.push(`${m.unconfirmed.length} label${m.unconfirmed.length === 1 ? '' : 's'} not confirmed by the second reading. Compare with the original: ${m.unconfirmed.slice(0, 6).map((u) => '\u201c' + u.text + '\u201d').join(', ')}${m.unconfirmed.length > 6 ? '\u2026' : ''}`);
-  const label = r.label + ' + Gemini wording', secs = Math.max(r.secs, tp.secs);
+  const label = r.label + ' + ' + (tp.by || 'second') + ' wording', secs = Math.max(r.secs, tp.secs);
   logRun({ label, secs, spec, page: r.page, items: countItems(spec), srcId: entry.id });
   return { spec, page: r.page, label, secs, note: m.fixed ? ` ${m.fixed} label${m.fixed === 1 ? '' : 's'} corrected.` : ' Wording confirmed.' };
 }
 
 // One engine, one attempt: returns the result or throws. Every attempt (good or failed) lands in the comparison log.
-async function tryEngine(engine, note, precise, entry, cur) {
-  let image = cur.base64, mime = cur.mimeType;
-  if (engine === 'qwen' && cur.kind === 'pdf') {
-    if (!cur.raster) throw new Error('Qwen needs a page image and this PDF could not be rendered');
-    image = cur.raster; mime = 'image/jpeg';
+async function tryEngine(engine, note, precise, entry, cur, cost) {
+  const name = engLabel(engine);
+  const img = imageFor(engine, cur);
+  if (!img) {
+    const msg = name + ' needs a page image and this PDF could not be rendered';
+    logRun({ label: name, secs: 0, error: msg, srcId: entry.id });
+    throw new Error(msg);
   }
   const thorough = engine === 'gemini' && precise;
-  const cost = thorough ? CFG.PRECISE_COST : 1;
-  if (getUsageToday() + cost > CFG.MAX_SCANS_PER_DAY) throw new Error('This browser has hit today\u2019s scan limit. Try again tomorrow.');
+  const price = thorough ? CFG.PRECISE_COST : cost;
+  if (getUsageToday() + price > CFG.MAX_SCANS_PER_DAY) throw new Error('This browser has hit today\u2019s scan limit. Try again tomorrow.');
   const t0 = performance.now();
   try {
-    const raw = await scanForm({ image, mime_type: mime, note: note || undefined, tier: thorough ? 'precise' : 'fast', provider: engine });
-    recordUsage(cost);
-    const secs = (performance.now() - t0) / 1000, label = (raw._meta && raw._meta.model) || engine;
+    const send = (im) => scanForm({ image: im.image, mime_type: im.mime, note: note || undefined, tier: thorough ? 'precise' : 'fast', provider: engine });
+    let raw;
+    try { raw = await send(img); }
+    catch (err) {
+      if (err.code !== 'image_too_large') throw err;
+      raw = await send(await smallCopy(img, cur));
+    }
+    recordUsage(price);
+    const secs = (performance.now() - t0) / 1000, label = (raw._meta && (raw._meta.label || raw._meta.model)) || name;
     if (!raw.recognized) throw Object.assign(new Error('Model did not recognise a form'), { secs, label });
     const spec = E.normalizeSpec(raw);
     if (!spec.bands.length) throw Object.assign(new Error('No fields or tables found'), { secs, label });
@@ -492,53 +568,88 @@ async function tryEngine(engine, note, precise, entry, cur) {
     logRun({ label, secs, spec, page, items: countItems(spec), srcId: entry.id });
     return { spec, page, label, secs };
   } catch (err) {
-    logRun({ label: err.label || ENGINE_LABEL[engine], secs: err.secs != null ? err.secs : (performance.now() - t0) / 1000, error: err.message || 'Error', srcId: entry.id });
+    logRun({ label: err.label || name, secs: err.secs != null ? err.secs : (performance.now() - t0) / 1000, error: err.message || 'Error', srcId: entry.id });
     throw err;
   }
 }
 
+function finalError(err, auto) {
+  const m = err && err.message ? err.message : '';
+  const msg = /recognise|No fields/.test(m) ? 'Couldn\u2019t make out a form in that file. Try a straighter, closer, better-lit photo, or a clearer PDF.' : ((m || 'Something went wrong. Try again.') + (auto ? ' You can pick another engine from the list, or Compare all.' : ''));
+  setStatus(msg, 'error');
+  setOutState('error', 'No result. See the message above.');
+}
+
+// Auto and single-engine scans: engines in order, the next one only if the previous failed. In Auto the wording is read at the same time as the first structure engine.
+async function runInOrder(ids, auto, ctx) {
+  const { entry, cur, note, precise, live, progress } = ctx;
+  let lastErr = null, wording = null;
+  for (let i = 0; i < ids.length; i++) {
+    const id = ids[i];
+    if (auto && id !== 'gemini' && !wording && E.planWording(CFG.WORDING_ORDER, engines).length) wording = wordingRead(precise, entry, cur);
+    progress(`Reading the form with ${engLabel(id)}${wording && id !== 'gemini' ? ' (the wording is read at the same time)' : ''}\u2026 ${id === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
+    try {
+      let r = await tryEngine(id, note, precise, entry, cur, 1);
+      if (wording && id !== 'gemini') {
+        if (live()) progress('Checking the wording\u2026');
+        r = applyWording(r, await wording, entry);
+      }
+      if (!live()) return;                                    // another file was chosen meanwhile: runs are logged, nothing is painted
+      lastSpec = r.spec; lastPage = r.page;
+      paintSource(entry);
+      renderPreview(r.spec, r.page, r);
+      const first = engLabel(ids[0]);                          // full labels: two engines can share a short name (Qwen on Groq / on OpenRouter)
+      const fb = i > 0 ? ` ${first} failed, so ${engLabel(id)} made this layout.${id === 'gemini' ? ' Gemini is usually rougher.' : ''} The log says why; trying again later may bring ${first} back.` : '';
+      setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it against the source, then download. (${shortEngine(r.label)}, ${r.secs.toFixed(1)} s).${r.note || ''}${fb}`, fb ? 'warn' : undefined);
+      return;
+    } catch (err) {
+      lastErr = err;
+      if (!live()) return;                                    // never start the next engine for a scan nobody is waiting for
+      if (i < ids.length - 1) progress(`${engLabel(id)} failed (${String(err.message || '').slice(0, 140)}). Trying ${engLabel(ids[i + 1])}\u2026`, 'warn');
+    }
+  }
+  finalError(lastErr, auto);
+}
+
+// Compare all: every ready engine reads the same file at the same time (raw reads, no wording merge, so each engine is judged on its own).
+// The first answer is shown at once; the log collects the rest. Show / PDF on any row to look at it.
+async function runCompare(ids, ctx) {
+  const { entry, cur, note, precise, live, progress } = ctx;
+  let done = 0, okCount = 0, shownLabel = '', firstErr = null;
+  const total = ids.length;
+  progress(`Reading the form with ${total} engines at the same time\u2026 the first answer appears here, the log collects the rest.`);
+  await Promise.allSettled(ids.map((id) => tryEngine(id, note, precise, entry, cur, CFG.COMPARE_COST_EACH).then((r) => {
+    done++; okCount++;
+    if (!live()) return;
+    if (!shownLabel) { shownLabel = r.label; lastSpec = r.spec; lastPage = r.page; paintSource(entry); renderPreview(r.spec, r.page, r); }
+    setStatus(`${done} of ${total} engines finished. Showing ${shortEngine(shownLabel)}, the first to answer.`);
+  }, (err) => {
+    done++; firstErr = firstErr || err;
+    if (live()) setStatus(`${done} of ${total} engines finished.${shownLabel ? ' Showing ' + shortEngine(shownLabel) + ', the first to answer.' : ''}`);
+  })));
+  if (!live()) return;
+  if (!okCount) { finalError(firstErr, false); return; }
+  setStatus(`Compared ${total} engines: ${okCount} answered${total - okCount ? ', ' + (total - okCount) + ' failed' : ''}. Showing ${shortEngine(shownLabel)}, the first to answer. Use Show in the log to look at the others, and PDF to download one.`, total - okCount ? 'warn' : undefined);
+}
+
 async function runScan() {
   if (!current || scanning) { if (!current) setStatus('Choose a photo or PDF first.', 'error'); return; }
+  await enginesPromise;                                       // the engine list from the Worker (a moment after the page loads)
   const entry = activeSrc, cur = current;
   const myScan = ++scanSeq;
   const live = () => myScan === scanSeq;                      // false once another file has been chosen
-  const choice = $('fs-provider').value;                      // auto | qwen | gemini
+  const choice = $('fs-provider').value;                      // auto | all | an engine id
   const precise = $('fs-precise').checked;
-  const engines = choice === 'auto' ? ['qwen', 'gemini'] : [choice];
   const note = $('fs-note').value.trim();
+  const ids = choice === 'auto' ? E.planAuto(CFG.AUTO_ORDER, engines) : choice === 'all' ? E.planAll(engines, CFG.AUTO_ORDER) : (eng(choice) && eng(choice).ready ? [choice] : []);
+  if (!ids.length) { setStatus('No engine is set up on the server yet. Add a key to the Worker (see the setup doc), then reload this page.', 'error'); return; }
   scanning = true; updateScanBtn();
   paintSource(entry);                                         // the left pane may be showing an older run's source
   clearOutput('busy', 'Reading the form…');
   const progress = (msg, level) => { setStatus(msg, level); setOutState('busy', msg); };
-  let lastErr = null;
   try {
-    for (let i = 0; i < engines.length; i++) {
-      const eng = engines[i];
-      const wording = choice === 'auto' && eng === 'qwen' ? wordingRead(precise, entry, cur) : null;   // runs at the same time as Qwen
-      progress(`Reading the form with ${ENGINE_LABEL[eng]}${wording ? ' (Gemini reads the wording at the same time)' : ''}\u2026 ${eng === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
-      try {
-        let r = await tryEngine(eng, note, precise, entry, cur);
-        if (wording) {
-          if (live()) progress('Checking the wording\u2026');
-          r = applyWording(r, await wording, entry);
-        }
-        if (!live()) return;                                  // another file was chosen meanwhile: runs are logged, nothing is painted
-        lastSpec = r.spec; lastPage = r.page;
-        paintSource(entry);
-        renderPreview(r.spec, r.page, r);
-        const fb = i > 0 ? ` ${ENGINE_LABEL[engines[0]]} failed, so ${ENGINE_LABEL[eng]} made this layout. It is usually rougher: the log says why, and trying again later may bring ${ENGINE_LABEL[engines[0]]} back.` : '';
-        setStatus(`Found ${r.spec.bands.length} section${r.spec.bands.length === 1 ? '' : 's'} on a ${r.page.label} page. Check it against the source, then download. (${shortEngine(r.label)}, ${r.secs.toFixed(1)} s).${r.note || ''}${fb}`, fb ? 'warn' : undefined);
-        return;
-      } catch (err) {
-        lastErr = err;
-        if (!live()) return;                                  // never start the fallback engine for a scan nobody is waiting for
-        if (i < engines.length - 1) progress(`${ENGINE_LABEL[eng]} failed (${String(err.message || '').slice(0, 140)}). Trying ${ENGINE_LABEL[engines[i + 1]]}, whose layout is usually rougher\u2026`, 'warn');
-      }
-    }
-    const m = lastErr && lastErr.message ? lastErr.message : '';
-    const msg = /recognise|No fields/.test(m) ? 'Couldn\u2019t make out a form in that file. Try a straighter, closer, better-lit photo, or a clearer PDF.' : (m || 'Something went wrong. Try again.');
-    setStatus(msg, 'error');
-    setOutState('error', 'No result. See the message above.');
+    const ctx = { entry, cur, note, precise, live, progress };
+    if (choice === 'all') await runCompare(ids, ctx); else await runInOrder(ids, choice === 'auto', ctx);
   } finally {
     if (live()) { scanning = false; updateScanBtn(); }
   }
@@ -622,7 +733,8 @@ function init() {
   if (rzInitialized) return;
   rzInitialized = true;
   initTips();
-  $('fs-scan-tip').setAttribute('data-tip', `Reads the chosen file and builds the fillable PDF. Each browser can run about ${CFG.MAX_SCANS_PER_DAY} scans a day: Auto counts ${1 + CFG.TEXT_COST}, a single engine counts 1, and Gemini thorough reading counts ${CFG.PRECISE_COST}.`);
+  enginesPromise = loadEngines();
+  $('fs-scan-tip').setAttribute('data-tip', `Reads the chosen file and builds the fillable PDF. Each browser can run about ${CFG.MAX_SCANS_PER_DAY} scans a day: one engine counts 1, Auto adds ${CFG.TEXT_COST} for the wording read, Compare all counts ${CFG.COMPARE_COST_EACH} per engine, and Gemini thorough reading counts ${CFG.PRECISE_COST}.`);
   $('fs-photo-input').addEventListener('change', handleFileSelect);
   $('fs-scan-btn').addEventListener('click', runScan);
   $('fs-download-btn').addEventListener('click', downloadPdf);
