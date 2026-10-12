@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — browser engine
-   Version: v6.6 (2026-10-10) — layout-spec rebuild on the v4.3 baseline (v6.6: engine-planning helpers + four new tunables; layout and PDF code unchanged since v6.4)
+   Version: v6.7 (2026-10-12) — layout-spec rebuild on the v4.3 baseline (v6.7: new Auto order, SLOW_ENGINES, runDetail helper; layout, PDF and wording-merge code unchanged since v6.4)
    Flow: photo/PDF -> Worker (Gemini) -> layout spec -> pdf-lib fillable PDF.
    All tunables live in FS_CONFIG. Full notes: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    and FORM_SCANNER_HANDOFF.md. Nothing here is sent anywhere except the one
@@ -9,7 +9,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'v6.6 (2026-10-10)';
+const VERSION = 'v6.7 (2026-10-12)';
 
 /* ---------------- CONFIG (edit here only) ---------------- */
 const FS_CONFIG = {
@@ -27,10 +27,11 @@ const FS_CONFIG = {
   TEXT_COST: 0.5,                // the cheap Gemini wording read counts as this many scans
   MAX_FIELDS: 1500,              // safety cap on fillable fields per form
   // ---- v6.6: engines. The list of engines itself comes from the Worker (any engine with a key shows up); these only say how to use them.
-  AUTO_ORDER: ['groq', 'qwen', 'gemini'],   // Auto = structure engines, best first: the first that is set up AND answers wins. Gemini last (its layout reading is usually rougher).
-  WORDING_ORDER: ['gemini', 'mistral', 'cfscout'],   // Auto: who reads the printed words at the same time; the first that answers wins
+  AUTO_ORDER: ['cfqwen', 'dots', 'orfree', 'groq', 'gemini'],   // Auto = structure engines, best first: the first that is set up AND answers wins. v6.7 order is a starting point: re-rank it after a Compare all on a SHARP source. Gemini last (its layout reading is usually rougher). qwen (OpenRouter free) is retired, so Auto no longer tries it.
+  WORDING_ORDER: ['gemini', 'mistral'],   // Auto: who reads the printed words at the same time; the first that answers wins. cfscout (Llama 4 Scout) dropped in v6.7: judged the worst reader on 2026-10-12.
   COMPARE_COST_EACH: 0.5,        // "Compare all": every engine counts this much against the daily cap
   SMALL_IMAGE_KB: 150,           // an engine that says the picture is too big gets one retry with a copy this small
+  SLOW_ENGINES: ['cfqwen', 'dots', 'orfree', 'kimi'],   // engines that think before answering: while they run the page says "allow 1 to 3 minutes"
   ENGINES_FALLBACK: [            // used only if the Worker cannot be asked for its list (offline, or an older Worker)
     { id: 'qwen', label: 'Qwen3.8-27B · OpenRouter free', ready: true, needs: '', free: true },
     { id: 'gemini', label: 'Gemini', ready: true, needs: '', free: true },
@@ -1017,11 +1018,24 @@ function planAll(engines, order) {                                   // Compare 
   return first.concat(arr(engines).filter((e) => e && e.ready && !first.includes(e.id)).map((e) => e.id));
 }
 
+/* ---------------- run detail (v6.7) ----------------
+   One line under a comparison-log row: what the call used. `meta` is the Worker's _meta ({ usage: { in, out, neurons? }, tries, fallback }). */
+function runDetail(meta) {
+  if (!meta || typeof meta !== 'object') return '';
+  const p = [], u = meta.usage && typeof meta.usage === 'object' ? meta.usage : {}, n = (v) => Math.round(v).toLocaleString('en-US');
+  const tin = Number(u.in) || 0, tout = Number(u.out) || 0, neu = Number(u.neurons) || 0;     // junk (strings, undefined) counts as 0, never prints "NaN"
+  if (tin || tout) p.push(`${n(tin)} in / ${n(tout)} out tokens`);
+  if (neu) p.push(`about ${n(neu)} neurons (${Math.max(1, Math.round(neu / 100))}% of the free 10,000 a day)`);
+  if (meta.tries > 1) p.push(`${meta.tries} tries`);
+  if (meta.fallback) p.push(String(meta.fallback).trim().slice(0, 60));
+  return p.join(' \u00b7 ');
+}
+
 /* ---------------- exports (browser global + Node tests) ---------------- */
 const ENGINE = {
   VERSION, FS_CONFIG, PAGE_SIZES, parseItem, normalizeSpec, resolvePage, buildFillablePdf,
   wrapLines, qaFields, labelForSize, measureContent, mergeWording, similarity, textSlots, normTxt, cleanText,
-  planAuto, planWording, planAll,
+  planAuto, planWording, planAll, runDetail,
 };
 root.FormScannerEngine = ENGINE;
 if (typeof module !== 'undefined' && module.exports) module.exports = ENGINE;

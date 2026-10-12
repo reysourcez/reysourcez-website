@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.6 (2026-10-10) — engines come from the Worker (any engine with a key shows up), Auto tries them best-first, Compare all runs every ready engine, the wording read falls back across engines (on top of v6.5: full engine errors in the log; v6.4: source/output side by side, log by source, tooltips)
+   Version: v6.7 (2026-10-12) — log rows show tokens / neurons / tries, slow engines get an "allow minutes" message (on top of v6.6: engines come from the Worker (any engine with a key shows up), Auto tries them best-first, Compare all runs every ready engine, the wording read falls back across engines (on top of v6.5: full engine errors in the log; v6.4: source/output side by side, log by source, tooltips)
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the Worker calls: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.6 (2026-10-10)');
+console.info('[Form Scanner] page build: v6.7 (2026-10-12)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -565,7 +565,7 @@ async function tryEngine(engine, note, precise, entry, cur, cost) {
     const spec = E.normalizeSpec(raw);
     if (!spec.bands.length) throw Object.assign(new Error('No fields or tables found'), { secs, label });
     const page = E.resolvePage(spec, cur.src);
-    logRun({ label, secs, spec, page, items: countItems(spec), srcId: entry.id });
+    logRun({ label, secs, spec, page, items: countItems(spec), srcId: entry.id, detail: E.runDetail(raw._meta) });
     return { spec, page, label, secs };
   } catch (err) {
     logRun({ label: err.label || name, secs: err.secs != null ? err.secs : (performance.now() - t0) / 1000, error: err.message || 'Error', srcId: entry.id });
@@ -587,7 +587,7 @@ async function runInOrder(ids, auto, ctx) {
   for (let i = 0; i < ids.length; i++) {
     const id = ids[i];
     if (auto && id !== 'gemini' && !wording && E.planWording(CFG.WORDING_ORDER, engines).length) wording = wordingRead(precise, entry, cur);
-    progress(`Reading the form with ${engLabel(id)}${wording && id !== 'gemini' ? ' (the wording is read at the same time)' : ''}\u2026 ${id === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
+    progress(`Reading the form with ${engLabel(id)}${wording && id !== 'gemini' ? ' (the wording is read at the same time)' : ''}\u2026 ${(CFG.SLOW_ENGINES || []).includes(id) ? 'this one thinks first: allow 1 to 3 minutes.' : id === 'gemini' && precise ? 'this can take up to half a minute.' : 'this can take a few seconds.'}`);
     try {
       let r = await tryEngine(id, note, precise, entry, cur, 1);
       if (wording && id !== 'gemini') {
@@ -617,7 +617,7 @@ async function runCompare(ids, ctx) {
   const { entry, cur, note, precise, live, progress } = ctx;
   let done = 0, okCount = 0, shownLabel = '', firstErr = null;
   const total = ids.length;
-  progress(`Reading the form with ${total} engines at the same time\u2026 the first answer appears here, the log collects the rest.`);
+  progress(`Reading the form with ${total} engines at the same time\u2026 the first answer appears here, the log collects the rest. The thinking engines can take 1 to 3 minutes.`);
   await Promise.allSettled(ids.map((id) => tryEngine(id, note, precise, entry, cur, CFG.COMPARE_COST_EACH).then((r) => {
     done++; okCount++;
     if (!live()) return;
@@ -675,7 +675,7 @@ function renderRunLog() {
       html += `<td>${r.n}</td><td title="${escapeHTML(r.label)}">${escapeHTML(shortEngine(r.label))}</td><td>${r.secs.toFixed(1)} s</td>`;
       html += r.error ? `<td colspan="2" class="fs-runlog-err" title="${escapeHTML(String(r.error))}">Failed: ${escapeHTML(String(r.error).slice(0, 320))}</td>`
         : r.info ? `<td colspan="2">${escapeHTML(r.info)}</td>`
-        : `<td>${r.spec.bands.length} sections, ${r.items} items</td><td class="fs-act">${shown ? '<button type="button" class="fs-mini" disabled>Showing</button>' : `<button type="button" class="fs-mini" data-show="${k}">Show</button>`} <button type="button" class="fs-mini" data-pdf="${k}">PDF</button></td>`;
+        : `<td>${r.spec.bands.length} sections, ${r.items} items${r.detail ? `<div class="fs-runlog-note">${escapeHTML(r.detail)}</div>` : ''}</td><td class="fs-act">${shown ? '<button type="button" class="fs-mini" disabled>Showing</button>' : `<button type="button" class="fs-mini" data-show="${k}">Show</button>`} <button type="button" class="fs-mini" data-pdf="${k}">PDF</button></td>`;
       html += '</tr>';
     }
     i = j;

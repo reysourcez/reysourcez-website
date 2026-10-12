@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — multi-engine proxy (Cloudflare Worker)
-   Version: v6.6 (2026-10-10) — engine registry (PROVIDERS below). Returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.7 (2026-10-12) — engine registry (PROVIDERS below). v6.7: Qwen3.8-27B on Workers AI (cfqwen), pinned Dots3-Note (dots), per-engine timeout, token/neuron usage + tries in _meta, Groq "Request too large" no longer reported as a rate limit. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). All API keys live ONLY here, as encrypted secrets; an engine whose
    key is missing simply stays off and the page does not offer it. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: <engine id>, mode?: "text" }
@@ -9,7 +9,7 @@
    TO ADD AN ENGINE: one entry in PROVIDERS (kind "openai" fits most), add its secret in Cloudflare, Deploy. Nothing else.
    ============================================================ */
 
-const VERSION = 'v6.6 (2026-10-10)';
+const VERSION = 'v6.7 (2026-10-12)';
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
 
 // Gemini model per tier. Aliases hot-swap to newer releases; pin a version here if results ever drift.
@@ -38,9 +38,17 @@ const NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
 
 const PROVIDERS = {
   gemini: { kind: 'gemini', label: 'Gemini', keyEnv: 'GEMINI_API_KEY', free: true },   // Google AI Studio free tier; reads PDFs directly
+  // v6.7: the same Qwen3.8-27B that gave ~95% structure through OpenRouter free, now hosted by Cloudflare itself (Workers AI: vision + reasoning). Same binding as the Llama engine below: no key, no location problem.
+  // Free = the 10,000 neurons a day Workers AI allows (40,909 neurons per M input tokens, 290,909 per M output tokens; Cloudflare pricing page, updated 2026-10-09): a scan costs roughly 1,000-2,500 neurons, so about 4-8 scans a day.
+  // Cloudflare's default reasoning level is "xhigh" (very token-hungry): reasoning_effort "low" is also what the OpenRouter route used. max_completion_tokens 12000 caps one scan at about 3,500 neurons. timeoutMs: it thinks first, so allow minutes.
+  cfqwen: { kind: 'cfai', label: 'Qwen3.8-27B · Cloudflare', binding: 'AI', model: '@cf/qwen/qwen3.8-27b', free: true, maxTokens: 12000, maxField: 'max_completion_tokens',
+    cf: { reasoning_effort: 'low' }, neurons: [40909, 290909], timeoutMs: 175000 },
   // Same Qwen model as the old free OpenRouter route, hosted by Groq. Free plan: 30 requests/min, 1,000/day, 8K tokens/min (so ~1 scan a minute). Preview model.
   groq: { kind: 'openai', label: 'Qwen3.8-27B · Groq', url: 'https://api.groq.com/openai/v1/chat/completions', keyEnv: 'GROQ_API_KEY', model: 'qwen/qwen3.8-27b', free: true,
     json: true, reasoning: 'groq', maxField: 'max_completion_tokens', maxTokens: 16384, tokenBudget: 7600, imageTokens: 2048 },
+  // v6.7: pinned instead of the random router pick. 2026-10-12 comparison: Dots3-Note Preview (Dots Studio / Xiaohongshu, 280B MoE with 16B active, vision + reasoning, free on OpenRouter since 2026-08-14) gave the best STRUCTURE of every engine tried but weak words; Auto pairs it with Gemini's wording read.
+  dots: { kind: 'openai', label: 'Dots3-Note Preview · OpenRouter free', url: OPENROUTER_URL, keyEnv: 'OPENROUTER_API_KEY', model: 'dots-studio/dots-3-note-preview:free', free: true,
+    json: true, reasoning: 'openrouter', maxTokens: 16384, timeoutMs: 175000, headers: { 'X-Title': 'Reysourcez Form Scanner' } },
   // The old route. OpenRouter now answers "This model is unavailable for free" (2026-10-10); kept listed in case the free version returns.
   qwen: { kind: 'openai', label: 'Qwen3.8-27B · OpenRouter free', url: OPENROUTER_URL, keyEnv: 'OPENROUTER_API_KEY', model: 'qwen/qwen3.8-27b:free', free: true,
     json: true, reasoning: 'openrouter', maxTokens: 16384, headers: { 'X-Title': 'Reysourcez Form Scanner' } },
@@ -318,20 +326,29 @@ function readJson(text) {
   return null;
 }
 
-async function post(url, init) {
+async function post(url, init, ms) {
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), UPSTREAM_TIMEOUT_MS);
+  const timer = setTimeout(() => ctl.abort(), ms || UPSTREAM_TIMEOUT_MS);
   try { return await fetch(url, Object.assign({}, init, { signal: ctl.signal })); }
   finally { clearTimeout(timer); }
 }
 const isAbort = (e) => !!e && e.name === 'AbortError';
 const fail = (status, error, code) => ({ ok: false, status, error, code: code || '' });
-const tooSlow = (def) => def.label + ' took too long (over ' + UPSTREAM_TIMEOUT_MS / 1000 + ' s). Try again.';
+const tooSlow = (def) => def.label + ' took too long (over ' + (def.timeoutMs || UPSTREAM_TIMEOUT_MS) / 1000 + ' s). Try again.';
+// v6.7: token counts as the provider reports them (OpenAI-style "usage"); neurons only for Workers AI engines, from the published per-million rates in the registry
+function usageOf(def, u) {
+  if (!u || typeof u !== 'object') return null;
+  const tin = Number(u.prompt_tokens != null ? u.prompt_tokens : u.input_tokens), tout = Number(u.completion_tokens != null ? u.completion_tokens : u.output_tokens);
+  const out = { in: Number.isFinite(tin) ? tin : 0, out: Number.isFinite(tout) ? tout : 0 };
+  if (!out.in && !out.out) return null;
+  if (def.neurons) out.neurons = Math.round(out.in * def.neurons[0] / 1e6 + out.out * def.neurons[1] / 1e6);
+  return out;
+}
 
 /* Turns a provider's error into one plain sentence + a short code, and appends the provider's own words (up to 300 characters)
    so the comparison log always shows the real reason. */
 function classify(def, status, rawMsg, rc, retryAfter) {
-  const m = String(rawMsg == null ? '' : rawMsg).replace(/\s+/g, ' ').trim();
+  const m = String(rawMsg == null ? '' : rawMsg).replace(/\s+/g, ' ').replace(/ in organization `[^`]*`/i, '').replace(/ service tier `[^`]*`/i, '').trim();   // v6.7: the organisation id is noise (and private); dropping it keeps Groq's \"Limit N, Requested M\" inside the 300 characters
   const said = m ? ' ' + def.label + ' said: ' + m.slice(0, 300) : '';
   if (/location is not supported|not available in your (country|region)|not supported in your (country|region)|unsupported (country|region|territory)/i.test(m)) {
     return { code: 'location', status: 502, text: def.label + ' refused this request ("location is not supported"). That check looks at where the Worker ran' + (rc && rc.colo ? ' (Cloudflare ' + rc.colo + ')' : '') + ', not where you are. It comes and goes: try again, or use another engine.' + said };
@@ -339,6 +356,9 @@ function classify(def, status, rawMsg, rc, retryAfter) {
   if (/unavailable for free|no longer free|use this slug instead/i.test(m)) {
     const slug = (m.match(/slug instead:?\s*([^\s"',]+)/i) || [])[1] || '';
     return { code: 'retired_free', text: def.label + ': OpenRouter says this model is no longer free' + (slug ? ' (it offers the paid id ' + slug + ')' : '') + '. Use another engine; this one stays listed in case the free version returns.' + said };
+  }
+  if (/request too large/i.test(m)) {   // v6.7: Groq 413 "Limit N, Requested M": this ONE request is bigger than the free per-minute allowance, so waiting never helps; the page retries once with a smaller picture
+    return { code: 'image_too_large', status: 413, text: def.label + ': this request is bigger than the free per-minute allowance (picture + instructions + answer together), so waiting will not help. The page retries once with a smaller picture; if that fails, use another engine.' + said };
   }
   if (status === 429 || /tokens per minute|\bTPM\b|rate.?limit|too many requests|resource.?exhausted/i.test(m)) {
     const wait = retryAfter > 0 ? ' Try again in about ' + Math.ceil(retryAfter) + ' s.' : ' Wait a minute and try again.';
@@ -370,14 +390,15 @@ async function callOpenAI(env, def, a, rc) {
   ];
   if (a.note) content.push({ type: 'text', text: NOTE_PREFIX + a.note });
   const headers = Object.assign({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + env[def.keyEnv] }, def.headers || {});
-  let useReasoning = !!def.reasoning, useJson = !!def.json, fallback = '', retried404 = false, resp = null;
+  let useReasoning = !!def.reasoning, useJson = !!def.json, fallback = '', retried404 = false, resp = null, tries = 0;
   for (let attempt = 0; attempt < 4; attempt++) {
+    tries++;
     const payload = { model: def.model, messages: [{ role: 'user', content }], temperature: 0 };
     payload[def.maxField || 'max_tokens'] = a.maxOut;
     if (useJson) payload.response_format = { type: 'json_object' };
     if (useReasoning && def.reasoning === 'openrouter') payload.reasoning = { effort: 'low' };
     if (useReasoning && def.reasoning === 'groq') payload.reasoning_effort = 'none';
-    try { resp = await post(def.url, { method: 'POST', headers, body: JSON.stringify(payload) }); }
+    try { resp = await post(def.url, { method: 'POST', headers, body: JSON.stringify(payload) }, def.timeoutMs); }
     catch (e) { return isAbort(e) ? fail(502, tooSlow(def), 'timeout') : fail(502, 'Could not reach ' + def.label + '. Try again.', 'network'); }
     if (resp.ok) break;
     const errText = await resp.text();
@@ -405,7 +426,7 @@ async function callOpenAI(env, def, a, rc) {
   }
   const m = choice.message || {};
   const text = typeof m.content === 'string' ? m.content : (Array.isArray(m.content) ? m.content.map((p) => (p && p.text) || '').join('') : '');
-  return { ok: true, text, model: typeof data.model === 'string' ? data.model : def.model, finish: choice.finish_reason || '', fallback: fallback.trim() };
+  return { ok: true, text, model: typeof data.model === 'string' ? data.model : def.model, finish: choice.finish_reason || '', fallback: fallback.trim(), usage: usageOf(def, data.usage), tries };
 }
 
 /* ---------------- adapter: Anthropic Messages API ---------------- */
@@ -432,27 +453,36 @@ async function callAnthropic(env, def, a, rc) {
   let data;
   try { data = await resp.json(); } catch (e) { return fail(502, def.label + ' returned an unreadable answer. Scan again.', 'bad_json'); }
   const text = (Array.isArray(data.content) ? data.content : []).filter((b) => b && b.type === 'text').map((b) => b.text || '').join('');
-  return { ok: true, text, model: typeof data.model === 'string' ? data.model : def.model, finish: data.stop_reason === 'max_tokens' ? 'length' : (data.stop_reason || ''), fallback: '' };
+  return { ok: true, text, model: typeof data.model === 'string' ? data.model : def.model, finish: data.stop_reason === 'max_tokens' ? 'length' : (data.stop_reason || ''), fallback: '', usage: usageOf(def, data.usage) };
 }
 
 /* ---------------- adapter: Workers AI (binding named AI; no key, runs inside Cloudflare) ---------------- */
 async function callCfai(env, def, a) {
   const dataUrl = 'data:' + a.mime + ';base64,' + a.image;
   const content = [{ type: 'text', text: a.prompt + (a.note ? '\n\n' + NOTE_PREFIX + a.note : '') }, { type: 'image_url', image_url: { url: dataUrl } }];
-  let out, timer;
-  try {
-    out = await Promise.race([
-      env[def.binding].run(def.model, { messages: [{ role: 'user', content }], max_tokens: a.maxOut, temperature: 0 }),
-      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('__timeout__')), UPSTREAM_TIMEOUT_MS); }),
-    ]);
-  } catch (e) {
-    const m = String((e && e.message) || e || '');
-    console.error('[Form Scanner]', def.label, m.slice(0, 400));
-    if (m === '__timeout__') return fail(502, tooSlow(def), 'timeout');
-    if (/daily free allocation|neurons|\b4006\b/i.test(m)) return fail(429, def.label + ': the free daily Workers AI allowance (10,000 neurons) is used up. It resets at 00:00 UTC.' + ' Cloudflare said: ' + m.slice(0, 200), 'rate_limited');
-    if (/agree|license|licence|terms/i.test(m)) return fail(403, def.label + ': Cloudflare asks you to accept this model\u2019s license once. In the dashboard open Workers AI > Playground, pick the model, send any message and accept. Cloudflare said: ' + m.slice(0, 200), 'license');
-    return fail(502, def.label + ' error. Cloudflare said: ' + m.slice(0, 300), '');
-  } finally { clearTimeout(timer); }
+  const ms = def.timeoutMs || UPSTREAM_TIMEOUT_MS;
+  let extras = Object.assign({}, def.cf || {}), fallback = '', tries = 0, out = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    tries++;
+    const input = Object.assign({ messages: [{ role: 'user', content }], temperature: 0 }, extras);
+    input[def.maxField || 'max_tokens'] = a.maxOut;
+    let timer;
+    try {
+      out = await Promise.race([
+        env[def.binding].run(def.model, input),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('__timeout__')), ms); }),
+      ]);
+      break;
+    } catch (e) {
+      const m = String((e && e.message) || e || '');
+      console.error('[Form Scanner]', def.label, m.slice(0, 400));
+      if (m === '__timeout__') return fail(502, tooSlow(def), 'timeout');
+      if (attempt === 0 && Object.keys(extras).length && /reasoning_effort|chat_template|unknown (field|param)|unexpected (field|param)/i.test(m)) { extras = {}; fallback += 'no-reasoning-option '; continue; }   // v6.7: one retry without the extra options if the model rejects them
+      if (/daily free allocation|neurons|\b4006\b/i.test(m)) return fail(429, def.label + ': the free daily Workers AI allowance (10,000 neurons) is used up. It resets at 00:00 UTC.' + ' Cloudflare said: ' + m.slice(0, 200), 'rate_limited');
+      if (/agree|license|licence|terms/i.test(m)) return fail(403, def.label + ': Cloudflare asks you to accept this model\u2019s license once. In the dashboard open Workers AI > Playground, pick the model, send any message and accept. Cloudflare said: ' + m.slice(0, 200), 'license');
+      return fail(502, def.label + ' error. Cloudflare said: ' + m.slice(0, 300), '');
+    } finally { clearTimeout(timer); }
+  }
   let text = '';
   if (out && typeof out.response === 'string') text = out.response;
   else if (out && out.response && typeof out.response === 'object') text = JSON.stringify(out.response);
@@ -461,7 +491,7 @@ async function callCfai(env, def, a) {
     text = typeof c === 'string' ? c : (Array.isArray(c) ? c.map((p) => (p && p.text) || '').join('') : '');
   } else if (out && out.result && typeof out.result.response === 'string') text = out.result.response;
   const fin = out && out.choices && out.choices[0] ? out.choices[0].finish_reason : '';
-  return { ok: true, text, model: def.model, finish: fin || '', fallback: '' };
+  return { ok: true, text, model: def.model, finish: fin || '', fallback: fallback.trim(), usage: usageOf(def, out && out.usage), tries };
 }
 
 /* ---------------- one handler for every non-Gemini engine ---------------- */
@@ -481,7 +511,7 @@ async function handleCompat(env, pid, def, mode, image, mime, note, rc) {
     return jsonResponse({ error: def.label + ': ' + why, code: r.finish === 'length' ? 'too_long' : 'bad_json' }, 502, rc);
   }
   const model = r.model || def.model;
-  const meta = { provider: pid, model, label: pid === 'orfree' && model !== def.model ? def.label + ' · ' + model : def.label, tier: 'n/a', ms: Date.now() - t0, fallback: r.fallback || '', colo: (rc && rc.colo) || '' };
+  const meta = { provider: pid, model, label: pid === 'orfree' && model !== def.model ? def.label + ' · ' + model : def.label, tier: 'n/a', ms: Date.now() - t0, fallback: r.fallback || '', colo: (rc && rc.colo) || '', usage: r.usage || null, tries: r.tries || 1 };
   if (mode === 'text') {
     const lines = list(parsed.lines, 600).filter((x) => typeof x === 'string').map((x) => x.trim().slice(0, 300)).filter(Boolean);
     return jsonResponse({ lines, _meta: Object.assign(meta, { mode: 'text' }) }, 200, rc);

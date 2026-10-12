@@ -264,3 +264,71 @@ Real end-to-end testing this round, not just static review — a genuine change 
 - **Groq's Qwen is a Preview model** and may be withdrawn; its 8K tokens/min means one scan a minute. A paid developer plan lifts both limits, not needed now.
 - Considered, not added: Z.ai GLM-4.6V-Flash (free, one request at a time), GitHub Models (8K input limit, too small for this prompt), Cohere trial (non-commercial), Moonshot's own Kimi API (paid; Kimi is reachable free through NVIDIA).
 - Earlier items still open: PDF-to-picture output preview, overlay compare, bounding boxes, structure is read-only, promote `.fs-tip` to the shared stylesheet.
+
+
+## 2026-10-12 — v6.7: Qwen is back for free (hosted by Cloudflare), Dots3-Note pinned, Auto reordered from the evidence, Groq "too large" explained
+
+**What prompted this.** A Compare all on `baucar pic.png` (the blurry Baucar Bayaran screenshot), then two single runs. The log:
+
+| # | Engine | Time | Result |
+|---|---|---|---|
+| 1 | Qwen3.8-27B · OpenRouter free | 0.9 s | Failed: "no longer free" (same as 2026-10-10) |
+| 2 | Qwen3.8-27B · Groq | 5.7 s | Failed: "Request too large … tokens per minute (TPM)" (the numbers were cut off) |
+| 3 | Gemini flash-lite-latest | 6.8 s | 9 sections, 35 items |
+| 4 | Llama 4 Scout · Workers AI | 25.1 s | 8 sections, 13 items |
+| 5 | OpenRouter free (auto-pick) · dots-3-note-preview | 147.5 s | 8 sections, 38 items |
+| 6 | Qwen3.8-27B · Groq, run alone | 8.0 s | 8 sections, 21 items ("not good") |
+| 7 | Qwen3.8-27B · OpenRouter free | 1.0 s | Failed (same as #1) |
+
+The request: the Qwen route that gave about 95% structure is gone; find out what to do now.
+
+**What the three downloaded PDFs show** (rendered next to the source, 2026-10-12):
+- **Dots3-Note (run 5):** the closest layout to the source: title block, two-column fields, the table, three "DISEMAK DAN DILULUSKAN OLEH" blocks stacked on the right of the signature area. Many words are wrong ("Lampiran B [Pia. 53 (1)]", "NO. AKUN", "DISEDAKAN OLEH", "AMOUNT (RM)", invented wording in the small table at the bottom).
+- **Gemini (run 3):** words are almost all right (no word error found in its labels; the source says "Lampiran 8"), but the layout is flattened: the outer frame, signature boxes and field boxes are lost and the tick boxes sit on top of their label.
+- **Llama 4 Scout (run 4):** an empty frame, a six-row table and loose lines. No labels at all.
+- **Qwen on Groq (run 6):** 8 sections and 21 items against 38 for Dots3. Judged "not good".
+
+So the 2026-10-06 recipe still holds (structure from one engine, wording from Gemini); only the structure engine has to change, and Auto must not lead with Groq or the retired OpenRouter route.
+
+**Would the existing wording merge repair Dots3's words?** Measured offline on the real text of the two PDFs (Gemini's printed labels standing in for its separate wording read, so the real result may differ a little): 51 Dots3 lines, 9 corrected automatically (NO. AKUN, DISEDAKAN OLEH, the three table-header cells, "AMOUNT DALAM PERKATAAN …", both footnotes and the printed rows of the small table), 5 left amber, 3 of those with the right one-click suggestion ("(NAMA JAWATANKUASA PENGURUSAN MASJID / SURAU)", "(ALAMAT MASJID / SURAU)" and the first row of the small table). The merge code was **not** changed.
+
+**Findings behind the changes** (read on the providers' own pages, 2026-10-12):
+1. **Cloudflare Workers AI hosts `@cf/qwen/qwen3.8-27b`** (model page): vision, function calling, reasoning with levels low / medium / xhigh and **xhigh as the default**, 262,144-token context. Pricing page (updated 2026-10-09): 40,909 neurons per million input tokens, 290,909 per million output tokens. It is not on the list of models that need a paid plan, so it runs inside the **free 10,000 neurons a day**. Prompt size is 6,049 characters; with the picture that is roughly 4,000 to 5,000 input tokens, plus 3,000 to 7,000 output tokens: about 1,000 to 2,500 neurons a scan, so about 4 to 8 scans a day (an estimate: v6.7 shows the real number in the log).
+2. **`dots-studio/dots-3-note-preview:free`** is a real OpenRouter model that can be named directly: Dots Studio (Xiaohongshu), 280B mixture-of-experts with 16B active, text + image in, reasoning, 512K context, Apache 2.0, released 2026-08-14, labelled Preview. The model id was also readable from the file name of the PDF the page produced for run 5.
+3. **Groq's 413 "Request too large … Limit N, Requested M"** means one request is bigger than the per-minute allowance (Groq's free plan: 8,000 tokens a minute per model, as reported in its rate-limit headers on 2026-09-29), so waiting never fixes it. v6.6 reported it as a rate limit ("wait a minute") and the 300-character cut hid the numbers behind a long organisation id. Why the same Groq request failed in Compare all and passed alone is unknown: the numbers were cut off.
+4. **Why Qwen on Groq is probably worse than Qwen on OpenRouter was** (a hypothesis, not confirmed): the OpenRouter route let the model think (`reasoning: low`) with up to 16,384 answer tokens; Groq's free budget forces "no reasoning" and about 3,000 answer tokens.
+5. The 147.5 s of run 5 is longer than the Worker's 55 s per-call limit. That limit only covers the wait for the provider's first reply (OpenAI-style engines), so either the answer was slow to arrive after an early start, or the Worker made several tries. The Worker did not record which. v6.7 records `tries`.
+
+**What changed.**
+- **Worker (redeploy):** new engine **`cfqwen`** (Qwen3.8-27B · Cloudflare, binding `AI`, `reasoning_effort: low`, `max_completion_tokens` 12,000 = about 3,500 neurons worst case, one automatic retry without the reasoning option if the model rejects it). New engine **`dots`** (pinned id, same request shape the router used for it). `timeoutMs` per engine (both 175 s). `_meta.usage` (tokens, and neurons for Cloudflare engines) and `_meta.tries` on every non-Gemini reply. Groq's "Request too large" is now `image_too_large` (so the page's existing retry with a smaller picture fires) and its message keeps "Limit N, Requested M" (organisation id and service tier are dropped from the text). Llama 4 Scout request is unchanged.
+- **Engine:** `AUTO_ORDER` = `cfqwen, dots, orfree, groq, gemini` (retired `qwen` removed); `WORDING_ORDER` = `gemini, mistral` (Llama 4 Scout removed); `SLOW_ENGINES`; `runDetail()` helper. Layout, PDF and wording-merge code unchanged.
+- **Page:** the grey run-detail line under each comparison-log row; "this one thinks first: allow 1 to 3 minutes" while a slow engine runs (and a sentence in the Compare all message); engine tooltip text updated. Version badge v6.7; `form-scanner.js?v=8`, `form-scanner-engine.js?v=6`.
+
+**Files and versions.**
+| File | Version | Cache-bust in HTML |
+|---|---|---|
+| `form-scanner.html` | v6.7 | n/a |
+| `form-scanner.js` | v6.7 | `?v=8` |
+| `form-scanner-engine.js` | v6.7 | `?v=6` |
+| `form-scanner-proxy-worker.js` | v6.7, **functional change: redeploy** | n/a |
+| `nav-config.js`, `site-config.js`, `styles.css` | unchanged (`styles.css?v=19`) | |
+
+**Tested (all mocked: this sandbox has no network).**
+- **Worker, 50 checks** (mocked Workers AI binding and mocked network): engine list, order and readiness; Qwen on Cloudflare (parameters sent, image part, neuron arithmetic 4,500 in + 3,200 out = 1,115 neurons, text mode cap 4,096, retry without the reasoning option, allowance used up, license, other errors, the per-engine timeout really fires); Dots3 request shape and `tries`; Groq "Request too large" using the real message from the 2026-10-12 log (numbers kept, organisation id gone, not retried, no "wait" advice); a genuine Groq rate limit still reported as one; Groq success; guards (unknown engines incl. `__proto__`, PDF to an image-only engine, no binding, no image); Gemini, location refusal and text mode unchanged; retired-free explanation; router label; Anthropic usage; Llama 4 Scout request unchanged.
+- **Engine, 18 checks:** Auto / wording / Compare all planning with different engines ready, `runDetail` (including junk input), the wording merge giving the same result as before on the real Dots3 and Gemini texts (9 corrected, 5 amber), the Worker's reply shape through `normalizeSpec`.
+- **Page, 31 checks in real Chromium with the real pdf-lib 1.17.1 and the Worker mocked:** engine list and greyed-out entries, Auto with Qwen on Cloudflare structure + Gemini wording (slow-engine message while running, 3 log rows, run detail with tokens and neurons, merged wording in the editor, exactly two Worker calls, live preview, downloaded PDF passes `qpdf --check`), Auto falling to Dots3 when Qwen's allowance is used up (amber message, failed row explains why, tries + fallback in the detail), Compare all (one structure call per ready engine, no merge, 0.5 per answering engine against the daily cap), and the Groq too-large answer followed by one retry with a smaller picture. No page errors in any scenario.
+
+**Not tested here:** any real provider. In particular: that `@cf/qwen/qwen3.8-27b` accepts this exact request through the binding (the model page's input schema lists `messages` with `image_url` parts, `reasoning_effort`, `max_completion_tokens`; its raw schema lists the reasoning levels as low / medium / high while the page text says low / medium / xhigh: "low" is valid in both); its real speed and real neuron use; Dots3's speed and rate limits when pinned. A wrong guess shows up as one plain log row.
+
+**Deploy.** (1) Cloudflare: paste `form-scanner-proxy-worker.js` into the Worker and Deploy. Nothing to add: the `AI` binding and `OPENROUTER_API_KEY` are already there (the Compare all showed Llama 4 Scout and OpenRouter as ready). (2) GitHub: replace `form-scanner.html`, `form-scanner.js`, `form-scanner-engine.js` and hard-refresh (Ctrl+F5). (3) Replace the two `.md` docs.
+
+**How to test (about 10 minutes, on a sharp source: Resit Rasmi or the original PDF).** (1) Reload: the Engine list should now show "Qwen3.8-27B · Cloudflare" and "Dots3-Note Preview · OpenRouter free". (2) Pick **Qwen3.8-27B · Cloudflare** alone and scan: read the grey line in the log (tokens, neurons) and compare the PDF with the source. (3) Pick **Auto** on the same file: expected Qwen structure + Gemini wording; if Qwen fails, the log says why and Auto moves on to Dots3. (4) Once, **Compare all**, then put the winner first in `AUTO_ORDER`.
+
+**KIV.**
+- Re-rank `AUTO_ORDER` from a Compare all on a sharp source: the Baucar PNG is the blurry one, so it favours whichever engine copes best with blur.
+- If the 10,000 neurons a day run short: Qwen3.8-27B is also listed on other free-tier lists (seen, **not verified, not added**: OVHcloud AI Endpoints with a 2-requests-a-minute anonymous tier per IP, which shared Cloudflare addresses will probably exhaust; OrcaRouter, a third-party gateway with a free Qwen id, whose data handling is unknown). The Workers Paid plan would lift the limit but is not free.
+- Try Qwen on Cloudflare with thinking switched off (`chat_template_kwargs.enable_thinking: false`, documented on the model's input schema) to see the speed / quality trade-off.
+- A "merge Gemini's words into this row" button in the log, so any structure row from a Compare all can be combined without re-running it (the wording read could be cached per source).
+- If Dots3 stays slow, the log's `tries` will say whether it is one long call or several.
+- Groq: after one real success, compare `usage.in` with the `imageTokens: 2048` guess in the registry and correct it.
+- Earlier items still open: PDF-to-picture output preview, overlay compare, bounding boxes, structure is read-only, promote `.fs-tip` to the shared stylesheet, Cloudflare rate-limiting rule or Turnstile for the public Worker.
