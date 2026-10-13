@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — multi-engine proxy (Cloudflare Worker)
-   Version: v6.7 (2026-10-12) — engine registry (PROVIDERS below). v6.7: Qwen3.8-27B on Workers AI (cfqwen), pinned Dots3-Note (dots), per-engine timeout, token/neuron usage + tries in _meta, Groq "Request too large" no longer reported as a rate limit. Returns a LAYOUT SPEC (bands > columns > cells > items)
+   Version: v6.8 (2026-10-13) — engine registry (PROVIDERS below). v6.8: the prompt now keeps grey sample / placeholder text as printed text (Qwen on Cloudflare was dropping it). v6.7: Qwen3.8-27B on Workers AI (cfqwen), pinned Dots3-Note (dots), per-engine timeout, token/neuron usage + tries in _meta, Groq "Request too large" no longer reported as a rate limit. Returns a LAYOUT SPEC (bands > columns > cells > items)
    Deploys to Cloudflare Workers (NOT to GitHub Pages). All API keys live ONLY here, as encrypted secrets; an engine whose
    key is missing simply stays off and the page does not offer it. Steps + glossary: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    Request : { image: "<base64>", mime_type, note?, tier?: "fast" | "precise", provider?: <engine id>, mode?: "text" }
@@ -9,7 +9,7 @@
    TO ADD AN ENGINE: one entry in PROVIDERS (kind "openai" fits most), add its secret in Cloudflare, Deploy. Nothing else.
    ============================================================ */
 
-const VERSION = 'v6.7 (2026-10-12)';
+const VERSION = 'v6.8 (2026-10-13)';
 const ALLOWED_ORIGINS = ['https://reysourcez.com', 'https://www.reysourcez.com'];
 
 // Gemini model per tier. Aliases hot-swap to newer releases; pin a version here if results ever drift.
@@ -179,7 +179,7 @@ const FORM_SCHEMA = {
 /* ---------------- prompt ---------------- */
 const PROMPT = `You turn a photo or PDF of a printed form into a compact LAYOUT SPEC (JSON). An app redraws the form from it as a clean, straight, fillable PDF, so copy the form's real STRUCTURE exactly: the same rows, columns, cells, boxes, lines, labels and order. Never simplify, reorder, merge, regroup or invent anything.
 
-TEXT: copy every printed word exactly as printed (same language, spelling, capitals and punctuation such as " :"). Keep pre-printed text such as letterhead and organisation names. Leave out handwriting, stamps, signatures, scanner shadows and the photo background. If the copy is already filled in, describe the blank template. Lines drawn with dots or underscores after a label are blanks: use F, never transcribe the dots.
+TEXT: copy every printed word exactly as printed (same language, spelling, capitals and punctuation such as " :"). Keep pre-printed text such as letterhead and organisation names. Leave out handwriting, stamps, signatures, scanner shadows and the photo background. If the copy is already filled in, describe the blank template. Grey or italic sample text inside an entry cell that tells the reader what to write (for example "Isi nama...", "Cth: 15/08/2026", "e.g. John Smith", "DD/MM/YYYY") is PRINTED text, not an answer: keep it, as the label of that entry's blank (F[line] Isi nama...). Only real handwriting or typed-in answers are left out. Lines drawn with dots or underscores after a label are blanks: use F, never transcribe the dots.
 
 STRUCTURE, top to bottom
 1. bands: cut the form into full-width horizontal bands in reading order. Give a band to every distinct block: a top-corner reference label, the title block, each group of fields, each table, each one-line row, the signature area, footnotes, each reference table.

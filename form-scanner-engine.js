@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — browser engine
-   Version: v6.7 (2026-10-12) — layout-spec rebuild on the v4.3 baseline (v6.7: new Auto order, SLOW_ENGINES, runDetail helper; layout, PDF and wording-merge code unchanged since v6.4)
+   Version: v6.8 (2026-10-13) — layout-spec rebuild on the v4.3 baseline (v6.8: Auto drops the random router, COMPARE_SKIP, stray size-flag words no longer printed; v6.7: SLOW_ENGINES, runDetail helper; layout, PDF and wording-merge code unchanged since v6.4)
    Flow: photo/PDF -> Worker (Gemini) -> layout spec -> pdf-lib fillable PDF.
    All tunables live in FS_CONFIG. Full notes: FORM_SCANNER_SETUP_AND_GLOSSARY.md
    and FORM_SCANNER_HANDOFF.md. Nothing here is sent anywhere except the one
@@ -9,7 +9,7 @@
 (function (root) {
 'use strict';
 
-const VERSION = 'v6.7 (2026-10-12)';
+const VERSION = 'v6.8 (2026-10-13)';
 
 /* ---------------- CONFIG (edit here only) ---------------- */
 const FS_CONFIG = {
@@ -27,11 +27,12 @@ const FS_CONFIG = {
   TEXT_COST: 0.5,                // the cheap Gemini wording read counts as this many scans
   MAX_FIELDS: 1500,              // safety cap on fillable fields per form
   // ---- v6.6: engines. The list of engines itself comes from the Worker (any engine with a key shows up); these only say how to use them.
-  AUTO_ORDER: ['cfqwen', 'dots', 'orfree', 'groq', 'gemini'],   // Auto = structure engines, best first: the first that is set up AND answers wins. v6.7 order is a starting point: re-rank it after a Compare all on a SHARP source. Gemini last (its layout reading is usually rougher). qwen (OpenRouter free) is retired, so Auto no longer tries it.
+  AUTO_ORDER: ['cfqwen', 'dots', 'groq', 'gemini'],   // Auto = structure engines, best first: the first that is set up AND answers wins. v6.8: the random free router (orfree) is out after the 2026-10-13 tests (it picked Dots3 twice, failed once, and picked a weak 30B model once; Dots3 is pinned as dots). Gemini last (its layout reading is usually rougher). qwen (OpenRouter free) is retired, so Auto no longer tries it.
   WORDING_ORDER: ['gemini', 'mistral'],   // Auto: who reads the printed words at the same time; the first that answers wins. cfscout (Llama 4 Scout) dropped in v6.7: judged the worst reader on 2026-10-12.
   COMPARE_COST_EACH: 0.5,        // "Compare all": every engine counts this much against the daily cap
   SMALL_IMAGE_KB: 150,           // an engine that says the picture is too big gets one retry with a copy this small
   SLOW_ENGINES: ['cfqwen', 'dots', 'orfree', 'kimi'],   // engines that think before answering: while they run the page says "allow 1 to 3 minutes"
+  COMPARE_SKIP: ['qwen'],        // v6.8: Compare all leaves these out (the retired OpenRouter free Qwen route can only fail); they stay selectable one at a time
   ENGINES_FALLBACK: [            // used only if the Worker cannot be asked for its list (offline, or an older Worker)
     { id: 'qwen', label: 'Qwen3.8-27B · OpenRouter free', ready: true, needs: '', free: true },
     { id: 'gemini', label: 'Gemini', ready: true, needs: '', free: true },
@@ -112,6 +113,7 @@ function parseFlags(s) {
   return f;
 }
 
+const FLAG_WORD = /^(xs|sm|md|lg|xl)$/;   // v6.8: a size flag the model wrote as text (Gemini wrote "F[line] xs" on 2026-10-13 and "xs" printed next to three signature lines)
 function parseItem(raw) {
   const s0 = String(raw == null ? '' : raw).replace(/\r/g, '').trim();
   if (!s0) return null;
@@ -136,9 +138,11 @@ function parseItem(raw) {
     if (!it.layout) it.layout = 'inline';
   } else if (kind === 'T') {
     it.text = cleanText(body, 400);
+    if (FLAG_WORD.test(it.text)) it.text = '';
     if (!it.text) return null;
   } else if (kind === 'F') {
     it.text = oneLine(body, 200);
+    if (FLAG_WORD.test(it.text)) it.text = '';
   } else if (kind === 'SP') {
     it.weight = it.weight || 1;
   }
@@ -1013,9 +1017,10 @@ const readySet = (engines) => new Set(arr(engines).filter((e) => e && e.ready).m
 const inOrder = (order, engines) => { const ready = readySet(engines); return arr(order).filter((id, i, a) => ready.has(id) && a.indexOf(id) === i); };
 const planAuto = (order, engines) => inOrder(order, engines);        // structure engines for Auto: the preferred ones that are set up, in that order
 const planWording = (order, engines) => inOrder(order, engines);     // wording readers: same rule
-function planAll(engines, order) {                                   // Compare all: every ready engine, preferred ones first
-  const first = inOrder(order, engines);
-  return first.concat(arr(engines).filter((e) => e && e.ready && !first.includes(e.id)).map((e) => e.id));
+function planAll(engines, order, skip) {                             // Compare all: every ready engine, preferred ones first; `skip` (v6.8) = ids left out
+  const drop = new Set(arr(skip));
+  const first = inOrder(order, engines).filter((id) => !drop.has(id));
+  return first.concat(arr(engines).filter((e) => e && e.ready && !drop.has(e.id) && !first.includes(e.id)).map((e) => e.id));
 }
 
 /* ---------------- run detail (v6.7) ----------------

@@ -1,6 +1,6 @@
 /* ============================================================
    Form Scanner — page wiring
-   Version: v6.7 (2026-10-12) — log rows show tokens / neurons / tries, slow engines get an "allow minutes" message (on top of v6.6: engines come from the Worker (any engine with a key shows up), Auto tries them best-first, Compare all runs every ready engine, the wording read falls back across engines (on top of v6.5: full engine errors in the log; v6.4: source/output side by side, log by source, tooltips)
+   Version: v6.8 (2026-10-13) — Compare all skips retired engines (COMPARE_SKIP) and counts only the engines it will really call (on top of v6.7: log rows show tokens / neurons / tries, slow engines get an "allow minutes" message; v6.6: engines come from the Worker (any engine with a key shows up), Auto tries them best-first, Compare all runs every ready engine, the wording read falls back across engines (on top of v6.5: full engine errors in the log; v6.4: source/output side by side, log by source, tooltips)
    Vanilla JS, loaded after form-scanner-engine.js (the layout/PDF-building
    logic, see that file) and pdf-lib (CDN script tag in form-scanner.html).
    This file only does DOM + the Worker calls: file selection, calling
@@ -11,7 +11,7 @@
    other tool here.
    ============================================================ */
 
-console.info('[Form Scanner] page build: v6.7 (2026-10-12)');
+console.info('[Form Scanner] page build: v6.8 (2026-10-13)');
 
 const E = window.FormScannerEngine;
 const CFG = E.FS_CONFIG;
@@ -120,7 +120,8 @@ function fillEngineSelect() {
   const ready = engines.filter((e) => e.ready), off = engines.filter((e) => !e.ready);
   const opt = (v, t, dis) => `<option value="${escapeHTML(v)}"${dis ? ' disabled' : ''}>${escapeHTML(t)}</option>`;
   let html = opt('auto', 'Auto: best available (recommended)');
-  if (ready.length > 1) html += opt('all', `Compare all ready engines (${ready.length})`);
+  const nAll = E.planAll(engines, CFG.AUTO_ORDER, CFG.COMPARE_SKIP).length;
+  if (nAll > 1) html += opt('all', `Compare all ready engines (${nAll})`);
   if (ready.length) html += `<optgroup label="One engine">${ready.map((e) => opt(e.id, e.label + (e.free === false ? ' (paid)' : ''))).join('')}</optgroup>`;
   if (off.length) html += `<optgroup label="Not set up yet (see the setup doc)">${off.map((e) => opt(e.id, `${e.label}: needs ${e.needs}`, true)).join('')}</optgroup>`;
   sel.innerHTML = html;
@@ -641,7 +642,7 @@ async function runScan() {
   const choice = $('fs-provider').value;                      // auto | all | an engine id
   const precise = $('fs-precise').checked;
   const note = $('fs-note').value.trim();
-  const ids = choice === 'auto' ? E.planAuto(CFG.AUTO_ORDER, engines) : choice === 'all' ? E.planAll(engines, CFG.AUTO_ORDER) : (eng(choice) && eng(choice).ready ? [choice] : []);
+  const ids = choice === 'auto' ? E.planAuto(CFG.AUTO_ORDER, engines) : choice === 'all' ? E.planAll(engines, CFG.AUTO_ORDER, CFG.COMPARE_SKIP) : (eng(choice) && eng(choice).ready ? [choice] : []);
   if (!ids.length) { setStatus('No engine is set up on the server yet. Add a key to the Worker (see the setup doc), then reload this page.', 'error'); return; }
   scanning = true; updateScanBtn();
   paintSource(entry);                                         // the left pane may be showing an older run's source

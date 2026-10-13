@@ -332,3 +332,65 @@ So the 2026-10-06 recipe still holds (structure from one engine, wording from Ge
 - If Dots3 stays slow, the log's `tries` will say whether it is one long call or several.
 - Groq: after one real success, compare `usage.in` with the `imageTokens: 2048` guess in the registry and correct it.
 - Earlier items still open: PDF-to-picture output preview, overlay compare, bounding boxes, structure is read-only, promote `.fs-tip` to the shared stylesheet, Cloudflare rate-limiting rule or Turnstile for the public Worker.
+
+
+## 2026-10-13 — v6.8: the four-way test on the two real forms; printed sample text kept; Auto drops the random router; stray "xs" fixed
+
+**What prompted this.** The first full test of v6.7 on the two real forms, Resit Rasmi and the Daily Wastage Sheet, each as a screenshot and as the original PDF, with Compare all every time (28 log rows) plus the 20 downloaded PDFs. The owner's reading, in their words: (1) Resit image: Qwen on Cloudflare best, almost 95%. (2) Resit PDF: Dots3 best, almost 95%. (3) Wastage image: Dots3 looks best; Gemini shows the sample answer beside the editable cells, some others don't, a plus for Gemini. (4) Wastage PDF: same plus for Gemini, and "Disediakan oleh" is centred with the cell above it (the best Gemini did on this form); on par with Qwen, but Qwen's cells look a bit better; OpenRouter (the free router) the worst, even worse than in the other three tests. Also asked: why most engines cannot read a PDF (answered below).
+
+**The two original PDFs were not in the project folder when this was analysed** (it held only the v6.7 files), so words were scored against a majority of the crisp-source outputs, not against the originals, and layout was judged by looking at the PDFs next to each other. Re-attach the originals to score layout objectively.
+
+**Run data (from the log).**
+| Engine | Time | Answer tokens | Notes |
+|---|---|---|---|
+| Qwen3.8-27B · Cloudflare | 51.4 / 48.7 / 76.7 / 107.2 s (average 71 s) | 2,171 / 2,167 / 3,441 / 3,126 | 771 / 810 / 1,142 / 1,089 neurons (average about 950, so about 10 scans a day; the v6.7 estimate of 4 to 8 was cautious) |
+| Dots3-Note (pinned) | 112.0 / 77.2 / 110.0 / 134.4 s (average 108 s) | 10,631 / 7,224 / 11,050 / 13,253 | Every row had one try: the slowness is one long thinking call, not retries. This settles the open question from v6.7 (the 147 s run) |
+| Router (auto-pick) | 84.0 and 116.9 s when it picked Dots3 | 7,866 / 11,448 | One "no usable answer" (45 s), once it picked `nemotron-3-nano-omni-30b-a3b-reasoning` (the worst result) |
+| Qwen3.8-27B · Groq | 3.1 to 5.6 s | 880 to 2,012 | "Not bad" |
+| Gemini flash-lite | 3.5 to 6.5 s | n/a | 1 to 2 sections on the Resit, 5 to 6 on the wastage form |
+| Llama 4 Scout | 27 to 40 s | 800 to 1,369 | Two "no usable answer", poor layout |
+
+**Words, scored (new, mine).** Reference = the words that at least 3 of the 4 crisp-source (PDF) outputs agree on. "Found" = share of reference words present; "wrong/extra" = share of the run's own words the reference does not explain.
+- Wastage from the PDF: Gemini 100% / 0%, Dots3 99% / 3%, Groq 99% / 2%, Qwen on Cloudflare 89% / 0%.
+- Wastage from the screenshot: Dots3 92% / 9%, router (Dots3) 92% / 8%, Groq 85% / 10%, Qwen on Cloudflare 84% / 6%, Gemini 70% / 3%.
+- Resit: Qwen on Cloudflare 100% and Dots3 100% both ways; Gemini 100% from the PDF but 76% from the screenshot (title and reference code missing); Groq 97% / 83%; Llama 83% / 83%.
+- Printed sample text on the wastage form (6 strings: "Isi nama kedai...", "Nama Ketua Dapur", "Cth: 15/08/2026 (Sabtu)", "Nama Staf Bertugas", "Pagi / Petang / Malam", "WS-YYYYMMDD"): Dots3 6 of 6 and Gemini 6 of 6 both ways, Groq 6 and 5, router (Dots3) 6, **Qwen on Cloudflare 0 of 6 both ways**.
+
+**What this says.**
+1. Qwen on Cloudflare's words are right on a sharp PDF: the 19 words it lacks (11%) are exactly the six sample-text strings. A likely cause (unconfirmed): the prompt said "If the copy is already filled in, describe the blank template", which can be read as "drop the sample answers". Since the owner counts that text as a plus, v6.8 makes the prompt say so.
+2. Gemini on a screenshot is weak on completeness: on the wastage form it dropped the whole rules paragraph and the last table column ("T/TANGAN STAF") and printed a stray "xs" three times, once per signature line. The "xs" is the model writing a size flag as a label (`F[line] xs` instead of `F[line,xs]`). From the PDF itself it had the best words of all engines. So Gemini stays the wording reader and the last-resort layout engine.
+3. Dots3 and Qwen on Cloudflare are close on layout (the owner: 2 wins for Dots3, 1 for Qwen, 1 tie). Qwen is about 1.5 times faster and uses fewer tokens, so it stays first; Dots3 is the fallback. The same Dots3 model gave different layouts on the two runs of the Resit screenshot (pinned vs the router's pick): some run-to-run variation is normal.
+4. The router is unreliable and, when it works, it is mostly Dots3 again: out of Auto.
+5. **Why most engines do not read a PDF directly.** In this app only Gemini receives the PDF file; every other engine gets a picture of page 1 that the page draws from the PDF (pdf.js, up to 2000 px). They are picture readers and their chat APIs, as used here, carry pictures. OpenRouter does accept PDFs (a `file` part plus the file-parser plugin: free text extraction, or Mistral OCR at $2 per 1,000 pages; OpenRouter's PDF docs, checked 2026-10-13) but it hands the model extracted or OCR text and loses the layout, so it is not used. Every engine therefore works with PDFs: log rows 8 to 14 and 22 to 28 are PDF sources. A page drawn from a PDF is much sharper than a screenshot, which is why Dots3 did so well on the PDFs.
+
+**What changed.**
+- **Worker (redeploy):** the prompt now says that grey or italic sample text inside an entry cell that tells the reader what to write is printed text, not an answer: keep it, as the label of that entry's blank; only real handwriting or typed-in answers are left out. The older "describe the blank template" and "leave out handwriting" rules stay. Not tested on a real model.
+- **Engine:** `AUTO_ORDER` = `cfqwen, dots, groq, gemini` (router out); new `COMPARE_SKIP` = `['qwen']` and a `skip` argument on `planAll` (Compare all no longer calls the retired OpenRouter Qwen route: one failed row and one wasted free request less each time; it stays selectable alone); a lowercase size word (`xs sm md lg xl`) written as the text of a `T` or `F` item is no longer printed (printed capitals such as "XL" or "XS" and tick-box options are untouched).
+- **Page:** the Compare all count in the Engine list matches what it will really call; version badge v6.8; Auto tooltip; `form-scanner.js?v=9`, `form-scanner-engine.js?v=7`.
+
+**Files and versions.**
+| File | Version | Cache-bust in HTML |
+|---|---|---|
+| `form-scanner.html` | v6.8 | n/a |
+| `form-scanner.js` | v6.8 | `?v=9` |
+| `form-scanner-engine.js` | v6.8 | `?v=7` |
+| `form-scanner-proxy-worker.js` | v6.8, **functional change (prompt): redeploy** | n/a |
+| `nav-config.js`, `site-config.js`, `styles.css` | unchanged (`styles.css?v=19`) | |
+
+**Tested (mocked: this sandbox has no network).**
+- **Worker, 52 checks:** the 50 from v6.7 plus two: the new prompt rule is sent to the engine, and the older rules are still in the prompt.
+- **Engine, 26 checks:** Auto and wording planning (router, retired Qwen and Llama never used by Auto), `planAll` with and without `skip` and with junk input, `parseItem` on all five size words, capitals, real labels and tick-box options, `runDetail` on a real row from the log, the wording merge unchanged on the real Dots3 and Gemini texts (9 corrected, 5 amber), and a **before / after proof**: the same spec built into a PDF with the v6.7 engine prints "xs", with the v6.8 engine it does not.
+- **Page, 36 checks in real Chromium with the real pdf-lib and the Worker mocked:** the 31 from v6.7 plus: Compare all counts 5 engines and does not call the retired Qwen even though it is ready, the retired Qwen is still selectable alone and shows its explanation.
+
+**Not tested here:** that a real model now keeps the sample text (needs a run); any real provider call.
+
+**Deploy.** (1) Cloudflare: paste `form-scanner-proxy-worker.js` into the Worker and Deploy (no new secrets). (2) GitHub: replace `form-scanner.html`, `form-scanner.js`, `form-scanner-engine.js` and the two `.md` docs; hard-refresh (Ctrl+F5).
+
+**How to test (about 10 minutes).** (1) Qwen3.8-27B · Cloudflare alone on the wastage PDF: do the six sample strings now appear? (2) **Auto on all four sources**: this is the real product mode (structure engine plus Gemini's wording merge) and it has not been judged yet; every result so far was a single engine or a Compare all. (3) Send the log.
+
+**KIV.**
+- If Qwen still drops the sample text after the prompt rule: carry wording lines the structure engine left out into the spec after the merge (a wording line sitting right after a matched label, with no counterpart in the spec, becomes the label of the next label-less blank in that cell).
+- Caption alignment ("Disediakan oleh" centred under its line): only Gemini on the PDF got it right; a prompt hint is possible, untested.
+- Score layout against the two original PDFs (text positions) once they are re-attached.
+- Mistral and NVIDIA keys are still not added: those free engines are untested on these forms.
+- Earlier items still open: PDF-to-picture output preview, overlay compare, bounding boxes, structure is read-only, promote `.fs-tip` to the shared stylesheet, Cloudflare rate-limiting rule or Turnstile for the public Worker, a "merge Gemini's words into this row" button.
