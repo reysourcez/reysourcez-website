@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<!-- APZacct v1.4 - APZacct-dokumen_v1.4.html (NEW in 1.4) -->
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APZacct v1.4 — Dokumen (PV &amp; Resit)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="APZacct-styles_v1.4.css">
+</head>
+<body>
+
+<main class="penyata-shell">
+  <div class="penyata-card" role="group" aria-labelledby="dok-title">
+    <header class="wizard-header">
+      <span class="step-label">Dokumen</span>
+      <a href="APZacct-index_v1.4.html" class="exit-link">Kemasukan biasa</a>
+    </header>
+
+    <h1 id="dok-title" class="sr-only">Baucar bayaran dan resit</h1>
+
+    <div class="step-content">
+      <h2>Baucar bayaran &amp; resit</h2>
+      <p class="hint">Setiap bayaran dan terimaan di wizard menjana dokumennya sendiri. Di sini anda boleh cetak semula, jana PDF, atau batalkan dokumen yang tersilap &mdash; entri songsang dipos secara automatik dan dokumen tidak dipadam.</p>
+
+      <div class="dok-filter">
+        <select id="tapis-jenis" aria-label="Jenis dokumen">
+          <option value="">Semua jenis</option>
+          <option value="PV">Baucar Bayaran (PV)</option>
+          <option value="RT">Resit (RT)</option>
+        </select>
+        <select id="tapis-status" aria-label="Status">
+          <option value="">Semua status</option>
+          <option value="Dikeluarkan">Dikeluarkan</option>
+          <option value="Batal">Batal</option>
+        </select>
+        <input id="tapis-cari" type="text" placeholder="Cari no. atau nama pihak" aria-label="Cari">
+      </div>
+
+      <p id="dok-ringkas" class="hint"></p>
+      <div id="dok-list" class="dok-list"><p class="hint">Memuatkan dokumen...</p></div>
+      <p id="dok-mesej" class="error-msg" role="alert"></p>
+    </div>
+  </div>
+
+  <p class="wizard-footnote">APZacct <span class="ver">v1.4</span> &mdash; dokumen &middot; <a href="APZacct-penyata-bank_v1.4.html">Import Penyata Bank</a> &middot; <a href="APZacct-rekonsiliasi-bank_v1.4.html">Rekonsiliasi Bank</a> &middot; <span id="ver-backend" class="ver"></span></p>
+</main>
+
+<script src="APZacct-config_v1.4.js"></script>
+<script src="APZacct-dokumen_v1.4.js"></script>
+</body>
+</html>

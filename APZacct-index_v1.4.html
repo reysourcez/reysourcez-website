@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!-- APZacct v1.4 - APZacct-index_v1.4.html (was index.html) -->
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APZacct v1.4 — Kemasukan Baharu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="APZacct-styles_v1.4.css">
+</head>
+<body>
+
+<main class="wizard-shell">
+  <div class="wizard-card" role="group" aria-labelledby="wizard-title">
+    <header class="wizard-header">
+      <span id="step-label" class="step-label"></span>
+      <button id="exit-btn" type="button" class="exit-link">Keluar</button>
+    </header>
+    <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+
+    <h1 id="wizard-title" class="sr-only">Kemasukan transaksi</h1>
+    <div id="step-content" class="step-content"></div>
+    <p id="error-msg" class="error-msg" role="alert"></p>
+
+    <div class="wizard-actions">
+      <button id="back-btn" type="button" class="btn btn-ghost">Kembali</button>
+      <button id="next-btn" type="button" class="btn btn-primary"></button>
+    </div>
+  </div>
+
+  <p class="wizard-footnote">APZacct <span class="ver">v1.4</span> &mdash; sistem perakaunan &middot; <a href="APZacct-penyata-bank_v1.4.html">Import Penyata Bank</a> &middot; <a href="APZacct-rekonsiliasi-bank_v1.4.html">Rekonsiliasi Bank</a> &middot; <a href="APZacct-dokumen_v1.4.html">Dokumen</a> &middot; <span id="ver-backend" class="ver"></span></p>
+</main>
+
+<script src="APZacct-config_v1.4.js"></script>
+<script src="APZacct-wizard_v1.4.js"></script>
+</body>
+</html>

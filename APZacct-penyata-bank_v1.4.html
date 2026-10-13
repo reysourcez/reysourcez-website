@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!-- APZacct v1.4 - APZacct-penyata-bank_v1.4.html (was penyata-bank.html) -->
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APZacct v1.4 — Import Penyata Bank</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="APZacct-styles_v1.4.css">
+</head>
+<body>
+
+<main class="penyata-shell">
+  <div class="penyata-card" role="group" aria-labelledby="penyata-title">
+    <header class="wizard-header">
+      <span class="step-label">Import Penyata Bank</span>
+      <a href="APZacct-index_v1.4.html" class="exit-link">Kemasukan biasa</a>
+    </header>
+
+    <h1 id="penyata-title" class="sr-only">Import penyata bank melalui AI</h1>
+
+    <div id="setup-block" class="step-content">
+      <h2>Muat naik penyata bank</h2>
+      <p class="hint">AI akan baca penyata dan cadangkan senarai transaksi untuk anda semak dahulu — tiada apa dipos terus tanpa pengesahan anda.</p>
+
+      <label class="field-label">Akaun bank/wang berkaitan</label>
+      <select id="sel-akaunWang"><option value="">Memuatkan senarai akaun...</option></select>
+
+      <label class="field-label" style="margin-top:14px;">Fail penyata (PDF atau imej)</label>
+      <input id="inp-fail" type="file" accept="application/pdf,image/*">
+
+      <button type="button" id="proses-btn" class="btn btn-primary" style="width:100%; margin-top:18px;" disabled>Proses dengan AI</button>
+      <p id="setup-error" class="error-msg" role="alert"></p>
+    </div>
+
+    <div id="loading-block" class="step-content" style="display:none;">
+      <div class="intro-block">
+        <div class="intro-glyph" aria-hidden="true">&#8987;</div>
+        <h2>Membaca penyata...</h2>
+        <p class="hint">Ini boleh ambil masa seminit untuk penyata berbilang muka surat.</p>
+      </div>
+    </div>
+
+    <div id="hasil-block" class="step-content" style="display:none;">
+      <h2>Semak sebelum pos</h2>
+      <p id="ringkasan-hasil" class="hint"></p>
+      <div class="penyata-table-wrap">
+        <table class="penyata-table" id="penyata-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Tarikh</th>
+              <th>Perkara</th>
+              <th>Debit (RM)</th>
+              <th>Kredit (RM)</th>
+              <th>Kategori</th>
+            </tr>
+          </thead>
+          <tbody id="penyata-tbody"></tbody>
+        </table>
+      </div>
+      <button type="button" id="pos-semua-btn" class="btn btn-primary" style="width:100%; margin-top:16px;">Sahkan &amp; Pos Semua Yang Ditanda</button>
+      <button type="button" id="mula-semula-btn" class="btn btn-ghost" style="width:100%; margin-top:8px;">Mula semula dengan fail lain</button>
+      <p id="hasil-error" class="error-msg" role="alert"></p>
+    </div>
+
+    <div id="selesai-block" class="step-content" style="display:none;"></div>
+  </div>
+
+  <p class="wizard-footnote">APZacct <span class="ver">v1.4</span> &mdash; import penyata bank &middot; <a href="APZacct-rekonsiliasi-bank_v1.4.html">Rekonsiliasi Bank</a> &middot; <a href="APZacct-index_v1.4.html">Kemasukan biasa</a></p>
+</main>
+
+<script src="APZacct-config_v1.4.js"></script>
+<script src="APZacct-penyata-bank_v1.4.js"></script>
+</body>
+</html>

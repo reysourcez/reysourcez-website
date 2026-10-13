@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<!-- APZacct v1.4 - APZacct-rekonsiliasi-bank_v1.4.html (was rekonsiliasi-bank.html) -->
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APZacct v1.4 — Rekonsiliasi Bank</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="APZacct-styles_v1.4.css">
+</head>
+<body>
+
+<main class="penyata-shell">
+  <div class="penyata-card" role="group" aria-labelledby="rekon-title">
+    <header class="wizard-header">
+      <span class="step-label">Rekonsiliasi Bank</span>
+      <a href="APZacct-index_v1.4.html" class="exit-link">Kemasukan biasa</a>
+    </header>
+    <h1 id="rekon-title" class="sr-only">Rekonsiliasi penyata bank dengan lejar</h1>
+
+    <div id="setup-block" class="step-content">
+      <h2>Muat naik penyata untuk rekonsiliasi</h2>
+      <p class="hint">Bandingkan penyata bank dengan apa yang sudah direkodkan dalam lejar, dan lihat dengan tepat apa yang menyebabkan sebarang perbezaan — bukan sekadar "tidak seimbang".</p>
+
+      <label class="field-label">Akaun bank/wang</label>
+      <select id="sel-akaunWang"><option value="">Memuatkan senarai akaun...</option></select>
+
+      <label class="field-label" style="margin-top:14px;">Hingga tarikh (disyorkan: tarikh penutup penyata)</label>
+      <input id="inp-tarikhTamat" type="date">
+
+      <label class="field-label" style="margin-top:10px;">Dari tarikh (pilihan — hanya untuk paparan senarai di bawah)</label>
+      <input id="inp-tarikhMula" type="date">
+
+      <label class="field-label" style="margin-top:14px;">Fail penyata (PDF atau imej)</label>
+      <input id="inp-fail" type="file" accept="application/pdf,image/*">
+
+      <button type="button" id="proses-btn" class="btn btn-primary" style="width:100%; margin-top:18px;" disabled>Jalankan Rekonsiliasi</button>
+      <p id="setup-error" class="error-msg" role="alert"></p>
+    </div>
+
+    <div id="loading-block" class="step-content" style="display:none;">
+      <div class="intro-block">
+        <div class="intro-glyph" aria-hidden="true">&#8987;</div>
+        <h2>Membaca dan memadankan...</h2>
+        <p class="hint">Membaca penyata dan membandingkan dengan lejar sedia ada.</p>
+      </div>
+    </div>
+
+    <div id="hasil-block" class="step-content" style="display:none;">
+      <h2>Keputusan Rekonsiliasi</h2>
+      <div id="ringkasan-baki"></div>
+
+      <h3 class="penyata-subhead">Belum Clear di Bank</h3>
+      <p class="hint">Dalam lejar, belum tertera di penyata — biasanya cek/bayaran yang belum dibankkan penerima, atau deposit yang belum diproses bank. Normal, bukan ralat, tapi semak jika ada yang sudah lama tertunggak.</p>
+      <div class="penyata-table-wrap">
+        <table class="penyata-table">
+          <thead><tr><th>Tarikh</th><th>Perkara</th><th>Debit</th><th>Kredit</th><th>Hari Tertunggak</th><th>ID Transaksi</th></tr></thead>
+          <tbody id="belum-clear-tbody"></tbody>
+        </table>
+      </div>
+
+      <h3 class="penyata-subhead">Belum Direkod</h3>
+      <p class="hint">Di penyata, belum dalam lejar — selalunya caj bank, faedah, atau kemasukan yang tertinggal. Semak, tanda, dan pos yang berkenaan terus di sini.</p>
+      <div class="penyata-table-wrap">
+        <table class="penyata-table">
+          <thead><tr><th></th><th>Tarikh</th><th>Perkara</th><th>Debit</th><th>Kredit</th><th>Kategori</th></tr></thead>
+          <tbody id="belum-rekod-tbody"></tbody>
+        </table>
+      </div>
+      <button type="button" id="pos-belum-rekod-btn" class="btn btn-primary" style="width:100%; margin-top:12px;">Pos Yang Ditanda</button>
+
+      <button type="button" id="mula-semula-btn" class="btn btn-ghost" style="width:100%; margin-top:16px;">Rekonsiliasi lain</button>
+      <p id="hasil-error" class="error-msg" role="alert"></p>
+    </div>
+  </div>
+
+  <p class="wizard-footnote">APZacct <span class="ver">v1.4</span> &mdash; rekonsiliasi bank &middot; <a href="APZacct-penyata-bank_v1.4.html">Import Penyata Bank</a> &middot; <a href="APZacct-index_v1.4.html">Kemasukan biasa</a></p>
+</main>
+
+<script src="APZacct-config_v1.4.js"></script>
+<script src="APZacct-rekonsiliasi-bank_v1.4.js"></script>
+</body>
+</html>
