@@ -1,5 +1,7 @@
 # Crypto Radar — Setup & Reference
 
+**Version: suite v2.8** (this guide v2.8; Relationship study v1.0 added). Filenames stay the same on purpose, because about ten navigation links point at them: the version lives in each file's header, in the text on the page, and in the `?v=` number after the script name.
+
 Three files, one job each:
 
 | File | Runs where | What it does |
@@ -90,6 +92,60 @@ Luno lists some coins this pack won't have an icon for (new or very small listin
 - **News matching is by keyword, not guaranteed relevance.** Headlines are general crypto news, not filtered per-coin — the AI insight does its best to flag genuinely relevant ones but can miss or over-attribute.
 - **The RSS reader is intentionally simple.** It reads standard `<item>` blocks; if a feed changes its format, that one source just quietly contributes fewer headlines rather than breaking the News panel.
 
+## Backtest page and the Relationship study (suite v2.8)
+
+The backtest page (`crypto-radar-backtest.html`) tests ideas on Luno's own history. Suite v2.8 adds a **Relationship study** at the bottom of that page: *do alt coins move with or against Bitcoin, the Nasdaq and the S&P 500?* It only describes the past. It never creates a buy or sell rule, and it cannot pass or fail the strict test higher up the page.
+
+| File | Version | Where it runs | Changed in v2.8? |
+|---|---|---|---|
+| `crypto-radar-backtest.html` | page v1.6 + big movers v1.2 + relationships v1.0 | your browser | **yes: upload** |
+| `crypto-radar-relations.js` | Relationship study v1.0 | your browser | **new: upload** |
+| `crypto-radar-backtest.js` | v1.6 | your browser | no |
+| `crypto-radar-bigmovers.js` | v1.2 | your browser | no |
+| `crypto-radar.js` | v2.0 | your browser | no |
+| `crypto-radar-worker.js` | v2.1 | Cloudflare | no, **do not redeploy** |
+| `crypto-radar-tests.js`, `crypto-radar-browser-smoke.js` | v2.8 | a developer's computer only | checking tools, not part of the site |
+
+(The two older scripts still print "suite v2.7" in their own result boxes. They did not change, so they keep their old label on purpose.)
+
+### Put it on your site
+
+1. Upload `crypto-radar-backtest.html` (replace the old one) and `crypto-radar-relations.js` (new) to the same folder as your other Crypto Radar files.
+2. Leave everything else alone: no Worker redeploy, and no need to re-upload the other scripts.
+3. Open the backtest page. The small line at the top should say **Relationships v1.0 (suite v2.8)**. If it still says v2.7, your browser is showing an old copy: press Ctrl+F5 (Windows) or Cmd+Shift+R (Mac).
+
+### Get the two stock files (free, about two minutes)
+
+1. Go to **fred.stlouisfed.org** and search for **NASDAQCOM** (Nasdaq Composite, daily history from 1971). Open it, click **Download** above the chart and choose **CSV**. Save the file somewhere you can find it.
+2. Do the same for **SP500** (S&P 500). FRED only carries about the last 10 years of it, which is normal.
+3. FRED's own help page (checked 2026-10-15) says: click the **Download** button above the graph, then choose one of the options, which it lists as Excel, CSV, Image and PowerPoint. FRED may change the wording later; any CSV with one date column and one value column works, and so does a daily export from TradingView. If the page cannot read a file it says what it saw in it. After a run, the results show each file's first and last day: if a file covers fewer years than you expected, set the chart to its longest date range and download again.
+4. Closed days (holidays) may appear as a "." or as an empty cell in FRED's file (the layout of the file itself was not checked). The page skips both by itself.
+
+### Run it
+
+1. Scroll to **Relationship study** on the backtest page.
+2. Under **Nasdaq Composite CSV** choose the NASDAQCOM file; under **S&P 500 CSV** choose the SP500 file. Both boxes are optional: with no file, the page still compares the alts with Bitcoin.
+3. Leave **Coins** on **All** (best) and click **Run relationship study**.
+4. Wait. The first run takes a minute or two while it downloads each coin's daily history through your Worker. It says **Done** when finished. A second run on the same page reuses that history for 30 minutes.
+5. Read the sentence at the top, then the table under it. Then copy everything in the box under the results (**Copy results for Claude**) and paste it into the chat.
+
+### How to read the answer
+
+- **The sentence at the top** says, for each comparison, either the link and how strong it is, or "no clear link".
+- **The table has 11 rows.** A row only says "together" or "opposite" when its range of doubt stays clear of zero over the whole history **and** in both the earlier 60% and the later 40%. Otherwise it says "no clear link", "clear overall but not in both halves", or "flips sign between the halves".
+- **"Bitcoin first, alts 1 day later"** is the only kind of link that could ever give advance notice. "Same day" and "same window" links only tell you the two move together, and you learn that after the fact.
+- **"Does it hold over time?"** shows how often the link stays above +0.2, in between, or below -0.2 when re-measured over every 90-window stretch, so you can see a link that comes and goes.
+- Lags outside the 11 judged rows are shown for reference only and are never called a finding.
+
+### Before you believe a number
+
+- A link between two things is not proof that one causes the other, and it is **not a forecast**. Links also change over time: the published studies found stock links near zero before 2020, about 0.36 in 2020-21, and reportedly near zero again in 2025 (see `claude/CRYPTO_RADAR_RESEARCH.md` in the Project for what was checked and what was not).
+- **Thin coins** trade rarely, so their last price can lag Bitcoin's by a day through staleness alone. A next-day link on thin coins is not proof that Bitcoin leads.
+- Only coins **listed on Luno today** are tested. Coins that died are missing, which flatters every result.
+- Coins tend to move together, so 50 coins are not 50 separate pieces of evidence. That is why the page uses one **alt basket** (the average alt) instead of 50 separate answers.
+- **Stock-index data belong to their owners** (S&P and Nasdaq; FRED shows their notices). Use the files for your own analysis only. The page reads them inside your browser and sends them nowhere. The only network calls it makes go to your own Worker.
+- The stock timing assumes a Luno daily candle starts at **00:00 UTC**. Luno's documents do not confirm that, so the page checks the candles it receives and prints a warning under the results if they start at another time.
+
 ## Jargon dictionary
 
 *(Same wording as the Glossary section on the page itself — kept here too so it's available offline or if you want to hand this file to someone else.)*
@@ -118,12 +174,23 @@ Luno lists some coins this pack won't have an icon for (new or very small listin
 - **MA ribbon (21/50/55/89/144/200)** — Several moving averages shown together; price stacked cleanly above all of them (shortest to longest) reads as a healthy uptrend, a tangled ribbon reads as choppy.
 - **Trend Regime** — A second, simpler summary next to the Confluence score: a plain vote count across 10 MA/trend checks (bullish/bearish/neutral) plus a label. Deliberately kept separate — when it disagrees with the Confluence score, that's worth noticing, not a bug.
 - **Order zones (demand/supply)** — This dashboard's own reading of the ICT/Smart-Money-Concepts "order block" idea: the last candle opposite in colour to a move that breaks a recent swing high/low. No single official formula exists for this; independent sources suggest ~60–75% reaction rates with added confluence, close to a coin flip alone — treat marketed "80%+" claims with skepticism.
+- **Correlation (r)** — A number from -1 to +1 for how closely two things' daily moves line up. +1 = always the same way, 0 = no link, -1 = always opposite. Under 0.1 negligible, 0.1 to 0.3 weak, 0.3 to 0.5 moderate, above 0.5 strong. It describes a link; it is not proof of cause and not a forecast.
+- **Rank correlation (Spearman)** — The same idea worked out on rank order instead of raw sizes, so one huge day cannot dominate. Shown next to r in the "every lag" tables as a cross-check.
+- **Lag** — Shifting one series by whole days to ask who moves first. "Bitcoin first, alts 1 day later" is lag +1. Only a lag where the first series is read before the second could ever give advance notice.
+- **Alt basket** — The equal-weighted average daily move of every Luno alt coin that traded that day (at least 10 coins needed). Bitcoin, gold tokens, stablecoins and coins with under 60 daily candles are left out.
+- **Strict range (strict bar)** — The margin of doubt around r, made wider (z = 2.84 instead of 1.96) because 11 rows are judged at once. A link is only called clear if this range stays clear of zero over the whole history **and** in both halves.
+- **Block bootstrap** — How that margin of doubt is worked out: the history is re-shuffled in 10-day chunks 1,000 times (with a fixed seed, so a rerun gives identical numbers). Chunks keep the calm-then-wild streaks real prices have.
+- **Earlier 60% / later 40%** — The history split by date. A link has to show in both parts, otherwise it may be a one-period accident.
+- **Rolling view ("Does it hold over time?")** — The correlation re-measured over every stretch of 90 windows: the share of stretches above +0.2, in between, and below -0.2.
+- **Window (stock rows)** — One stock day matched with the crypto move from the previous stock day's candle close to that day's candle close. A Monday covers the weekend.
+- **Stale price** — A thin coin may not trade for hours, so its last price lags the market. That can make it look like it follows Bitcoin a day later when it is just slow.
+- **FRED** — The free economic-data website run by the Federal Reserve (fred.stlouisfed.org), where the Nasdaq and S&P 500 daily files come from.
 
 ## Proposed next additions (not built yet — flagging for your call)
 
 These were left out of this version on purpose, to keep the first build reviewable rather than guessing at scope you didn't ask for:
 
 - **Price alerts** — browser notification when a coin crosses a support/resistance level or confluence threshold
-- **Backtesting** — running the confluence score against historical data to see how it would have performed, so its usefulness is measured rather than assumed
+- **Backtesting** — running the confluence score against historical data to see how it would have performed, so its usefulness is measured rather than assumed *(built since: see the backtest page and the handoff)*
 - **Portfolio view** — if you connect a Luno key with balance-read permission, showing your actual holdings alongside the analysis (bigger security surface, so flagging rather than assuming)
 - **CoinMarketCal integration** — a dedicated crypto events calendar (product launches, unlocks, listings) exists as a free-tier API; left out for now since the AI insight already surfaces relevant news, but a dedicated events feed would be more structured
