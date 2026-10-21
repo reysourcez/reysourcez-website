@@ -1,1471 +1,473 @@
-// Market Radar client logic — v1.6.2 (2026-09-27). What changed: this file only — (1) panel
-// visibility for the two modes now goes through one setPanelHidden() helper that sets BOTH the
-// native `hidden` attribute AND an inline style.display, and applyModeVisibility() is now ALSO
-// called at the top of analyzeSpot() (not just once at wizard-finish) — see the mode-leeching note
-// below; (2) new diagnostic markers: a POI Overpass found that matches an active category but sits
-// OUTSIDE the tested catchment shape now draws as a hollow grey dot, so "found but outside your
-// catchment" is visually distinguishable from "Overpass never found it" — see the pharmacy/petrol
-// note below; (3) four form fields that only had a placeholder (no accessible name) now carry an
-// aria-label (mr-vacancy-floor, mr-vacancy-detail, mr-gap-custom-key, mr-gap-custom-value — set in
-// market-radar.html this round; JS unaffected by that one). No Worker change. See MARKET_RADAR_SETUP_AND_GLOSSARY.md for the full writeup and
-// what is and isn't confirmed. How it fits together: MARKET_RADAR_HANDOFF.md.
-/* ============================================================
-   Market Radar
-   Two deliberate exceptions to this site's usual zero-dependency
-   rule: Leaflet.js and its Leaflet.heat plugin (via CDN, no build
-   step, no npm — see market-radar.html's <head> comment). An actual
-   interactive street map with real pan/zoom isn't something that
-   can reasonably be hand-rolled in SVG the way this site's other
-   charts are (interactive-costing-analysis.js's break-even chart is
-   a handful of straight lines on a fixed grid; rendering real map
-   tiles and coordinate projection from scratch is a different scale
-   of problem entirely). Everything else in this file follows the
-   same rules as the rest of the site: nothing persists except a
-   small daily-usage counter (see MAX_ANALYSES_PER_DAY, identical
-   pattern to food-worth-calculator.js), and every number that
-   matters — the opportunity score, the density count, the diversity
-   index — is computed with plain deterministic JS, auditable and
-   never guessed by an AI. Gemini is used in exactly one place
-   (requestInsight/renderInsight) and only to narrate numbers this
-   file already computed, the same restrained role it plays in
-   crypto-radar.js's own insight feature.
+/* Market Radar page logic v1.7.0 (2026-10-15). Pure logic: market-radar-engine.js. This file: state, network, rendering.
+   Rule: results are RENDERED from state into #mr-results — nothing is shown/hidden with the [hidden] attribute (author CSS overrides it). */
+(function () {
+  'use strict';
+  const E = window.MarketRadarEngine;
+  const $ = (id) => document.getElementById(id);
+  if (!E) { $('mr-status').textContent = 'The analysis engine failed to load — refresh the page.'; return; }
+  const esc = E.util.esc;
+  const VERSION = '1.7.0';
+  console.info('[Market Radar] page v' + VERSION + ' · engine v' + E.VERSION);
 
-   ------------------------------------------------------------
-   WHAT THIS TOOL DOES: pick a town, drop a pin on a candidate spot
-   (or leave it at the town centre), pick what kind of business
-   you're weighing, and see three things layered on one map:
-     1. Your actual catchment area — a real walk/drive-time shape
-        from OpenRouteService, not a naive circle. If OpenRouteService
-        isn't configured yet, or the call fails, this falls back to
-        a plain radius circle so the tool still works — just less
-        precisely — rather than breaking outright.
-     2. Every competitor of that category inside that catchment,
-        pulled from OpenStreetMap's free Overpass API, as markers
-        plus a density heatmap.
-     3. An "opportunity score" — a plain, fully editable weighted
-        formula (see SCORE_WEIGHTS) blending that competitor count
-        against district population, household income, and category
-        mix, sourced from Malaysia's own open data API (data.gov.my).
-
-   Every stat on screen carries an Official / Estimated / Calculated
-   tag (see PROVENANCE) so nothing implies more confidence than the
-   source actually deserves.
-
-   ------------------------------------------------------------
-   DATA FLOW: this file never calls Overpass, OpenRouteService, or
-   data.gov.my directly — everything goes through ONE Cloudflare
-   Worker call (see WORKER_ENDPOINT), same pattern as every other
-   proxy on this site. The Worker's job is fetching and caching raw
-   data; every calculation below (the point-in-polygon catchment
-   filter, the density count, the diversity index, the opportunity
-   score) happens here, client-side, in the open — see
-   market-radar-proxy-worker.js's own header for why the split is
-   drawn exactly there.
-
-   ------------------------------------------------------------
-   KIV (planned, not built this round — see
-   MARKET_RADAR_SETUP_AND_GLOSSARY.md for the fuller list):
-     - AppSheet field-survey ingestion, as a fourth "Observed" layer.
-     - Full MSIC-code category alignment — CATEGORY_TAGS below covers
-       the ~13 categories likeliest to matter for a first F&B/retail
-       business, not the full official taxonomy.
-     - Momentum / trend tracking. Needs repeated snapshots taken
-       weeks apart to mean anything; the momentum sub-score sits at
-       a neutral 0.5 until that history exists (see
-       computeOpportunityScore).
-     - Wiring the rzBroadcast call below into Interactive Costing
-       Analysis / Margin Analysis's own handleSyncPayload functions —
-       those two files don't recognise a 'market-radar' source yet.
-       That's a small, contained edit flagged in the setup doc rather
-       than made here, since it touches files this session didn't own.
-     - A visible toggle for the new "outside catchment" markers below,
-       if they turn out to clutter the map on a dense search — not
-       needed yet, flagged in case a future session hears that report.
-
-   ------------------------------------------------------------
-   FIXED, 2026-09-16: "Drink stall / bubble tea" was invisible for
-   real bubble tea shops. Root cause was in CATEGORY_TAGS below plus
-   categorize() in market-radar-proxy-worker.js — see the comment on
-   CATEGORY_TAGS.drinks and NAME_HINTS below for the fix. Short
-   version: OSM tags a bubble tea stall as amenity=cafe (or
-   amenity=fast_food) + cuisine=bubble_tea, not as its own shop type,
-   so it needed a specific-tag-priority fix in the Worker, not just a
-   tag added here.
-
-   ------------------------------------------------------------
-   2026-09-27 (this round) — TWO REPORTS. The first got a DEFENSIVE fix whose root cause is still
-   UNCONFIRMED; the second got a DIAGNOSTIC only and is still OPEN. Read
-   MARKET_RADAR_SETUP_AND_GLOSSARY.md's 2026-09-27 section for the full writeup; short version for
-   whichever session reads this next:
-
-   (a) "Results from either analysis mode still leech into the other after switching" — reported as
-       STILL happening even after v1.6.1's applyModeVisibility() hardening. Re-reading that fix: it
-       was only ever invoked from finishWizard(), i.e. once, when the analysis screen first appears
-       for a given mode. Nothing forced it to run again at the one moment that actually matters —
-       right before analyzeSpot() renders NEW output. This round moves the SAME call to also run at
-       the very top of analyzeSpot(), so results can never be produced without first re-asserting
-       which panels the active mode is even allowed to show, regardless of how this screen was
-       reached. Separately — and this part is a HYPOTHESIS, not a confirmed root cause, since
-       styles.css lives outside this project and this session had no live access to inspect it or
-       the deployed page — hiding/showing now also sets an explicit inline style.display alongside
-       the native `hidden` attribute (see setPanelHidden() below), which is a safe superset of the
-       previous behaviour either way: it guards against the possibility that a shared class both
-       result panels carry (.ica-results) sets its own `display` without accounting for `[hidden]`,
-       which would let a same-specificity class rule silently win the cascade over the attribute
-       selector's default `display:none`. If the leeching still recurs after THIS fix ships, that
-       would argue the CSS theory was wrong and something else entirely is going on — worth a live
-       screenshot of computed styles on the stuck panel, not another guess from this end.
-   (b) "Pharmacy/petrol still show 0 / gap even though the map clearly shows one nearby" — NOT
-       fixed, because no specific code bug was found to fix; see MARKET_RADAR_SETUP_AND_GLOSSARY.md
-       for the three candidate explanations. What WAS added: a diagnostic overlay (see
-       "outsideCatchment" in analyzeSpot() below) that draws a hollow grey marker for any POI
-       Overpass DID return, that matches an active category, but that the point-in-polygon test
-       excluded from the catchment — so a person can now tell "found, just outside my shape" (grey
-       dot appears) apart from "Overpass never returned this at all" (no dot of any colour appears,
-       only the base map tile's own icon) apart from "wrong tag on this specific OSM node" (also no
-       dot, needs a direct openstreetmap.org check) — three genuinely different problems that
-       previously all looked identical on screen as "not counted."
-   ============================================================ */
-
-const MR_CLIENT_VERSION = '1.6.2';
-console.info('[Market Radar] client v' + MR_CLIENT_VERSION + ' — build 2026-09-27');
-
-/* ================= CONFIG =================
-   Everything below is meant to be changed. See the Settings
-   reference table in MARKET_RADAR_SETUP_AND_GLOSSARY.md for what
-   each one does and where its starting number came from. */
-
-// Town presets — lat/lng are approximate town centres, just a
-// starting pin; click anywhere on the map to move it before
-// analyzing. "district" must exactly match one of DOSM's 160 official
-// district names (case doesn't matter — the Worker's ifilter= query
-// is case-insensitive) — confirm any new town's spelling against
-// open.dosm.gov.my/data-catalogue/population_district before adding it
-// here. (An earlier version of this comment pointed at a Worker-side
-// DISTRICT_ALIASES lookup table for this — that table was never
-// actually built; corrected here rather than left pointing at
-// something that doesn't exist.) NOTE (v1.5.1): if a town is ever
-// added here, market-radar-proxy-worker.js's DISTRICT_POPULATION_
-// FALLBACK_2023 needs that district added too, by hand — it's a
-// pinned table, not a live lookup, and only covers today's four towns.
-const TOWNS = {
-  miri: { label: 'Miri', lat: 4.4148, lng: 113.9917, district: 'Miri' },
-  kuching: { label: 'Kuching', lat: 1.5535, lng: 110.3593, district: 'Kuching' },
-  sibu: { label: 'Sibu', lat: 2.2870, lng: 111.8305, district: 'Sibu' },
-  bintulu: { label: 'Bintulu', lat: 3.1668, lng: 113.0413, district: 'Bintulu' },
-};
-const DEFAULT_TOWN = 'miri'; // NOTE 2026-09-27: declared but not read anywhere — the wizard always asks for the town, so changing this has NO effect. Kept only so nothing referencing it breaks.
-
-// Each category maps to one or more OpenStreetMap tag pairs. OSM
-// tagging is crowd-sourced and genuinely inconsistent — a "drink
-// stall" might be tagged amenity=cafe, shop=beverages, or nothing
-// recognisable at all — so treat every count below as a reasonable
-// signal, not a census. Add a category by adding one line; the
-// dropdown, the Overpass query, and the diversity index all read
-// from this same table, so nothing else needs to change.
-// FEATURE, 2026-09-18: added `msic` to every category below — Malaysia's
-// official 5-digit industrial classification code (MSIC 2008), used for
-// SSM company registration, LHDN e-Invoicing, and DOSM's own economic
-// statistics. Purely a REFERENCE annotation shown in the UI — it plays
-// no part in the Overpass query or categorize() logic, which still run
-// on OSM tags exactly as before. Sourced from Malaysia-specific
-// documents (LHDN/hasil.gov.my's own New Business Codes MSIC2008 PDF,
-// and data.gov.my's own MSIC lookup table structure), not the generic
-// international ISIC codes, which occasionally diverge at this level of
-// detail — cross-checked against at least two independent Malaysia-
-// specific sources per code. This is also what makes the DOSM trend
-// figure below possible: iowrt (Wholesale & Retail Trade Index) groups
-// by 3-digit MSIC group, so `msic.code.slice(0, 3)` is the join key —
-// see IOWRT_GROUPS in market-radar-proxy-worker.js. "printing" and
-// "custom" have no group-level match in that index (confirmed — see
-// fetchWholesaleRetailTrend's own comment), so they'll always show
-// "not tracked" for that card, which is correct, not a bug.
-const CATEGORY_TAGS = {
-  cafe: { label: 'Cafe / kopitiam', tags: [['amenity', 'cafe']], msic: { code: '56302', name: 'Coffee shops' } },
-  restaurant: { label: 'Restaurant', tags: [['amenity', 'restaurant']], msic: { code: '56101', name: 'Restaurants and restaurant cum night clubs' } },
-  fastfood: { label: 'Fast food / food stall', tags: [['amenity', 'fast_food']], msic: { code: '56103', name: 'Fast-food restaurants' } },
-  bakery: { label: 'Bakery / dessert', tags: [['shop', 'bakery'], ['shop', 'pastry'], ['shop', 'confectionery']], msic: { code: '47216', name: 'Retail sale of bakery products and sugar confectionery' } },
-  // FIXED, 2026-09-16: added ['cuisine','bubble_tea'] — OSM's own
-  // documented convention tags a bubble tea stall as amenity=cafe (or
-  // amenity=fast_food) PLUS cuisine=bubble_tea; there's no dedicated
-  // shop=bubble_tea tag (one was proposed and the OSM community
-  // rejected it for exactly this reason — see
-  // wiki.openstreetmap.org/wiki/Tag:cuisine=bubble_tea). The three
-  // original tags here (shop=beverages/tea/coffee) are all real OSM
-  // tags, just not the ones an actual walk-up bubble tea stall uses in
-  // practice — shop=tea and shop=coffee in particular mean a retailer
-  // of tea leaves or coffee beans/equipment, not a prepared-drink
-  // stall. Left them in rather than removing them (harmless, and
-  // occasionally still correct), but cuisine=bubble_tea is the tag
-  // that actually matters. On its own this addition isn't enough —
-  // market-radar-proxy-worker.js's categorize() also needed a priority
-  // fix so cuisine=* tags get checked before "cafe" claims the POI
-  // first; see that file's own 2026-09-16 note. NAME_HINTS below is
-  // the second half of this fix, for stalls tagged amenity=cafe with
-  // no cuisine sub-tag at all — common enough in practice that
-  // cuisine=bubble_tea alone doesn't catch everything.
-  drinks: { label: 'Drink stall / bubble tea', tags: [['cuisine', 'bubble_tea'], ['shop', 'beverages'], ['shop', 'tea'], ['shop', 'coffee']], msic: { code: '56303', name: 'Drink stalls/hawkers' } },
-  minimart: { label: 'Convenience / minimart', tags: [['shop', 'convenience'], ['shop', 'supermarket']], msic: { code: '47113', name: 'Mini market' } },
-  fashion: { label: 'Fashion / apparel', tags: [['shop', 'clothes'], ['shop', 'shoes']], msic: { code: '47711', name: 'Retail sale of articles of clothing, articles of fur, and clothing accessories' } },
-  hardware: { label: 'Hardware', tags: [['shop', 'hardware'], ['shop', 'doityourself']], msic: { code: '47520', name: 'Retail sale of construction materials, hardware, paints, and glass' } },
-  laundry: { label: 'Laundry', tags: [['shop', 'laundry']], msic: { code: '96011', name: 'Laundering and dry-cleaning of textile and fur products' } },
-  salon: { label: 'Salon / barber', tags: [['shop', 'hairdresser'], ['shop', 'beauty']], msic: { code: '96020', name: 'Hairdressing and other beauty treatment' } },
-  printing: { label: 'Printing / copy shop', tags: [['shop', 'copyshop'], ['shop', 'printing']], msic: { code: '82190', name: 'Photocopying, document preparation and other specialised office support activities' } },
-  // ADDED 2026-09-24, for the Market Gap checklist (household monthly-needs research — see
-  // MARKET_RADAR_SETUP_AND_GLOSSARY.md for the sources): both are also just ordinary tickable
-  // types in Market Analysis mode, same as everything else in this table — no special-casing
-  // needed anywhere else in the file for that. MSIC codes cross-checked against other countries'
-  // ISIC-derived codes at this same 5-digit level (India's NIC-2008 for pharmacy, Sweden's SNI for
-  // fuel retail) rather than a direct Malaysia SSM/DOSM lookup — flagging that distinction here the
-  // same way this file already does for every other MSIC code, so it's easy to re-verify later.
-  // NOT the suspect for the 2026-09-27 "pharmacy/petrol missing" report below — amenity=pharmacy and
-  // amenity=fuel are unambiguous, unshared OSM tags (unlike bubble tea's cuisine=* situation above),
-  // and this row's own shape is identical to every other single-tag category here. See the header
-  // comment's 2026-09-27 note and MARKET_RADAR_SETUP_AND_GLOSSARY.md for where the actual candidate
-  // explanations lie instead (catchment-boundary geometry and/or OSM base-tile icon confusion).
-  pharmacy: { label: 'Pharmacy', tags: [['amenity', 'pharmacy']], msic: { code: '47721', name: 'Retail sale of pharmaceuticals, medical and orthopaedic goods and toilet articles' } },
-  petrol: { label: 'Petrol / fuel station', tags: [['amenity', 'fuel']], msic: { code: '47300', name: 'Retail sale of automotive fuel in specialised stores' } },
-  custom: { label: 'Custom — type your own OSM tag', tags: [], msic: null },
-};
-
-// Second half of the 2026-09-16 bubble tea fix (see CATEGORY_TAGS.drinks
-// above): a real-world stall tagged plain amenity=cafe with NO
-// cuisine sub-tag at all is common enough that the tag fix alone
-// doesn't catch everything. A specific brand-name or generic-word
-// match in the POI's own name is a strong enough signal to override
-// whatever tag-based category the Worker assigned — false positives
-// here are essentially impossible for a curated list like this one.
-// Only "drinks" has entries for now; add another category's array
-// here the same way if the same kind of mis-bucketing shows up for
-// it (this is exactly the mechanism to reach for if a search ever
-// "finds all F&B, then breaks down by type" runs into the same
-// generic-primary-tag problem for some other category).
-const NAME_HINTS = {
-  drinks: [
-    'bubble tea', 'boba', 'pearl milk tea',
-    'chatime', 'tealive', 'gong cha', 'koi thé', 'koi the',
-    'xing fu tang', 'tiger sugar', 'sharetea', 'share tea',
-    'comebuy', 'come buy', 'daboba', 'the alley', 'liho', 'yifang',
-    'each a cup',
-  ],
-};
-
-// FEATURE, 2026-09-18: institutions that generate foot traffic without
-// being a competitor to anything — the "would a food business want to
-// be near this" list. Deliberately separate from CATEGORY_TAGS above:
-// these are never counted as competitors, never affect the opportunity
-// score, and use a plain tag match (no cuisine-tag-style priority logic
-// needed — there's no ambiguity here the way "cafe vs bubble tea" had).
-// Left out: large private employers/offices — OSM has no reliable tag
-// for "this specific company has 200 staff", so a generic office/
-// industrial-land tag would be more noise than signal. If that matters
-// for a specific spot, the vacant-unit-style notepad pattern (a plain
-// manual note) is the honest way to capture it, not a query this fuzzy.
-const ANCHOR_TAGS = {
-  school: { label: 'School', tags: [['amenity', 'school']] },
-  college: { label: 'University / college', tags: [['amenity', 'university'], ['amenity', 'college']] },
-  health: { label: 'Hospital / clinic', tags: [['amenity', 'hospital'], ['amenity', 'clinic']] },
-  mall: { label: 'Mall / hypermarket / department store', tags: [['shop', 'mall'], ['shop', 'department_store']] },
-  govt: { label: 'Government office', tags: [['office', 'government'], ['amenity', 'townhall']] },
-  worship: { label: 'Place of worship', tags: [['amenity', 'place_of_worship']] },
-  transport: { label: 'Bus / transport terminal', tags: [['amenity', 'bus_station'], ['aeroway', 'terminal']] },
-};
-
-// Catchment modes drive both the OpenRouteService isochrone request
-// (profile + seconds) and the circle drawn instead if that call
-// fails or isn't configured yet — see drawCatchment(). fallbackRadiusM
-// is a rough eyeball of how far each travel mode covers in that time
-// on an ordinary Malaysian town street grid, not a precise conversion,
-// and radiusM sent to the Worker is 1.3x this — a deliberate
-// over-fetch, since the real isochrone shape is rarely a perfect
-// circle and the extra margin gets trimmed off client-side anyway
-// (see pointInPolygon). NOTE, 2026-09-27: this 1.3x multiplier is one
-// of the candidate explanations raised for the pharmacy/petrol report
-// above — a drive-time isochrone can be genuinely elongated along a
-// highway well past 1.3x its own straight-line radius, in which case
-// Overpass's OWN search never reaches the point at all (a different,
-// earlier failure than the point-in-polygon trim this comment
-// describes). Not changed this round — see
-// MARKET_RADAR_SETUP_AND_GLOSSARY.md before touching this number;
-// widening it is a real trade-off against Overpass/Geoapify load, not
-// a free fix.
-// v1.5.0: added walk5 / drive5 — same pace ratios as the 10-minute rows (walk 80 m per minute, drive ~500 m per minute).
-const CATCHMENT_MODES = {
-  walk5: { label: '5-minute walk', profile: 'foot-walking', seconds: 300, fallbackRadiusM: 400 },
-  walk10: { label: '10-minute walk', profile: 'foot-walking', seconds: 600, fallbackRadiusM: 800 },
-  walk15: { label: '15-minute walk', profile: 'foot-walking', seconds: 900, fallbackRadiusM: 1200 },
-  drive5: { label: '5-minute drive', profile: 'driving-car', seconds: 300, fallbackRadiusM: 2500 },
-  drive10: { label: '10-minute drive', profile: 'driving-car', seconds: 600, fallbackRadiusM: 5000 },
-  drive15: { label: '15-minute drive', profile: 'driving-car', seconds: 900, fallbackRadiusM: 8000 },
-};
-
-// Opportunity score: a plain weighted sum of five 0-1 sub-scores,
-// nothing hidden or statistical about it. These five numbers are
-// editable live on the page itself (#mr-weight-*) — these are only
-// the starting values shown there. See computeOpportunityScore() for
-// the actual formula behind each sub-score.
-const SCORE_WEIGHTS_DEFAULT = { lowCompetition: 0.35, population: 0.25, income: 0.15, diversity: 0.15, momentum: 0.10, competitorStrength: 0 };
-
-// Competitors that count as "fully saturated" PER BUSINESS TYPE ticked. With several types
-// ticked the real threshold is this number x how many are ticked (see computeOpportunityScore),
-// so ticking four food types isn't punished four times over. One visible, adjustable number
-// rather than a per-category guess this file would otherwise have to invent.
-const SATURATION_COUNT = 12;
-
-// v1.5.0 — business-type picker (checkboxes instead of a dropdown).
-const MAX_CATEGORIES = 4;                 // most types that can be ticked at once
-const DEFAULT_CATEGORIES = ['cafe'];      // ticked when the page opens
-const ON_SITE_AUTO_WEIGHT = 0.10;         // weight "Competitor strength" gets the moment an on-site read is picked
-const CUSTOM_TAG_PATTERN = /^[A-Za-z0-9_:\-]{1,40}$/;  // same rule the Worker enforces on custom OSM tags
-
-// District population/income are shown as district-level context
-// (that's the finest grain DOSM's open data actually publishes —
-// there's no official mesh-block-level figure to fall back to), then
-// scaled into a 0-1 sub-score against these two reference points.
-// A district at or above these numbers maxes out that sub-score.
-const POPULATION_NORMALIZER = 120000;
-const INCOME_NORMALIZER = 7000; // RM/month
-
-const MAX_ANALYSES_PER_DAY = 15; // soft cap, same reasoning as food-worth-calculator.js: protects OpenRouteService's shared 500/day free allowance and data.gov.my's 4-10 req/min limit from one browser using them all up
-const USAGE_STORAGE_KEY = 'mr-usage';
-
-// Paste your deployed Worker's URL here — see
-// market-radar-proxy-worker.js's own header for deploy steps.
-const WORKER_ENDPOINT = 'https://market-radar-proxy.reysourcez-ent.workers.dev/';
-
-const PROVENANCE = {
-  population: 'Official — DOSM (district-level)',
-  income: 'Official — DOSM (district-level)',
-  competitor: 'Estimated — OpenStreetMap',
-  isochroneReal: 'Estimated — OpenRouteService travel-time shape',
-  isochroneFallback: 'Estimated — radius fallback, not a real travel-time shape',
-};
-
-/* ================= SHARED UTILITIES ================= */
-
-function escapeHTML(str) {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-function clamp01(v) { return Math.max(0, Math.min(1, isFinite(v) ? v : 0)); }
-function setStatus(text, isError) {
-  const el = document.getElementById('mr-status');
-  el.textContent = text;
-  el.classList.toggle('is-error', !!isError);
-}
-
-// ADDED, 2026-09-27: every panel this file shows/hides now goes through this one helper instead of
-// setting `.hidden` directly. Two things happen together: the native `hidden` attribute (still the
-// semantically correct signal — respected by screen readers, print media, and anything else that
-// understands HTML5 hidden) AND an explicit inline `style.display`, which forces the visual result
-// regardless of any competing CSS rule on a class the element also carries (see the header comment's
-// 2026-09-27 note on the "mode leeching" report for why this is a defensive addition, not a confirmed
-// fix — this session had no live access to the deployed page or to styles.css, which lives outside
-// this project, to actually confirm a CSS conflict is the cause). Clearing style.display back to ''
-// on show lets the page's own CSS (e.g. a grid layout on .ica-results) take back over exactly as
-// before; this never overrides anything when there was nothing to override.
-function setPanelHidden(id, hide) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.hidden = hide;
-  el.style.display = hide ? 'none' : '';
-}
-
-/* ================= SOFT USAGE CAP (same pattern as food-worth-calculator.js) ================= */
-
-function getUsageToday() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(USAGE_STORAGE_KEY) || 'null');
-    if (!raw || raw.day !== new Date().toDateString()) return 0;
-    return raw.count;
-  } catch (e) { return 0; }
-}
-function recordUsage() {
-  try { localStorage.setItem(USAGE_STORAGE_KEY, JSON.stringify({ day: new Date().toDateString(), count: getUsageToday() + 1 })); }
-  catch (e) {}
-}
-
-/* ================= MODE SELECT (added 2026-09-24 — Market Analysis vs. Market Gap) ================= */
-// currentMode gates which of the two result panels renders and which categories get checked —
-// see applyModeVisibility() and getActiveCategories(). Chosen once, before the wizard, and only
-// changed by explicitly going back to this screen (see backToModeSelect()) — never inferred.
-let currentMode = null; // 'analysis' | 'gap'
-
-function chooseMode(mode) {
-  currentMode = mode;
-  document.getElementById('mr-mode-select').hidden = true;
-  document.getElementById('wizard').hidden = false;
-  wizardStepIndex = 0;
-  renderWizardStep();
-}
-
-// Reached by going "back" from the wizard's first step (town) — see goBack() below. Resets
-// everything the same way switching towns does, PLUS clears which mode was active, so nothing
-// from one mode's analysis can bleed into the other after switching.
-function backToModeSelect() {
-  resetAnalysisState();
-  currentMode = null;
-  document.getElementById('wizard').hidden = true;
-  document.getElementById('mr-mode-select').hidden = false;
-}
-
-/* ================= WIZARD ================= */
-
-const WIZARD_STEPS = [
-  { key: 'town', question: 'Which town are you scouting?', options: Object.entries(TOWNS).map(([value, t]) => ({ value, label: t.label })) },
-  { key: 'catchment', question: 'How should we measure the area around a spot?', options: Object.entries(CATCHMENT_MODES).map(([value, m]) => ({ value, label: m.label })) },
-];
-
-let wizardStepIndex = 0;
-const wizardAnswers = {};
-
-function renderWizardStep() {
-  if (wizardStepIndex >= WIZARD_STEPS.length) { finishWizard(); return; }
-  const step = WIZARD_STEPS[wizardStepIndex];
-  const container = document.getElementById('wizard-question');
-  container.innerHTML = `
-    <p class="wizard-progress">Step ${wizardStepIndex + 1} of ${WIZARD_STEPS.length}</p>
-    <h3>${step.question}</h3>
-    <div class="wizard-options">
-      ${step.options.map((o) => `<button type="button" class="wizard-option" data-value="${o.value}">${escapeHTML(o.label)}</button>`).join('')}
-    </div>
-  `;
-  container.querySelectorAll('.wizard-option').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      wizardAnswers[step.key] = btn.dataset.value;
-      wizardStepIndex++;
-      renderWizardStep();
-    });
-  });
-  // ADDED 2026-09-24: the back button is never hidden anymore — at step 0 it now leads all the way
-  // back to mode-select (there's a step "-1" to go back to now), so it stays visible and relabels
-  // itself instead of disappearing the way it did when the wizard was the first thing on the page.
-  const backBtn = document.getElementById('wizard-back');
-  backBtn.hidden = false;
-  backBtn.textContent = wizardStepIndex === 0 ? '← Choose a different analysis' : 'Back';
-}
-function goBack() {
-  if (wizardStepIndex > 0) { wizardStepIndex--; renderWizardStep(); return; }
-  backToModeSelect();
-}
-
-function finishWizard() {
-  document.getElementById('wizard').hidden = true;
-  document.getElementById('mr-analysis').hidden = false;
-  const town = TOWNS[wizardAnswers.town];
-  document.getElementById('mr-town-label').textContent = town.label;
-  document.getElementById('mr-catchment-select').value = wizardAnswers.catchment;
-  initMap(town);
-  applyModeVisibility();
-}
-
-// ADDED 2026-09-24: toggles which INPUT area shows inside the shared analysis screen — the
-// category-ticking fieldset for Market Analysis, or the checklist intro/custom-add row for Market
-// Gap.
-// HARDENED 2026-09-25: also force-hides the OTHER mode's output panels every time this runs, rather
-// than trusting that resetAnalysisState() already cleaned them up.
-// HARDENED AGAIN 2026-09-27, since the 2026-09-25 hardening alone did not stop the reported leeching:
-// this function is now ALSO called from the very top of analyzeSpot() (see there), not just once
-// from finishWizard() — so the correct panel set for the active mode is re-asserted immediately
-// before any new output is produced, not only when the screen first appears. Every hide/show below
-// now goes through setPanelHidden() (see its own comment) rather than the raw `.hidden` property.
-function applyModeVisibility() {
-  const isGap = currentMode === 'gap';
-  setPanelHidden('mr-category-group', isGap);
-  setPanelHidden('mr-gap-intro', !isGap);
-  if (isGap) {
-    setPanelHidden('mr-score-banner', true);
-    setPanelHidden('mr-result-cards', true);
-    setPanelHidden('mr-field-note-panel', true);
-    setPanelHidden('mr-vacancy-panel', true);
-    setPanelHidden('mr-weights-panel', true);
-  } else {
-    setPanelHidden('mr-gap-results', true);
-  }
-}
-
-// FIXED, 2026-09-23: editAnswers() used to only swap which section was visible — it never reset
-// the previous spot's results, so the analysis screen could keep showing a stale competitor
-// count/score/AI read (and even a stale on-site busyness reading silently feeding the NEW spot's
-// score) right up until the next "Analyze this spot" click. The map alone self-corrected
-// (initMap() below always rebuilds the whole Leaflet instance), which is exactly why this was easy
-// to miss on a quick look — the map looked right immediately; only the cards/score/insight around
-// it didn't. Concretely, getInsight() builds its snapshot from TOWNS[wizardAnswers.town].label (the
-// NEW town, already updated by the wizard) alongside lastAnalysis's numbers (the OLD town's) — so a
-// plain-English read requested right after switching towns, before re-analyzing, would describe the
-// new town's name over the old town's data.
-// EXTENDED 2026-09-24 for the two-mode split: the same staleness risk applies to whichever mode's
-// results are on screen, so this resets BOTH the Market Analysis panel and the Market Gap panel
-// unconditionally, regardless of which one is currently visible — cheaper and safer than tracking
-// which one needs it, and hiding an already-hidden element is a no-op.
-function resetAnalysisState() {
-  lastAnalysis = null;
-
-  // The on-site read is the sneaky part: left alone, a "Busy" read from the OLD spot would keep
-  // affecting the NEXT spot's score under an "Observed" tag that implies a fresh, current read.
-  // Clear it and undo whatever auto-weight shift it applied — same restore onObservedChange()
-  // already does when a read is cleared by hand. Other, manually-edited weights are left alone:
-  // those are a standing preference across spots, not something tied to one location.
-  const observedEl = document.getElementById('mr-observed-busyness');
-  if (observedEl) observedEl.value = '';
-  if (strengthAutoApplied) {
-    const lc = parseFloat(document.getElementById('mr-weight-lowCompetition').value) || 0;
-    setWeightInput('lowCompetition', lc + strengthAutoMoved);
-    setWeightInput('competitorStrength', 0);
-    strengthAutoApplied = false;
-    strengthAutoMoved = 0;
-  }
-  document.getElementById('mr-observed-notice').hidden = true;
-  updateWeightTotalDisplay();
-
-  // Back to exactly how these looked before the very first "Analyze this spot" click. vacantUnits
-  // (the notepad) and gapCustomItems (the checklist additions) are deliberately left alone — both
-  // are documented as running, session-long lists, not per-spot results tied to whichever pin or
-  // mode happens to be active right now. Every panel below now goes through setPanelHidden() (v1.6.2)
-  // instead of a raw `.hidden = true` — see that helper's own comment.
-  setPanelHidden('mr-score-banner', true);
-  setPanelHidden('mr-result-cards', true);
-  setPanelHidden('mr-field-note-panel', true);
-  setPanelHidden('mr-vacancy-panel', true);
-  setPanelHidden('mr-weights-panel', true);
-  setPanelHidden('mr-gap-results', true);
-
-  document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below once you\'ve analyzed a spot.';
-  document.getElementById('mr-ai-insight').classList.add('is-empty');
-  setStatus('');
-
-  // Map layers need no explicit clearing here: finishWizard() (called right after the wizard
-  // finishes again) always runs initMap(), which calls map.remove() and builds a brand-new Leaflet
-  // map — that alone wipes every marker/heat/catchment layer the old analysis drew.
-}
-
-function editAnswers() {
-  resetAnalysisState();
-  document.getElementById('mr-analysis').hidden = true;
-  document.getElementById('wizard').hidden = false;
-  wizardStepIndex = 0;
-  renderWizardStep();
-}
-
-/* ================= BUSINESS-TYPE PICKER (v1.5.0 — tick up to MAX_CATEGORIES) ================= */
-
-function escapeAttr(str) { return escapeHTML(String(str)).replace(/"/g, '&quot;'); }
-
-function renderCategoryOptions() {
-  const box = document.getElementById('mr-category-options');
-  box.innerHTML = Object.entries(CATEGORY_TAGS).map(([key, c]) => {
-    const tip = c.msic ? 'MSIC ' + c.msic.code + ' — ' + c.msic.name : 'Type your own OpenStreetMap key and value';
-    const checked = DEFAULT_CATEGORIES.includes(key) ? ' checked' : '';
-    return `<label class="mr-cat-option" title="${escapeAttr(tip)}"><input type="checkbox" name="mr-category" value="${escapeAttr(key)}"${checked}><span>${escapeHTML(c.label)}</span></label>`;
-  }).join('');
-  box.querySelectorAll('input[type="checkbox"]').forEach((cb) => cb.addEventListener('change', syncCategoryUI));
-  syncCategoryUI();
-}
-
-function getSelectedCategories() {
-  return Array.from(document.querySelectorAll('#mr-category-options input[type="checkbox"]:checked')).map((cb) => cb.value);
-}
-
-// At the cap every UNticked box is disabled; ticked ones stay clickable so the person can swap.
-function syncCategoryUI() {
-  const selected = getSelectedCategories();
-  const atMax = selected.length >= MAX_CATEGORIES;
-  document.querySelectorAll('#mr-category-options .mr-cat-option').forEach((label) => {
-    const cb = label.querySelector('input');
-    cb.disabled = atMax && !cb.checked;
-    label.classList.toggle('is-checked', cb.checked);
-    label.classList.toggle('is-disabled', cb.disabled);
-  });
-  document.getElementById('mr-category-count').textContent = selected.length + ' of ' + MAX_CATEGORIES + ' selected'
-    + (atMax ? ' — untick one to swap' : (selected.length === 0 ? ' — tick at least one' : ''));
-  document.getElementById('mr-custom-tag-row').classList.toggle('is-visible', selected.includes('custom'));
-}
-
-/* ================= MARKET GAP CHECKLIST (added 2026-09-24) ================= */
-// Gap mode checks EVERY standard category at once (no ticking — see applyModeVisibility()) plus
-// whatever the person adds here. This is the multi-item equivalent of Market Analysis's single
-// "custom" slot above: same validation pattern (CUSTOM_TAG_PATTERN), but a running list instead of
-// one slot, since auditing a whole checklist is the point of this mode.
-const MAX_GAP_CUSTOM_ITEMS = 8; // sanity cap, not a hard technical limit — keeps the table and the Overpass query reasonable
-let gapCustomItems = []; // {key, tagKey, tagValue, label}
-let gapCustomCounter = 0;
-
-function renderGapCustomList() {
-  const list = document.getElementById('mr-gap-custom-list');
-  list.innerHTML = gapCustomItems.map((c, i) =>
-    `<li><span>${escapeHTML(c.label)}</span><button type="button" data-idx="${i}" aria-label="Remove">✕</button></li>`
-  ).join('');
-  list.querySelectorAll('button[data-idx]').forEach((btn) => {
-    btn.addEventListener('click', () => { gapCustomItems.splice(Number(btn.dataset.idx), 1); renderGapCustomList(); });
-  });
-}
-
-function addGapCustomItem() {
-  const keyEl = document.getElementById('mr-gap-custom-key');
-  const valueEl = document.getElementById('mr-gap-custom-value');
-  const key = keyEl.value.trim();
-  const value = valueEl.value.trim();
-  if (!key || !value) { setStatus('Type both an OSM key and value to add a checklist item.', true); return; }
-  if (!CUSTOM_TAG_PATTERN.test(key) || !CUSTOM_TAG_PATTERN.test(value)) {
-    setStatus('Custom OSM tags can only use letters, numbers, _ : and - (up to 40 characters).', true);
-    return;
-  }
-  if (gapCustomItems.length >= MAX_GAP_CUSTOM_ITEMS) {
-    setStatus('Up to ' + MAX_GAP_CUSTOM_ITEMS + ' custom checklist items at a time — remove one to add another.', true);
-    return;
-  }
-  gapCustomCounter += 1;
-  gapCustomItems.push({ key: 'gapcustom' + gapCustomCounter, tagKey: key, tagValue: value, label: key + '=' + value });
-  keyEl.value = '';
-  valueEl.value = '';
-  renderGapCustomList();
-}
-
-// Covers both the 13 standard types and any gap-mode custom additions — analysis mode's single
-// "custom" slot has its own locally-scoped label logic inside analyzeSpot() and doesn't go through
-// this helper.
-function labelForCategory(key) {
-  if (CATEGORY_TAGS[key]) return CATEGORY_TAGS[key].label;
-  const custom = gapCustomItems.find((c) => c.key === key);
-  return custom ? custom.label : key;
-}
-
-// What "Analyze this spot" actually checks: the ticked types in Market Analysis mode, or the whole
-// checklist (everything but 'custom' plus whatever's been added) in Market Gap mode. Kept separate
-// from getSelectedCategories() itself rather than folding a mode-check into it, since the checkbox
-// list it reads doesn't exist/apply in gap mode at all.
-function getActiveCategories() {
-  if (currentMode !== 'gap') return getSelectedCategories();
-  return Object.keys(CATEGORY_TAGS).filter((k) => k !== 'custom').concat(gapCustomItems.map((c) => c.key));
-}
-
-// Herfindahl-style diversity (computeDiversityIndex) answers "how mixed is it"; this answers "which
-// SPECIFIC types are thin or piled up" — a judgement call the same way SATURATION_COUNT is:
-// relative to the OTHER checklist categories found in this same catchment, not against an outside
-// "should have" number nobody here has good data for. Zero is always a plain gap, no threshold
-// needed; everything else is ranked against this catchment's own average non-zero count.
-function computeGapReads(categoryCounts, checklistKeys, districtPopulation) {
-  const rows = checklistKeys.map((key) => ({ key, label: labelForCategory(key), count: categoryCounts[key] || 0 }));
-  const nonZero = rows.map((r) => r.count).filter((n) => n > 0);
-  const avg = nonZero.length ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length : 0;
-  return rows.map((r) => {
-    let read;
-    if (r.count === 0) read = 'gap';
-    else if (avg > 0 && r.count >= avg * 2) read = 'oversupplied';
-    else if (avg > 0 && r.count <= avg * 0.4) read = 'thin';
-    else read = 'adequate';
-    const perShop = (districtPopulation && r.count > 0) ? Math.round(districtPopulation / r.count) : null;
-    return { ...r, read, perShop };
-  }).sort((a, b) => a.count - b.count); // gaps and thin ones surface first
-}
-
-
-
-let map, pinMarker, catchmentLayer, heatLayer;
-let poiMarkers = [];
-let anchorMarkers = [];
-// ADDED, 2026-09-27: see the header comment's 2026-09-27(b) note and the drawing code inside
-// analyzeSpot(). Holds the hollow grey "found by Overpass, outside this catchment" markers.
-let outsideMarkers = [];
-
-// FIXED, 2026-09-25: map.remove() destroys the Leaflet map instance and detaches every layer from
-// it, but it does NOT clear this file's own pinMarker reference — the marker object still exists in
-// memory, just orphaned from any map. placePin() below only creates a NEW marker when pinMarker is
-// falsy; left unreset, every initMap() call after the very first one would silently call
-// .setLatLng() on that orphaned marker instead — updating its coordinates with no visible effect,
-// since it isn't attached to the map actually on screen. This is why the pin coordinates always
-// updated correctly but the red marker itself stopped appearing after the first time the wizard (or
-// "Edit answers", or — since v1.6.0 — a mode switch) ran a second time. This bug predates the v1.6.0
-// mode split; the mode split just made initMap() run far more often, which is why it became obvious.
-function initMap(town) {
-  if (map) map.remove();
-  pinMarker = null;
-  map = L.map('mr-map').setView([town.lat, town.lng], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  }).addTo(map);
-  placePin(town.lat, town.lng);
-  map.on('click', (e) => placePin(e.latlng.lat, e.latlng.lng));
-}
-
-// Click anywhere on the map to move the pin there — that's the
-// whole point of the tool: test one exact shoplot, not just "near
-// the town centre".
-function placePin(lat, lng) {
-  if (pinMarker) {
-    pinMarker.setLatLng([lat, lng]);
-  } else {
-    pinMarker = L.marker([lat, lng], { draggable: true }).addTo(map);
-    pinMarker.on('dragend', () => { const p = pinMarker.getLatLng(); placePin(p.lat, p.lng); });
-  }
-  document.getElementById('mr-pin-coords').textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-}
-
-function clearResultLayers() {
-  if (catchmentLayer) { map.removeLayer(catchmentLayer); catchmentLayer = null; }
-  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
-  poiMarkers.forEach((m) => map.removeLayer(m));
-  poiMarkers = [];
-  anchorMarkers.forEach((m) => map.removeLayer(m));
-  anchorMarkers = [];
-  outsideMarkers.forEach((m) => map.removeLayer(m)); // ADDED 2026-09-27
-  outsideMarkers = [];
-}
-
-// Draws whatever catchment shape came back — a real isochrone
-// polygon from OpenRouteService, or a plain circle (matching the
-// same mode's fallbackRadiusM) if that call failed or wasn't
-// configured. Either branch returns the SAME shape (a Leaflet layer
-// plus a containsPoint test), so nothing downstream needs to know
-// which case it was — see the "isReal" flag only for the legend/
-// provenance label.
-function drawCatchment(isochroneGeoJSON, centerLat, centerLng, mode) {
-  if (isochroneGeoJSON && isochroneGeoJSON.features && isochroneGeoJSON.features[0]) {
-    catchmentLayer = L.geoJSON(isochroneGeoJSON, { style: { color: '#1F6F5C', weight: 2, fillOpacity: 0.08 } }).addTo(map);
-    // GeoJSON coordinates are [lng, lat]; Leaflet and every other
-    // coordinate pair in this file are [lat, lng]. Flipping this is
-    // the single easiest bug to introduce when touching this
-    // function — the swap below is deliberate, not a typo.
-    const ring = isochroneGeoJSON.features[0].geometry.coordinates[0];
-    const latLngRing = ring.map(([lng, lat]) => [lat, lng]);
-    return { layer: catchmentLayer, containsPoint: (lat, lng) => pointInPolygon(lat, lng, latLngRing), areaKm2: ringAreaKm2(latLngRing, centerLat), isReal: true };
-  }
-  const radiusM = CATCHMENT_MODES[mode].fallbackRadiusM;
-  catchmentLayer = L.circle([centerLat, centerLng], { radius: radiusM, color: '#5C6D64', weight: 2, dashArray: '5 4', fillOpacity: 0.05 }).addTo(map);
-  return {
-    layer: catchmentLayer,
-    containsPoint: (lat, lng) => haversineMeters(centerLat, centerLng, lat, lng) <= radiusM,
-    areaKm2: Math.PI * (radiusM / 1000) ** 2,
-    isReal: false,
+  const WORKER = 'https://market-radar-proxy.reysourcez-ent.workers.dev/';
+  const MAX_PER_DAY = 15, USAGE_KEY = 'mr-usage', MAX_TICKED = 4, MAX_CUSTOM = 8;
+  const DIRECT_MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  const OVT_PATH = 'market-radar-data/overture-';
+  const TOWNS = {
+    miri: { label: 'Miri', lat: 4.4148, lng: 113.9917, district: 'Miri' },
+    kuching: { label: 'Kuching', lat: 1.5535, lng: 110.3593, district: 'Kuching' },
+    sibu: { label: 'Sibu', lat: 2.2870, lng: 111.8305, district: 'Sibu' },
+    bintulu: { label: 'Bintulu', lat: 3.1668, lng: 113.0413, district: 'Bintulu' },
   };
-}
+  const CATCHMENTS = {
+    walk5: { label: '5-minute walk', profile: 'foot-walking', seconds: 300, fallbackM: 400 },
+    walk10: { label: '10-minute walk', profile: 'foot-walking', seconds: 600, fallbackM: 800 },
+    walk15: { label: '15-minute walk', profile: 'foot-walking', seconds: 900, fallbackM: 1200 },
+    drive5: { label: '5-minute drive', profile: 'driving-car', seconds: 300, fallbackM: 2500 },
+    drive10: { label: '10-minute drive', profile: 'driving-car', seconds: 600, fallbackM: 5000 },
+    drive15: { label: '15-minute drive', profile: 'driving-car', seconds: 900, fallbackM: 8000 },
+  };
+  const TABS = {
+    analysis: [['opp', 'Best opportunities'], ['idea', 'Idea check'], ['area', 'Area snapshot'], ['biz', 'Businesses']],
+    gap: [['comp', 'Best complements'], ['list', 'Household checklist'], ['area', 'Area snapshot'], ['biz', 'Businesses']],
+  };
+  const CUSTOM_RE = /^[A-Za-z0-9_:\-]{1,40}$/;
 
-// Standard ray-casting point-in-polygon test. Needed because Overpass
-// only knows how to fetch "everything within a circle" (see the
-// Worker) — the actual catchment is whatever shape OpenRouteService
-// returned, so every fetched point still has to be tested against
-// the real polygon, not just trusted because it came back at all.
-function pointInPolygon(lat, lng, ring) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [latI, lngI] = ring[i], [latJ, lngJ] = ring[j];
-    const intersect = ((lngI > lng) !== (lngJ > lng)) && (lat < (latJ - latI) * (lng - lngI) / (lngJ - lngI) + latI);
-    if (intersect) inside = !inside;
+  const S = {
+    mode: 'analysis', tab: 'opp', town: 'miri', catchment: 'walk10', pin: null, busy: false, stage: '', stale: false,
+    data: null, an: null, focus: [], expanded: {}, filter: 'all', showAssump: false, ticked: ['cafe'], custom: [], customN: 0, customOpen: false,
+    weights: Object.assign({}, E.IDEA_WEIGHTS), weightsOpen: false, onSite: null, onSiteMoved: null, vacancies: [], gapOnly: false,
+    layers: { all: true, focus: true, heat: true, anchors: true, outside: false }, ai: { text: '', via: '', busy: false, err: '' },
+    biz: { q: '', cat: '', src: '' }, printAll: false, ovt: {},
+  };
+  const catalog = () => E.CATEGORIES.concat(S.custom.map((c) => E.makeCustom(c.key, c.k, c.v)));
+  const labelOf = (key) => { const c = (S.data && S.data.cat || catalog()).find((x) => x.key === key); return c ? c.label : key; };
+  const fmtN = (n) => Number(n).toLocaleString('en-MY');
+  const pct = (x) => Math.round(x * 100);
+  function setStatus(msg, err) { const el = $('mr-status'); el.textContent = msg || ''; el.classList.toggle('is-error', !!err); }
+  function setStage(msg) { S.stage = msg; setStatus(msg); if (S.busy) renderResults(); }
+  const usageToday = () => { try { const r = JSON.parse(localStorage.getItem(USAGE_KEY) || 'null'); return r && r.day === new Date().toDateString() ? r.count : 0; } catch (e) { return 0; } };
+  const recordUse = () => { try { localStorage.setItem(USAGE_KEY, JSON.stringify({ day: new Date().toDateString(), count: usageToday() + 1 })); } catch (e) { /* optional */ } };
+  const ensureTab = () => { if (!TABS[S.mode].some((t) => t[0] === S.tab)) S.tab = TABS[S.mode][0][0]; };
+  const focusKeys = () => (S.focus.length ? S.focus : (S.mode === 'analysis' && S.tab === 'idea' ? S.ticked : []));
+
+  /* ================= map ================= */
+  let map, pinMarker, catchLayer, heat, gAll, gFocus, gOutside, gAnchors;
+  function initMap() {
+    if (typeof L === 'undefined') { setStatus('The map library did not load (network or a blocker). Refresh to retry.', true); return false; }
+    const T = TOWNS[S.town];
+    map = L.map('mr-map', { preferCanvas: true }).setView([T.lat, T.lng], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+    gAll = L.layerGroup().addTo(map); gOutside = L.layerGroup().addTo(map); gFocus = L.layerGroup().addTo(map); gAnchors = L.layerGroup().addTo(map);
+    map.on('click', (e) => placePin(e.latlng.lat, e.latlng.lng, true));
+    placePin(T.lat, T.lng, false);
+    return true;
   }
-  return inside;
-}
-function haversineMeters(lat1, lng1, lat2, lng2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-// Shoelace-formula polygon area, converted from degrees to km²
-// using a flat-earth approximation local to one small area —
-// genuinely wrong at continent scale, entirely fine for a
-// 10-minute catchment inside one town.
-function ringAreaKm2(ring, centerLat) {
-  const kmPerDegLat = 111.32;
-  const kmPerDegLng = 111.32 * Math.cos(centerLat * Math.PI / 180);
-  let area = 0;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [latI, lngI] = ring[i], [latJ, lngJ] = ring[j];
-    area += (lngJ * kmPerDegLng) * (latI * kmPerDegLat) - (lngI * kmPerDegLng) * (latJ * kmPerDegLat);
-  }
-  return Math.abs(area / 2);
-}
-
-/* ================= OPPORTUNITY SCORE (pure functions, no DOM) ================= */
-
-// Every sub-score is clamped 0-1 so the weighted sum always lands
-// 0-1 no matter how extreme the inputs get — a spot with zero
-// competitors gets a full 1.0 on that one component, not an infinite
-// score, the same "clamp, don't crash" instinct as everywhere else
-// on this site.
-function computeOpportunityScore(inputs, weights) {
-  // v1.5.0: saturation scales with how many business types are ticked (SATURATION_COUNT per type)
-  const saturation = SATURATION_COUNT * Math.max(1, inputs.categoryCount || 1);
-  const lowCompetition = clamp01(1 - inputs.competitorCount / saturation);
-  const population = clamp01(inputs.districtPopulation / POPULATION_NORMALIZER);
-  const income = clamp01(inputs.districtIncome / INCOME_NORMALIZER);
-  const diversity = clamp01(inputs.diversityIndex);
-  const momentum = 0.5; // neutral placeholder — see the KIV note at the top of this file
-  const competitorStrength = computeCompetitorStrengthFactor(inputs);
-
-  const weightSum = weights.lowCompetition + weights.population + weights.income + weights.diversity + weights.momentum + weights.competitorStrength || 1;
-  const total = (weights.lowCompetition * lowCompetition + weights.population * population
-    + weights.income * income + weights.diversity * diversity + weights.momentum * momentum
-    + weights.competitorStrength * competitorStrength) / weightSum;
-  // Dividing by weightSum means an off-target total (weights not
-  // summing to exactly 1.00) still produces a sane 0-1 score instead
-  // of silently over- or under-counting — the on-page warning
-  // when weights don't sum to 1.00 is about transparency, not about
-  // preventing a broken calculation.
-  return { total: clamp01(total), parts: { lowCompetition, population, income, diversity, momentum, competitorStrength } };
-}
-
-// Per-competitor "how proven a threat is this, really" read from
-// Google's rating + review count, 0 (unproven/thin) to 1 (an
-// established, well-loved incumbent). Needs BOTH a strong rating AND
-// a meaningful review count — a 5.0 with 2 reviews isn't a real
-// signal yet; log10 keeps one enormously-reviewed chain from
-// dominating the average on its own. This exact formula is a
-// judgement call, not a fact — reasonable people could weight
-// rating vs. volume differently; it's isolated here specifically so
-// it's easy to find and change.
-function competitorPoiStrength(rating, reviewCount) {
-  const ratingPart = clamp01((rating || 0) / 5);
-  const volumePart = clamp01(Math.log10((reviewCount || 0) + 1) / 3); // ~1,000 reviews maxes this out
-  return clamp01(ratingPart * volumePart);
-}
-
-// FEATURE, 2026-09-16: the "competitor strength" signal — off
-// (weight 0) by default in SCORE_WEIGHTS_DEFAULT, so this has zero
-// effect on anyone who doesn't deliberately raise the weight in the
-// panel below. When it IS turned on, priority order: a fresh,
-// in-person "observed" read (mr-observed-busyness on the page) beats
-// an aggregate Google rating, which beats the neutral 0.5 used when
-// neither is available — same "unused signal changes nothing"
-// pattern as the momentum placeholder above. Deliberately a
-// SEPARATE weight from lowCompetition rather than folded into it:
-// "3 quiet competitors" and "3 competitors with a queue out the
-// door" are genuinely different situations, and collapsing them into
-// one number would hide that distinction instead of surfacing it.
-function computeCompetitorStrengthFactor(inputs) {
-  if (inputs.observedBusyness != null) {
-    // 1 (very quiet) -> 1.0 (favorable, weak competition)
-    // 5 (packed)     -> 0.0 (unfavorable, strong competition)
-    return clamp01(1 - (inputs.observedBusyness - 1) / 4);
-  }
-  const sample = inputs.competitorRatingSample || [];
-  if (sample.length) {
-    const avgStrength = sample.reduce((s, c) => s + competitorPoiStrength(c.rating, c.reviewCount), 0) / sample.length;
-    return clamp01(1 - avgStrength);
-  }
-  return 0.5;
-}
-
-// Herfindahl-style concentration across every category found nearby
-// (not just the one selected), inverted so 1.0 = healthily mixed and
-// 0.0 = one category totally dominates the area.
-function computeDiversityIndex(categoryCounts) {
-  const total = Object.values(categoryCounts).reduce((s, n) => s + n, 0);
-  if (total === 0) return 1;
-  const hhi = Object.values(categoryCounts).reduce((s, n) => s + (n / total) ** 2, 0);
-  return clamp01(1 - hhi);
-}
-
-function scoreVerdict(score) {
-  if (score >= 0.75) return 'Strong opportunity';
-  if (score >= 0.55) return 'Worth a closer look';
-  if (score >= 0.35) return 'Competitive, proceed carefully';
-  return 'Crowded — hard to stand out here';
-}
-
-/* ================= WORKER CALL ================= */
-
-async function fetchAnalysis(payload) {
-  let response;
-  try {
-    response = await fetch(WORKER_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-  } catch (e) {
-    throw new Error('Could not reach the analysis service — check WORKER_ENDPOINT is correct and this page’s URL is in the Worker’s ALLOWED_ORIGINS.');
-  }
-  let data;
-  try { data = await response.json(); }
-  catch (e) { throw new Error('Got an unreadable response from the analysis service. Try again.'); }
-  if (!response.ok) throw new Error(data.error || ('Analysis failed (error ' + response.status + '). Try again.'));
-  return data;
-}
-
-/* ================= ANALYZE FLOW ================= */
-
-// Runs once, right after fetchAnalysis returns, before anything else
-// touches the POI list — see NAME_HINTS above. A specific keyword or
-// brand-name match is treated as MORE reliable than whatever tag-based
-// category the Worker assigned, so it always wins when one is found;
-// a POI with no name match keeps whatever category it already had.
-function applyNameHints(pois) {
-  return pois.map((p) => {
-    const name = (p.name || '').toLowerCase();
-    for (const [key, hints] of Object.entries(NAME_HINTS)) {
-      if (hints.some((h) => name.includes(h))) return { ...p, category: key };
+  function placePin(lat, lng, fromUser) {
+    S.pin = { lat, lng };
+    if (map) {
+      if (pinMarker) pinMarker.setLatLng([lat, lng]);
+      else { pinMarker = L.marker([lat, lng], { draggable: true }).addTo(map); pinMarker.on('dragend', () => { const p = pinMarker.getLatLng(); placePin(p.lat, p.lng, true); }); }
     }
-    return p;
-  });
-}
+    $('mr-pin').textContent = lat.toFixed(5) + ', ' + lng.toFixed(5);
+    if (fromUser && S.an) { S.stale = true; renderResults(); }
+  }
+  const SRC_LABEL = { osm: 'OpenStreetMap', ovt: 'Overture', geo: 'Geoapify' };
+  const srcText = (p) => (p.sources.includes('osm') && p.sources.includes('ovt') ? 'Both sources' : SRC_LABEL[p.sources[0]] || p.sources[0]);
+  const tip = (p) => esc(p.name || '(unnamed)') + ' — ' + esc(p.cats.map(labelOf).join(', ')) + ' · ' + esc(srcText(p));
+  function drawMap() {
+    if (!map) return;
+    [gAll, gFocus, gOutside, gAnchors].forEach((g) => g.clearLayers());
+    if (catchLayer) { map.removeLayer(catchLayer); catchLayer = null; }
+    if (heat) { map.removeLayer(heat); heat = null; }
+    const d = S.data; if (!d) return;
+    catchLayer = L.polygon(d.ring, d.isReal ? { color: '#1F6F5C', weight: 2, fillOpacity: 0.08 } : { color: '#5C6D64', weight: 2, dashArray: '5 4', fillOpacity: 0.05 }).addTo(map);
+    const fk = focusKeys(), isF = (p) => p.cats.some((c) => fk.includes(c));
+    if (S.layers.all) d.pois.forEach((p) => { if (!fk.length || !isF(p)) L.circleMarker([p.lat, p.lng], { radius: 3, weight: 0, fillColor: '#8a948f', fillOpacity: 0.45 }).bindTooltip(tip(p)).addTo(gAll); });
+    const fp = d.pois.filter(isF);
+    if (S.layers.focus) fp.forEach((p) => {
+      const ovtOnly = !p.sources.includes('osm');
+      L.circleMarker([p.lat, p.lng], { radius: 6, color: p.sources.includes('ovt') && !ovtOnly ? '#6B3FA0' : (ovtOnly ? '#6B3FA0' : '#C0392B'), weight: 1.5, fillColor: ovtOnly ? '#6B3FA0' : '#C0392B', fillOpacity: 0.75 }).bindTooltip(tip(p)).addTo(gFocus);
+    });
+    if (S.layers.heat && fp.length && typeof L.heatLayer === 'function') { heat = L.heatLayer(fp.map((p) => [p.lat, p.lng, 1]), { radius: 35, blur: 25, max: 3, gradient: { 0.15: '#1F6F5C', 0.5: '#E8A33D', 1: '#C0392B' } }).addTo(map); }
+    if (S.layers.outside) d.outside.filter(isF).forEach((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#8A8A8A', fillColor: '#fff', fillOpacity: 0.5, weight: 2, dashArray: '3,3' }).bindTooltip(tip(p) + ' (outside this area)').addTo(gOutside));
+    if (S.layers.anchors) d.anchors.forEach((a) => L.marker([a.lat, a.lng], { icon: L.divIcon({ className: 'mr-anchor', html: '<span style="color:#2A5DB0;font-size:14px;line-height:14px;text-shadow:0 0 2px #fff,0 0 2px #fff">■</span>', iconSize: [14, 14] }) }).bindTooltip(esc(a.name || '(unnamed)') + ' — ' + esc(E.ANCHOR_BY_KEY[a.type].label)).addTo(gAnchors));
+  }
+  function renderLayers() {
+    const box = (k, label) => '<label><input type="checkbox" data-layer="' + k + '"' + (S.layers[k] ? ' checked' : '') + '> ' + label + '</label>';
+    $('mr-layers').innerHTML = S.data
+      ? box('all', '<span class="mr-dot" style="background:#8a948f"></span> All businesses') + box('focus', '<span class="mr-dot" style="background:#C0392B"></span> Selected type (OSM) <span class="mr-dot" style="background:#6B3FA0"></span> (Overture only)')
+        + box('heat', 'Heat map') + box('anchors', '<span style="color:#2A5DB0">■</span> Demand drivers') + box('outside', '<span class="mr-dot" style="border:2px dashed #8a8a8a;background:#fff"></span> Found, outside area')
+      : '<span>Place the pin, then press Analyze. Pick a result to see its businesses here.</span>';
+  }
 
-let lastAnalysis = null; // holds everything recomputeScore() and requestInsight() need without re-fetching
+  /* ================= data ================= */
+  async function postWorker(body, ms) {
+    const c = new AbortController(), t = setTimeout(() => c.abort(), ms || 40000);
+    try { return await fetch(WORKER, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: c.signal }); } finally { clearTimeout(t); }
+  }
+  async function fetchContext(cm, town, cat) {
+    const groups = Array.from(new Set(cat.map((c) => c.iowrt).filter(Boolean)));
+    try {
+      const r = await postWorker({ mode: 'context', lat: S.pin.lat, lng: S.pin.lng, isochrone: { profile: cm.profile, seconds: cm.seconds }, district: town.district, iowrtGroups: groups }, 30000);
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+      return j;
+    } catch (e) { return { error: e.name === 'AbortError' ? 'timed out' : (e.message || String(e)) }; }
+  }
+  async function fetchOsm(bbox, tags, timeoutS, geoReq) {
+    const q = E.buildOverpassQuery(bbox, tags, timeoutS), trail = [];
+    for (const m of DIRECT_MIRRORS) {
+      const host = new URL(m).hostname;
+      setStage('Searching businesses on OpenStreetMap (' + host + ')…');
+      try {
+        const c = new AbortController(), t = setTimeout(() => c.abort(), (timeoutS + 10) * 1000);
+        const r = await fetch(m, { method: 'POST', body: q, headers: { 'Content-Type': 'text/plain', Accept: 'application/json' }, signal: c.signal });
+        clearTimeout(t);
+        if (!r.ok) { trail.push(host + ' HTTP ' + r.status); continue; }
+        const insp = E.inspectOverpass(await r.json());
+        if (!insp.ok) { trail.push(host + ': ' + insp.problem.slice(0, 100)); continue; }
+        return { kind: 'osm', elements: insp.elements, source: 'Overpass (' + host + ', direct from your browser)', trail };
+      } catch (e) { trail.push(host + ': ' + (e.name === 'AbortError' ? 'timed out' : e.name === 'SyntaxError' ? 'unreadable response' : 'blocked or unreachable')); }
+    }
+    setStage('Browser route failed — trying the backup route…');
+    try {
+      const r = await postWorker({ mode: 'pois', bbox, osmTags: tags, timeoutS, geoapify: geoReq }, (timeoutS + 20) * 1000);
+      const j = await r.json();
+      if (r.ok && j.features) return { kind: 'geo', features: j.features, source: j.mr_source || 'Geoapify', trail: trail.concat(j.trail || []) };
+      if (r.ok) { const insp = E.inspectOverpass(j); if (insp.ok) return { kind: 'osm', elements: insp.elements, source: r.headers.get('X-MR-Source') || 'Overpass (via Worker)', trail }; trail.push('worker: ' + insp.problem); }
+      else trail.push('worker: ' + (j.error || 'HTTP ' + r.status));
+    } catch (e) { trail.push('worker: ' + (e.name === 'AbortError' ? 'timed out' : e.message)); }
+    return { error: trail.join(' · '), trail };
+  }
+  async function loadOverture(key) {
+    if (S.ovt[key] !== undefined) return S.ovt[key];
+    try {
+      const r = await fetch(OVT_PATH + key + '.json'); if (!r.ok) throw new Error('missing');
+      const j = await r.json(), ix = {}; j.cols.forEach((c, i) => { ix[c] = i; });
+      S.ovt[key] = { release: j.release, built: j.built, rows: j.rows.map((x) => ({ id: x[ix.id], lat: x[ix.lat], lng: x[ix.lng], name: x[ix.name], cat: x[ix.cat], basic: x[ix.basic], conf: x[ix.conf], src: x[ix.src] })) };
+    } catch (e) { S.ovt[key] = null; }
+    return S.ovt[key];
+  }
+  function buildData(o) {
+    const inside = (p) => E.geo.pointInRing(p.lat, p.lng, o.ring);
+    const osmP = [], outside = [], anchors = [];
+    if (o.osm.kind === 'osm') o.osm.elements.forEach((el) => {
+      const r = E.classifyOsm(el, o.cat); if (!r) return;
+      if (r.poi) (inside(r.poi) ? osmP : outside).push(r.poi);
+      r.anchors.forEach((a) => { if (inside(a)) anchors.push(a); });
+    });
+    else o.osm.features.forEach((f) => { const p = E.classifyGeoapify(f, o.cat); if (p) (inside(p) ? osmP : outside).push(p); });
+    const ovtP = [], unm = {}, b = o.bbox;
+    if (o.ovt) o.ovt.rows.forEach((r) => {
+      if (r.lat < b[0] || r.lat > b[2] || r.lng < b[1] || r.lng > b[3]) return;
+      const c = E.classifyOverture(r, o.cat); if (c.skipped) return;
+      if (c.poi) { if (inside(c.poi)) ovtP.push(c.poi); else outside.push(c.poi); }
+      c.anchors.forEach((a) => { if (inside(a) && !anchors.some((x) => x.type === a.type && E.geo.haversineM(x.lat, x.lng, a.lat, a.lng) < 100)) anchors.push(a); });
+      if (c.unmapped && inside(r)) unm[c.unmapped] = (unm[c.unmapped] || 0) + 1;
+    });
+    const m = E.mergePois(osmP, ovtP), dm = (o.ctx && o.ctx.demographics) || {};
+    return {
+      pois: m.pois, anchors, outside, ring: o.ring, isReal: o.isReal, areaKm2: o.areaKm2, bbox: o.bbox, cat: o.cat, cm: o.cm, town: S.town,
+      source: o.osm.source, trail: o.osm.trail || [], mergeStats: m.stats, ovt: o.ovt ? { release: o.ovt.release, built: o.ovt.built, rows: o.ovt.rows.length, used: ovtP.length } : null,
+      unmapped: Object.entries(unm).sort((a, b2) => b2[1] - a[1]).slice(0, 10), trends: (o.ctx && o.ctx.trends) || {}, ctxError: (o.ctx && o.ctx.error) || '', workerVersion: (o.ctx && o.ctx.meta && o.ctx.meta.workerVersion) || '',
+      demo: { population: dm.population || 0, income: dm.medianIncome || 0, notes: dm.notes || [] },
+    };
+  }
+  const runAnalysis = () => E.analyze({ pois: S.data.pois, anchors: S.data.anchors, areaKm2: S.data.areaKm2, pin: S.pin, catalog: S.data.cat, trends: S.data.trends, demographics: { population: S.data.demo.population, income: S.data.demo.income }, mergeStats: S.data.mergeStats, hasOvt: !!S.data.ovt });
 
-// Plain notepad, not a data source — see the structure-note next to the
-// panel in market-radar.html for why no live vacancy data exists to
-// fetch here. Resets on reload, same as every other input on this page.
-let vacantUnits = [];
+  async function analyze() {
+    if (S.busy) return;
+    if (!S.pin) { setStatus('Click the map to place the pin first.', true); return; }
+    if (usageToday() + 1 > MAX_PER_DAY) { setStatus('This browser has used today’s ' + MAX_PER_DAY + ' analyses. Try again tomorrow.', true); return; }
+    const town = TOWNS[S.town], cm = CATCHMENTS[S.catchment], cat = catalog();
+    S.busy = true; S.stale = false; S.ai = { text: '', via: '', busy: false, err: '' }; S.expanded = {}; S.focus = [];
+    renderToolbar(); setStage('Finding the area around your pin…');
+    try {
+      const ctx = await fetchContext(cm, town, cat);
+      const f = ctx.isochrone && ctx.isochrone.features && ctx.isochrone.features[0];
+      const real = !!(f && f.geometry && f.geometry.type === 'Polygon' && Array.isArray(f.geometry.coordinates[0]));
+      const ring = real ? f.geometry.coordinates[0].map(([lng, lat]) => [lat, lng]) : E.geo.circleRing(S.pin.lat, S.pin.lng, cm.fallbackM);
+      const areaKm2 = real ? E.geo.ringAreaKm2(ring, S.pin.lat) : Math.PI * (cm.fallbackM / 1000) ** 2;
+      const bbox = E.geo.ringBbox(ring, 120);
+      const geoReq = { lat: S.pin.lat, lng: S.pin.lng, radiusM: Math.round(cm.fallbackM * 1.3), categories: Array.from(new Set(cat.flatMap((c) => c.geo || []))) };
+      const [osm, ovt] = await Promise.all([fetchOsm(bbox, E.collectOsmTags(cat), cm.profile === 'driving-car' ? 45 : 30, geoReq), loadOverture(S.town)]);
+      if (osm.error) throw new Error('Could not load businesses: ' + osm.error);
+      recordUse();
+      S.data = buildData({ ctx, ring, isReal: real, areaKm2, bbox, osm, ovt, cat, cm });
+      S.an = runAnalysis();
+      ensureTab();
+      const n = S.data.pois.length;
+      setStatus('Found ' + n + ' businesses in the ' + cm.label + ' area (' + S.data.areaKm2.toFixed(1) + ' km²) via ' + S.data.source + (S.data.ovt ? ' + Overture cross-check' : '') + '.');
+      S.busy = false; renderAll();
+      if (map) { try { map.fitBounds(catchLayer.getBounds(), { padding: [20, 20] }); } catch (e) { /* stub/no layer */ } }
+    } catch (err) { S.busy = false; setStatus(err.message || 'Something went wrong. Try again.', true); renderAll(); }
+  }
 
-function renderVacancyList() {
-  const list = document.getElementById('mr-vacancy-list');
-  list.innerHTML = vacantUnits.map((v, i) =>
-    `<li><span>${escapeHTML(v.floor)} — ${escapeHTML(v.detail)}</span><button type="button" data-idx="${i}" aria-label="Remove">✕</button></li>`
-  ).join('');
-  list.querySelectorAll('button[data-idx]').forEach((btn) => {
-    btn.addEventListener('click', () => { vacantUnits.splice(Number(btn.dataset.idx), 1); renderVacancyList(); });
-  });
-}
-
-// FIXED, 2026-09-16: with three Overpass mirrors plus a Geoapify
-// fallback now each getting their own timeout (see
-// EXTERNAL_CALL_TIMEOUT_MS in market-radar-proxy-worker.js), a worst-
-// case analysis can genuinely take up to about 40 seconds if every
-// single data source is having a bad day. Before this, the status
-// line just said "Fetching…" the entire time, which is exactly what
-// "taking a long time and doesn't appear to complete" looks like from
-// the outside — there was no way to tell a slow-but-working request
-// apart from a genuinely stuck one. This cycles through a couple of
-// honest, reassuring messages instead of one static line, and gets
-// stopped in analyzeSpot's own finally block the moment a real
-// answer (success or failure) comes back.
-const PROGRESS_MESSAGES = [
-  'Fetching competitors, catchment shape, and district data…',
-  'Still working — the first data source is slow to answer, trying another…',
-  'Still working — some of these are free, shared services and occasionally slow. Worst case this takes under a minute.',
-];
-function startProgressMessages() {
-  let i = 0;
-  setStatus(PROGRESS_MESSAGES[0]);
-  const timer = setInterval(() => {
-    i = Math.min(i + 1, PROGRESS_MESSAGES.length - 1);
-    setStatus(PROGRESS_MESSAGES[i]);
-  }, 7000);
-  return () => clearInterval(timer);
-}
-
-function currentWeights() {
-  return {
-    lowCompetition: parseFloat(document.getElementById('mr-weight-lowCompetition').value) || 0,
-    population: parseFloat(document.getElementById('mr-weight-population').value) || 0,
-    income: parseFloat(document.getElementById('mr-weight-income').value) || 0,
-    diversity: parseFloat(document.getElementById('mr-weight-diversity').value) || 0,
-    momentum: parseFloat(document.getElementById('mr-weight-momentum').value) || 0,
-    competitorStrength: parseFloat(document.getElementById('mr-weight-competitorStrength').value) || 0,
+  /* ================= rendering ================= */
+  const chips = (r) => (r.archetypes && r.archetypes.length ? r.archetypes.map((a) => '<span class="mr-chip ' + a + '">' + esc(E.ARCH[a].label) + '</span>').join('') : '<span class="mr-chip cap">No strong signal</span>');
+  const confNote = () => {
+    const c = S.an.coverage;
+    return '<p class="mr-note ' + (c.level === 'Low' ? 'warn' : '') + '"><strong>Data confidence: ' + c.level + '.</strong> ' + esc(c.note) + (c.level === 'Low' ? ' “First-mover” is only claimed when confidence is at least ' + pct(E.T.PIONEER_MIN_CONF) + '%; otherwise a gap is shown as “Possible gap — verify”.' : '') + '</p>';
   };
-}
-
-function updateWeightTotalDisplay() {
-  const w = currentWeights();
-  const sum = w.lowCompetition + w.population + w.income + w.diversity + w.momentum + w.competitorStrength;
-  const el = document.getElementById('mr-weight-total');
-  el.textContent = sum.toFixed(2);
-  el.classList.toggle('is-off', Math.abs(sum - 1) > 0.01);
-}
-
-// mr-observed-busyness is deliberately read fresh here rather than
-// baked into lastAnalysis once at analyze-time — same reason the
-// weight inputs are read fresh in currentWeights(): the person should
-// be able to add or change their on-site read after the fact and see
-// the score respond immediately, exactly like nudging a weight slider.
-// Nothing here is saved anywhere — it resets when the tab closes,
-// same as every other input on this page.
-function getObservedBusyness() {
-  const el = document.getElementById('mr-observed-busyness');
-  const v = el ? el.value : '';
-  return v ? Number(v) : null;
-}
-
-function scoreInputs() {
-  return lastAnalysis ? { ...lastAnalysis, observedBusyness: getObservedBusyness() } : lastAnalysis;
-}
-
-function renderScore() {
-  if (!lastAnalysis) return;
-  const result = computeOpportunityScore(scoreInputs(), currentWeights());
-  setPanelHidden('mr-score-banner', false);
-  document.getElementById('mr-score-number').textContent = Math.round(result.total * 100);
-  document.getElementById('mr-score-verdict').textContent = lastAnalysis.poisAvailable
-    ? scoreVerdict(result.total)
-    : scoreVerdict(result.total) + ' — based on partial data, competitor count unavailable';
-}
-
-/* ---- v1.5.0: the on-site read now visibly feeds the score ----
-   Picking a busyness read used to change nothing unless "Competitor strength" had already been
-   raised above 0 in the weights panel (its default is 0), which read as broken. Now the FIRST
-   read picked sets that weight to ON_SITE_AUTO_WEIGHT, taken out of "Low competition" so the
-   total stays 1.00, and says so on screen. Clearing the read restores both weights; editing any
-   weight by hand switches this automation off. */
-let strengthAutoApplied = false;
-let strengthAutoMoved = 0;
-
-function setWeightInput(key, value) {
-  document.getElementById('mr-weight-' + key).value = (Math.round(value * 100) / 100).toFixed(2);
-}
-
-function onObservedChange() {
-  const notice = document.getElementById('mr-observed-notice');
-  const read = getObservedBusyness();
-  const cs = parseFloat(document.getElementById('mr-weight-competitorStrength').value) || 0;
-  const lc = parseFloat(document.getElementById('mr-weight-lowCompetition').value) || 0;
-  if (read != null && !strengthAutoApplied && cs === 0) {
-    strengthAutoMoved = Math.min(ON_SITE_AUTO_WEIGHT, lc);
-    setWeightInput('lowCompetition', lc - strengthAutoMoved);
-    setWeightInput('competitorStrength', ON_SITE_AUTO_WEIGHT);
-    strengthAutoApplied = true;
-    notice.textContent = 'Counted in the score at ' + Math.round(ON_SITE_AUTO_WEIGHT * 100)
-      + '% (taken from “Low competition”). Change or turn it off under Opportunity score weights.';
-    notice.hidden = false;
-  } else if (read == null && strengthAutoApplied) {
-    setWeightInput('lowCompetition', lc + strengthAutoMoved);
-    setWeightInput('competitorStrength', 0);
-    strengthAutoApplied = false;
-    strengthAutoMoved = 0;
-    notice.hidden = true;
+  function card(r, i, mode) {
+    const open = !!S.expanded[mode + r.key], foc = S.focus.includes(r.key), sc = pct(r.score);
+    const benefits = mode === 'comp' && r.benefits.length ? '<p class="mr-why"><strong>Adds value to:</strong> ' + r.benefits.map((b) => esc(labelOf(b.key)) + ' ×' + b.n).join(', ') + '</p>' : '';
+    const why = r.primary ? '<p class="mr-why">' + esc(r.why[r.primary]) + '</p>' : '';
+    return '<article class="mr-card' + (i < 3 ? ' is-top' : '') + (foc ? ' is-focus' : '') + '" data-key="' + esc(r.key) + '">'
+      + '<div class="mr-card-h"><span class="mr-rank">' + (i + 1) + '</span><div><div class="mr-title">' + esc(r.label) + '</div><div class="mr-grp">' + esc(E.GROUPS[r.group]) + ' · need: ' + esc(r.needTier) + ' · capital: ' + esc(r.capital) + '</div></div>'
+      + '<div class="mr-score">' + sc + '<small>' + (mode === 'comp' ? 'value' : 'score') + ' /100</small></div></div>'
+      + '<div class="mr-meter" aria-hidden="true"><i style="width:' + sc + '%"></i></div><div class="mr-chips">' + chips(r) + '</div>' + why + benefits
+      + '<div class="mr-acts"><button type="button" class="mr-link" data-act="exp" data-key="' + esc(r.key) + '" aria-expanded="' + open + '">' + (open ? 'Hide the evidence' : 'Why this?') + '</button>'
+      + '<button type="button" class="mr-link" data-act="focus" data-key="' + esc(r.key) + '">' + (foc ? 'Showing on map — clear' : 'Show ' + r.count + ' existing on map') + '</button></div>'
+      + (open ? '<ul class="mr-ev">' + r.evidence.map((e) => '<li>' + esc(e) + '</li>').join('') + '</ul><ul class="mr-ev verify">' + r.verify.map((e) => '<li>Verify: ' + esc(e) + '</li>').join('') + '</ul>' : '') + '</article>';
   }
-  updateWeightTotalDisplay();
-  renderScore();
-  renderStrengthCard();
-}
-
-function onWeightEditedByHand() {
-  if (strengthAutoApplied) {
-    strengthAutoApplied = false;
-    strengthAutoMoved = 0;
-    document.getElementById('mr-observed-notice').hidden = true;
+  function oppPanel() {
+    const ranked = E.rankOpportunities(S.an, null, true), seen = {};
+    ranked.forEach((r) => r.archetypes.forEach((a) => { seen[a] = (seen[a] || 0) + 1; }));
+    const list = ranked.filter((r) => S.filter === 'all' || r.archetypes.includes(S.filter));
+    const fb = (k, l) => '<button type="button" class="mr-fbtn" data-act="filter" data-f="' + k + '" aria-pressed="' + (S.filter === k) + '">' + l + '</button>';
+    return confNote() + '<p class="mr-sub">Ranked for a founder: unmet demand × white space, softened by capital needed and data confidence. Banks and food-court operators are left out as unrealistic for a small founder. Every card explains itself.</p>'
+      + '<div class="mr-filter" role="group" aria-label="Filter by kind of opportunity">' + fb('all', 'All (' + ranked.length + ')') + E.ARCH_PRIORITY.filter((a) => seen[a]).map((a) => fb(a, esc(E.ARCH[a].label) + ' (' + seen[a] + ')')).join('') + '</div>'
+      + (list.length ? list.map((r, i) => card(r, i, 'opp')).join('') : '<p class="mr-sub">Nothing matches this filter here.</p>');
   }
-  updateWeightTotalDisplay();
-  renderScore();
-}
-
-// The "Competitor strength" card: the person's own on-site read wins, then Google ratings, then "none".
-function renderStrengthCard() {
-  if (!lastAnalysis) return;
-  const valueEl = document.getElementById('mr-popularity-value');
-  const provEl = document.getElementById('mr-popularity-provenance');
-  const read = getObservedBusyness();
-  if (read != null) {
-    const sel = document.getElementById('mr-observed-busyness');
-    valueEl.textContent = sel.options[sel.selectedIndex].text.split(' — ')[0];
-    provEl.textContent = 'Observed — your own on-site read (overrides Google ratings)';
-    return;
+  function compPanel() {
+    const ranked = E.rankComplements(S.an), gaps = E.checklist(S.an).filter((c) => c.read === 'gap' && c.needTier === 'core');
+    return confNote() + (gaps.length ? '<p class="mr-note bad"><strong>Core needs with nothing found here:</strong> ' + gaps.map((g) => esc(g.label)).join(', ') + '.</p>' : '')
+      + '<p class="mr-sub">Ranked by how much each business type would add to what is already here: filling a need, riding the demand drivers nearby, and fitting the existing cluster — reduced where the type is already crowded.</p>'
+      + ranked.map((r, i) => card(r, i, 'comp')).join('');
   }
-  const sample = lastAnalysis.competitorRatingSample || [];
-  if (sample.length) {
-    const avg = sample.reduce((s, c) => s + c.rating, 0) / sample.length;
-    valueEl.textContent = sample.length + ' of ' + lastAnalysis.competitorCount + ' matched, avg ' + avg.toFixed(1) + '★';
-    provEl.textContent = 'Estimated — Google Places';
-  } else {
-    valueEl.textContent = 'No Google match';
-    provEl.textContent = 'Not available — GOOGLE_PLACES_API_KEY unset, or no nearby Google listing matched. Pick an on-site read below to use this signal for free.';
+  function listPanel() {
+    const rows = E.checklist(S.an).filter((r) => !S.gapOnly || r.read === 'gap' || r.read === 'thin');
+    const READ = { gap: 'Gap', thin: 'Thin', healthy: 'Healthy', crowded: 'Crowded' };
+    return confNote() + '<p class="mr-sub">Gap = none found. Thin = well below the assumed crowding level. Crowded = at or above it. Crowding levels are assumptions (see “How this is scored”).</p>'
+      + '<p><button type="button" class="mr-fbtn" data-act="gaponly" aria-pressed="' + S.gapOnly + '">Show gaps and thin only</button></p>'
+      + '<div class="mr-table-wrap"><table class="mr-table"><thead><tr><th>Business type</th><th>Need</th><th>Found</th><th>Per km²</th><th>Nearest</th><th>Read</th></tr></thead><tbody>'
+      + rows.map((r) => '<tr><td>' + esc(r.label) + '<br><span class="mr-grp">' + esc(E.GROUPS[r.group]) + '</span></td><td>' + esc(r.needTier) + '</td><td>' + r.count + '</td><td>' + r.density.toFixed(1) + '</td><td>' + (r.nearestM == null ? '—' : esc(E.util.fmtDist(r.nearestM))) + '</td><td><span class="mr-chip ' + r.read + '">' + READ[r.read] + '</span></td></tr>').join('')
+      + '</tbody></table></div>';
   }
-}
-
-// DOSM trend card — one line per ticked type that the index actually tracks (4 of the 13).
-function renderTrendCard(trends, selected, labelFor, town) {
-  const valueEl = document.getElementById('mr-trend-value');
-  const provEl = document.getElementById('mr-trend-provenance');
-  const tracked = selected.filter((k) => trends[k]);
-  const untracked = selected.filter((k) => !trends[k]);
-  if (!tracked.length) {
-    valueEl.textContent = 'Not tracked';
-    provEl.textContent = (selected.length > 1 ? 'None of these types are' : labelFor(selected[0]) + ' isn’t')
-      + ' part of DOSM’s wholesale & retail trade index (it only covers 4 of the 13 categories here — see the tooltip)';
-    return;
+  function demoNote(prefix) { return S.data.demo.notes.filter((n) => n.indexOf(prefix) === 0).join('; '); }
+  function ideaPanel() {
+    const an = S.an, d = S.data, keys = S.ticked.filter((k) => an.perCat[k]);
+    const ids = new Set(); d.pois.forEach((p) => { if (p.cats.some((c) => keys.includes(c))) ids.add(p.id); });
+    const sc = E.ideaScore(keys, an, S.weights, { observedBusyness: S.onSite }), total = Object.values(S.weights).reduce((s, x) => s + x, 0);
+    const READ = ['', 'Very quiet', 'Quiet', 'Moderate', 'Busy', 'Packed — queue out the door'];
+    const trendLines = keys.map((k) => { const c = d.cat.find((x) => x.key === k), t = c && c.iowrt && d.trends[c.iowrt]; return t ? esc(c.label) + ': ' + (t.growthYoy > 0 ? '+' : '') + t.growthYoy.toFixed(1) + '% YoY (as of ' + esc(t.asOf) + ')' : ''; }).filter(Boolean);
+    const pick = d.cat.map((c) => '<label class="mr-pick' + (S.ticked.includes(c.key) ? ' is-on' : '') + '"><input type="checkbox" data-pick="' + esc(c.key) + '"' + (S.ticked.includes(c.key) ? ' checked' : '') + (!S.ticked.includes(c.key) && S.ticked.length >= MAX_TICKED ? ' disabled' : '') + '> ' + esc(c.label) + '</label>').join('');
+    const wrow = [['lowCompetition', 'Low competition'], ['population', 'Population reached'], ['income', 'Household income band'], ['diversity', 'Category diversity'], ['momentum', 'Momentum (neutral)'], ['competitorStrength', 'Competitor strength (your on-site read)']];
+    return '<p class="mr-sub">Pick up to ' + MAX_TICKED + ' business types you are weighing. Nothing is re-fetched — this re-reads the analysis you already ran.</p><div class="mr-picks">' + pick + '</div>'
+      + (keys.length ? '<div class="mr-banner"><div class="mr-big">' + pct(sc.total) + '</div><div><strong>' + esc(E.verdict(sc.total)) + '</strong><span class="mr-prov">Market score for your ticked types — calculated, using your weights below</span></div></div>'
+        + '<div class="mr-kpis"><div class="mr-kpi"><b>' + ids.size + '</b><span>Competitors in the area</span><span class="mr-prov">Estimated — ' + esc(d.source) + '</span></div>'
+        + '<div class="mr-kpi"><b>' + pct(an.diversity) + '% mixed</b><span>Category mix nearby</span></div>'
+        + '<div class="mr-kpi"><b>' + (d.demo.population ? fmtN(d.demo.population) : 'Not available') + '</b><span>District population</span><span class="mr-prov">Official — DOSM (district-level)' + (demoNote('Population') ? ' · ' + esc(demoNote('Population')) : '') + '</span></div>'
+        + '<div class="mr-kpi"><b>' + (d.demo.income ? 'RM' + fmtN(Math.round(d.demo.income)) + '/mo' : 'Not available') + '</b><span>Median household income</span><span class="mr-prov">Official — DOSM (district-level)</span></div>'
+        + '<div class="mr-kpi"><b>' + (S.onSite ? READ[S.onSite] : 'Not noted') + '</b><span>Competitor strength</span><span class="mr-prov">Observed — your own on-site read</span></div>'
+        + '<div class="mr-kpi"><b>' + d.anchors.length + '</b><span>Nearby institutions</span><span class="mr-prov">' + esc(Object.entries(an.anchorCounts).map(([k, n]) => n + ' ' + E.ANCHOR_BY_KEY[k].label.toLowerCase()).join(', ') || 'none found') + '</span></div></div>'
+        + '<div class="mr-table-wrap"><table class="mr-table"><thead><tr><th>Type</th><th>Found</th><th>Per km²</th><th>Nearest</th><th>Signal</th></tr></thead><tbody>'
+        + keys.map((k) => { const m = an.perCat[k]; return '<tr><td>' + esc(m.label) + '</td><td>' + m.count + '</td><td>' + m.density.toFixed(1) + '</td><td>' + (m.nearestM == null ? '—' : esc(E.util.fmtDist(m.nearestM))) + '</td><td><span class="mr-chips">' + chips(m) + '</span></td></tr>'; }).join('') + '</tbody></table></div>'
+        + (trendLines.length ? '<p class="mr-sub">National retail trend (Malaysia-wide, not town-specific): ' + trendLines.join(' · ') + '</p>' : '<p class="mr-sub">National retail trend: none of these types is in DOSM’s wholesale &amp; retail index.</p>')
+      : '<p class="mr-note warn">Tick at least one business type to see its market score.</p>')
+      + '<h3 class="mr-h">On-site read <span class="mr-hint">(optional — counts in the score at 10% when picked)</span></h3><div class="mr-field"><label for="mr-onsite">How busy do the competitors look right now?</label><select id="mr-onsite"><option value="">Not noted — leave out of the score</option>' + [1, 2, 3, 4, 5].map((n) => '<option value="' + n + '"' + (S.onSite === n ? ' selected' : '') + '>' + READ[n] + '</option>').join('') + '</select></div>'
+      + '<h3 class="mr-h">Score weights <button type="button" class="mr-link" data-act="weights">' + (S.weightsOpen ? 'hide' : 'edit') + '</button></h3>'
+      + (S.weightsOpen ? '<table class="mr-table mr-wts"><tbody>' + wrow.map(([k, l]) => '<tr><td>' + l + '</td><td><input type="number" min="0" max="1" step="0.05" data-w="' + k + '" value="' + S.weights[k].toFixed(2) + '" aria-label="' + esc(l) + ' weight"></td></tr>').join('') + '</tbody></table><p class="mr-sub">Weights are re-scaled to add up to 1, so any total gives a sane score. Current total: ' + total.toFixed(2) + '.</p>' : '')
+      + '<h3 class="mr-h">Vacant units you have spotted <span class="mr-hint">(notepad — nothing is looked up)</span></h3><div class="mr-inline"><select id="mr-vfloor" aria-label="Floor"><option>Ground floor</option><option>1st floor</option><option>2nd floor</option><option>3rd floor</option><option>Other / whole shoplot</option></select><input type="text" id="mr-vdetail" maxlength="140" placeholder="e.g. ~600 sqft, asking RM1,800/mo" aria-label="Vacancy notes"><button type="button" class="btn" data-act="vadd">Add</button></div>'
+      + (S.vacancies.length ? '<ul class="mr-ev">' + S.vacancies.map((v, i) => '<li>' + esc(v.floor) + ' — ' + esc(v.detail) + ' <button type="button" class="mr-link" data-act="vdel" data-i="' + i + '" aria-label="Remove">✕</button></li>').join('') + '</ul>' : '');
   }
-  const fmt = (t) => (t.growthYoy > 0 ? '+' : '') + t.growthYoy.toFixed(1) + '% YoY';
-  valueEl.innerHTML = tracked.length === 1
-    ? escapeHTML(fmt(trends[tracked[0]]))
-    : tracked.map((k) => `<span class="mr-trend-line">${escapeHTML(labelFor(k))}: ${escapeHTML(fmt(trends[k]))}</span>`).join('');
-  const asOf = Array.from(new Set(tracked.map((k) => trends[k].asOf))).join(', ');
-  provEl.textContent = 'Official — DOSM, as of ' + asOf + ' · Malaysia-wide, not ' + town.label + '-specific'
-    + (untracked.length ? ' · Not tracked: ' + untracked.map(labelFor).join(', ') : '');
-}
-
-async function analyzeSpot() {
-  // ADDED, 2026-09-27: re-assert the active mode's panel set before doing anything else — see this
-  // function's own comment on applyModeVisibility() for why this is the more important of the two
-  // call sites now, not just the one in finishWizard().
-  applyModeVisibility();
-
-  const town = TOWNS[wizardAnswers.town];
-  const catchmentModeKey = document.getElementById('mr-catchment-select').value;
-  const catchmentMode = CATCHMENT_MODES[catchmentModeKey];
-  const selected = getActiveCategories();
-  const pin = pinMarker.getLatLng();
-
-  // MAX_CATEGORIES and "tick at least one" are Market Analysis rules — Market Gap always sends the
-  // whole checklist (never empty, never capped at 4), so neither check applies to it.
-  if (currentMode === 'analysis') {
-    if (!selected.length) { setStatus('Tick at least one business type first.', true); return; }
-    if (selected.length > MAX_CATEGORIES) { setStatus('Pick at most ' + MAX_CATEGORIES + ' business types.', true); return; }
+  function areaPanel() {
+    const an = S.an, d = S.data, c = an.coverage, st = c.stats || {}, nm = an.niche;
+    return confNote()
+      + '<div class="mr-kpis"><div class="mr-kpi"><b>' + d.pois.length + '</b><span>Businesses mapped in the area</span></div><div class="mr-kpi"><b>' + d.areaKm2.toFixed(1) + ' km²</b><span>Area analysed</span><span class="mr-prov">' + (d.isReal ? 'Real travel-time shape' : 'Estimated radius — not a travel-time shape') + '</span></div>'
+      + '<div class="mr-kpi"><b>' + (d.pois.length / d.areaKm2).toFixed(1) + '/km²</b><span>Business density</span></div><div class="mr-kpi"><b>' + d.anchors.length + '</b><span>Demand drivers</span><span class="mr-prov">' + esc(Object.entries(an.anchorCounts).map(([k, n]) => n + ' ' + E.ANCHOR_BY_KEY[k].label.toLowerCase()).join(', ') || 'none found') + '</span></div>'
+      + '<div class="mr-kpi"><b>' + (d.demo.population ? fmtN(d.demo.population) : 'Not available') + '</b><span>District population</span><span class="mr-prov">Official — DOSM (district-level, not this catchment)' + (demoNote('Population') ? ' · ' + esc(demoNote('Population')) : '') + '</span></div>'
+      + '<div class="mr-kpi"><b>' + (d.demo.income ? 'RM' + fmtN(Math.round(d.demo.income)) + '/mo' : 'Not available') + '</b><span>Median household income</span><span class="mr-prov">Official — DOSM (district-level)</span></div></div>'
+      + '<h3 class="mr-h">Where the data came from</h3><div class="mr-table-wrap"><table class="mr-table"><tbody>'
+      + '<tr><th>OpenStreetMap</th><td>' + esc(d.source) + (d.trail.length ? '<br><span class="mr-prov">Other routes that failed first: ' + esc(d.trail.join(' · ')) + '</span>' : '') + '</td></tr>'
+      + '<tr><th>Overture layer</th><td>' + (d.ovt ? 'Release ' + esc(d.ovt.release || '?') + ' · ' + fmtN(d.ovt.rows) + ' places in town file · ' + d.ovt.used + ' inside this area · ' + (st.matched || 0) + ' matched with OpenStreetMap' : 'Not loaded for this town (optional). Confidence below reflects how many businesses are mapped, not true completeness.') + '</td></tr>'
+      + (c.mode === 'capture-recapture' ? '<tr><th>Completeness estimate</th><td>About ' + fmtN(Math.round(st.nHat)) + ' businesses expected here; ' + c.nUnion + ' mapped (' + pct(c.k) + '). OpenStreetMap alone recovers about ' + pct(st.recallOsm || 0) + ' of what Overture lists.</td></tr>' : '')
+      + '<tr><th>Cuisine tagging</th><td>' + nm.tagged + ' of ' + nm.total + ' restaurants/food stalls have a cuisine (' + pct(nm.taggedShare) + '). ' + (nm.reliable ? 'Enough to spot niche gaps.' : 'Too sparse to call niche gaps reliably.') + '</td></tr>'
+      + '<tr><th>Worker</th><td>' + (d.workerVersion ? 'v' + esc(d.workerVersion) + ' answered this analysis'
+        + (d.workerVersion !== VERSION ? '<br><span class="mr-prov"><b>This page is v' + esc(VERSION) + ' but the Worker is v' + esc(d.workerVersion) + '</b> — paste the matching market-radar-proxy-worker.js into Cloudflare (see the setup guide).</span>' : '') : 'No answer from the Worker for this analysis (see District data below). Check that market-radar-proxy-worker.js v' + esc(VERSION) + ' is deployed.') + '</td></tr>'
+      + (d.ctxError ? '<tr><th>District data</th><td>Unavailable: ' + esc(d.ctxError) + '. The catchment is an estimated circle and population/income are missing.</td></tr>' : '')
+      + (d.unmapped.length ? '<tr><th>Overture categories not mapped</th><td>' + esc(d.unmapped.map(([k, n]) => k + ' (' + n + ')').join(', ')) + '<br><span class="mr-prov">Places in these categories are ignored. Add their words to the registry if they matter.</span></td></tr>' : '')
+      + '</tbody></table></div>';
   }
-
-  // Every standard type is always sent (so "category mix nearby" stays meaningful whichever ones
-  // are ticked); a custom OSM tag joins them as its own type when ticked (Market Analysis), and any
-  // gap-mode checklist additions join the same way (Market Gap) — see gapCustomItems.
-  const categoriesForRequest = {};
-  Object.entries(CATEGORY_TAGS).forEach(([key, c]) => { if (key !== 'custom') categoriesForRequest[key] = { label: c.label, tags: c.tags }; });
-  let customLabel = '';
-  if (selected.includes('custom')) {
-    const key = document.getElementById('mr-custom-key').value.trim();
-    const value = document.getElementById('mr-custom-value').value.trim();
-    if (!key || !value) { setStatus('Type both an OSM key and value for the custom type first.', true); return; }
-    if (!CUSTOM_TAG_PATTERN.test(key) || !CUSTOM_TAG_PATTERN.test(value)) {
-      setStatus('Custom OSM tags can only use letters, numbers, _ : and - (up to 40 characters).', true);
+  const bizRows = () => {
+    const d = S.data, f = S.biz, q = f.q.trim().toLowerCase();
+    return d.pois.filter((p) => (!q || (p.name || '').toLowerCase().includes(q)) && (!f.cat || p.cats.includes(f.cat)) && (!f.src || (f.src === 'both' ? p.sources.length > 1 : p.sources.length === 1 && p.sources[0] === f.src)))
+      .map((p) => Object.assign({ dist: E.geo.haversineM(S.pin.lat, S.pin.lng, p.lat, p.lng) }, p)).sort((a, b) => a.dist - b.dist);
+  };
+  function bizBody() {
+    const rows = bizRows();
+    return rows.slice(0, 150).map((p) => '<tr><td>' + esc(p.name || '(unnamed)') + '</td><td>' + esc(p.cats.map(labelOf).join(', ')) + '</td><td>' + esc(srcText(p)) + '</td><td>' + esc(E.util.fmtDist(p.dist)) + '</td></tr>').join('') + (rows.length > 150 ? '<tr><td colspan="4" class="mr-prov">Showing the nearest 150 of ' + rows.length + '. Download the CSV for all.</td></tr>' : '') + (rows.length ? '' : '<tr><td colspan="4">No businesses match.</td></tr>');
+  }
+  function bizPanel() {
+    const cats = S.data.cat.map((c) => '<option value="' + esc(c.key) + '"' + (S.biz.cat === c.key ? ' selected' : '') + '>' + esc(c.label) + '</option>').join('');
+    const srcs = [['', 'Any source'], ['osm', 'OpenStreetMap only'], ['ovt', 'Overture only'], ['both', 'Both']].map(([v, l]) => '<option value="' + v + '"' + (S.biz.src === v ? ' selected' : '') + '>' + l + '</option>').join('');
+    return '<div class="mr-inline"><input type="search" id="mr-bq" placeholder="Search name" value="' + esc(S.biz.q) + '" aria-label="Search business name"><select id="mr-bcat" aria-label="Type"><option value="">All types</option>' + cats + '</select><select id="mr-bsrc" aria-label="Source">' + srcs + '</select><button type="button" class="btn" data-act="csv" data-what="biz">Download CSV</button></div>'
+      + '<div class="mr-table-wrap"><table class="mr-table"><thead><tr><th>Name</th><th>Type</th><th>Source</th><th>From pin</th></tr></thead><tbody id="mr-bbody">' + bizBody() + '</tbody></table></div>';
+  }
+  function assumpPanel() {
+    return '<div class="mr-note"><strong>Every value here is a judgement, not a measurement.</strong> They are editable in the Settings workbook and listed in the handoff document. The opportunity score is: <em>potential</em> (demand drivers ' + E.OPP_WEIGHTS.demand + ', cluster fit ' + E.OPP_WEIGHTS.cluster + ', need ' + E.OPP_WEIGHTS.need + ', national trend ' + E.OPP_WEIGHTS.trend + ') × <em>white space</em> (floor ' + E.T.WHITE_FLOOR + ') × capital factor (low 1, medium ' + E.CAPITAL_FACTOR.medium + ', high ' + E.CAPITAL_FACTOR.high + ') × data-confidence factor.</div>'
+      + '<div class="mr-table-wrap"><table class="mr-table"><thead><tr><th>Type</th><th>Need</th><th>Treated as crowded at</th><th>Capital</th></tr></thead><tbody>' + E.CATEGORIES.map((c) => '<tr><td>' + esc(c.label) + '</td><td>' + esc(c.needTier) + '</td><td>' + c.crowded + ' per km²</td><td>' + esc(c.capital) + (c.founder ? '' : ' (not offered to founders)') + '</td></tr>').join('') + '</tbody></table></div>';
+  }
+  function footerHtml() {
+    const ai = S.ai;
+    return '<div class="no-print"><h3 class="mr-h">Plain-English read</h3><div class="mr-ai' + (ai.text || ai.err ? '' : ' is-empty') + '" id="mr-ai">' + (ai.busy ? 'Writing a plain-English read…' : ai.err ? esc(ai.err) : ai.text ? esc(ai.text) + (ai.via && ai.via !== 'Gemini' ? ' (Written by ' + esc(ai.via) + ' — Gemini was unavailable.)' : '') : 'Describes only the numbers on this page; it never invents a business or figure.') + '</div>'
+      + '<div class="mr-acts"><button type="button" class="btn btn-secondary" data-act="ai"' + (ai.busy ? ' disabled' : '') + '>Get a plain-English read</button>'
+      + (S.tab === 'opp' || S.tab === 'comp' || S.tab === 'list' ? '<button type="button" class="btn btn-secondary" data-act="csv" data-what="rank">Download this ranking (CSV)</button>' : '')
+      + '<button type="button" class="mr-link" data-act="assump">' + (S.showAssump ? 'Hide' : 'How this is scored') + '</button></div>' + (S.showAssump ? assumpPanel() : '') + '</div>';
+  }
+  function panelHtml(tab) { return { opp: oppPanel, idea: ideaPanel, comp: compPanel, list: listPanel, area: areaPanel, biz: bizPanel }[tab](); }
+  function renderResults() {
+    const el = $('mr-results');
+    if (S.busy) { el.innerHTML = '<div class="mr-empty"><p><span class="mr-spin"></span>' + esc(S.stage || 'Working…') + '</p><p class="mr-sub">Big areas can take up to a minute — public map servers are shared.</p></div>'; return; }
+    if (!S.an) {
+      el.innerHTML = '<div class="mr-empty"><h3>Start with a pin</h3><ol><li>Pick a town and how far around the pin to look (walk for a single shoplot, drive for a whole market).</li><li>Click the map (or search a place) to drop the pin.</li><li>Press <strong>Analyze this spot</strong>. Switching between <em>Market Analysis</em> and <em>Market Gap</em> afterwards is instant — nothing is re-fetched.</li></ol></div>';
       return;
     }
-    customLabel = `${key}=${value}`;
-    categoriesForRequest.custom = { label: customLabel, tags: [[key, value]] };
+    ensureTab();
+    const stale = S.stale ? '<p class="mr-note warn no-print">The pin, area or custom types changed — press <strong>Analyze this spot</strong> to refresh these results.</p>' : '';
+    if (S.printAll) { el.innerHTML = TABS[S.mode].map(([k, l]) => '<h2 class="mr-h">' + esc(l) + '</h2>' + panelHtml(k)).join(''); return; }
+    el.innerHTML = stale + '<div class="mr-tabs no-print" role="tablist" aria-label="Results">' + TABS[S.mode].map(([k, l]) => '<button type="button" role="tab" id="mr-tab-' + k + '" class="mr-tab" aria-selected="' + (S.tab === k) + '" tabindex="' + (S.tab === k ? 0 : -1) + '" data-act="tab" data-tab="' + k + '">' + l + '</button>').join('') + '</div>'
+      + '<div role="tabpanel" id="mr-panel" aria-labelledby="mr-tab-' + S.tab + '">' + panelHtml(S.tab) + '</div>' + footerHtml();
   }
-  if (currentMode === 'gap') {
-    gapCustomItems.forEach((c) => { categoriesForRequest[c.key] = { label: c.label, tags: [[c.tagKey, c.tagValue]] }; });
+  function renderToolbar() {
+    document.querySelectorAll('#mr-mode .mr-seg-btn').forEach((b) => { const on = b.dataset.mode === S.mode; b.classList.toggle('is-on', on); b.setAttribute('aria-checked', String(on)); });
+    $('mr-analyze').disabled = S.busy; $('mr-analyze').textContent = S.busy ? 'Analyzing…' : 'Analyze this spot';
+    $('mr-quota').textContent = Math.max(0, MAX_PER_DAY - usageToday()) + ' of ' + MAX_PER_DAY + ' analyses left today';
   }
-  const labelFor = (k) => (k === 'custom' ? customLabel : labelForCategory(k));
-
-  if (!WORKER_ENDPOINT || WORKER_ENDPOINT.indexOf('PASTE_YOUR') === 0) {
-    setStatus('This tool needs its proxy URL set — see WORKER_ENDPOINT near the top of market-radar.js.', true);
-    return;
+  function renderCustom() {
+    const chipsHtml = S.custom.map((c, i) => '<span class="mr-tagchip">' + esc(c.k + '=' + c.v) + '<button type="button" data-act="cdel" data-i="' + i + '" aria-label="Remove ' + esc(c.k + '=' + c.v) + '">✕</button></span>').join(' ');
+    $('mr-custom').innerHTML = '<button type="button" class="mr-link" data-act="copen" aria-expanded="' + S.customOpen + '">' + (S.customOpen ? 'Close' : '＋ Add your own business type') + '</button> ' + chipsHtml
+      + (S.customOpen ? '<div class="mr-inline"><input type="text" id="mr-ck" maxlength="40" placeholder="OSM key, e.g. shop" aria-label="OSM key" autocomplete="off"><input type="text" id="mr-cv" maxlength="40" placeholder="OSM value, e.g. optician" aria-label="OSM value" autocomplete="off"><button type="button" class="btn" data-act="cadd">Add</button><span class="mr-hint">letters, numbers, _ : - only · up to ' + MAX_CUSTOM + ' · applies from the next analysis</span></div>' : '');
   }
-  if (getUsageToday() + 1 > MAX_ANALYSES_PER_DAY) {
-    setStatus('This browser has hit today’s analysis limit. Try again tomorrow.', true);
-    return;
+  function renderAll() { renderToolbar(); renderLayers(); renderCustom(); renderResults(); drawMap(); }
+
+  /* ================= csv / ai ================= */
+  function download(name, headers, rows) {
+    const blob = new Blob(['\ufeff' + E.toCsv(headers, rows)], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-
-  const btn = document.getElementById('mr-analyze-btn');
-  btn.disabled = true;
-  const stopProgress = startProgressMessages();
-  clearResultLayers();
-
-  try {
-    const data = await fetchAnalysis({
-      lat: pin.lat, lng: pin.lng,
-      radiusM: Math.round(catchmentMode.fallbackRadiusM * 1.3),
-      categories: categoriesForRequest,
-      selectedCategories: selected,
-      anchors: ANCHOR_TAGS,
-      isochrone: { profile: catchmentMode.profile, seconds: catchmentMode.seconds },
-      district: town.district,
-    });
-    recordUsage();
-
-    const catchment = drawCatchment(data.isochrone, pin.lat, pin.lng, catchmentModeKey);
-
-    const pois = applyNameHints(data.pois || []);
-    const withinCatchment = pois.filter((p) => catchment.containsPoint(p.lat, p.lng));
-    const selectedSet = new Set(selected);
-    const competitors = withinCatchment.filter((p) => selectedSet.has(p.category));
-    const categoryCounts = {};
-    withinCatchment.forEach((p) => { categoryCounts[p.category] = (categoryCounts[p.category] || 0) + 1; });
-    // Biggest first, so the card reads "12 Restaurant · 8 Cafe · 4 Bakery".
-    const competitorBreakdown = selected
-      .map((k) => ({ key: k, label: labelFor(k), count: competitors.filter((p) => p.category === k).length }))
-      .sort((a, b) => b.count - a.count);
-    // Only populated when GOOGLE_PLACES_API_KEY is set on the Worker — see attachGooglePopularity()
-    // in market-radar-proxy-worker.js. Every competitor still counts toward competitorCount above
-    // whether or not it has a rating; this is a separate, optional refinement, not a filter.
-    const competitorRatingSample = competitors.filter((p) => p.rating != null).map((p) => ({ rating: p.rating, reviewCount: p.reviewCount || 0 }));
-
-    // In gap mode "competitors" ends up meaning every checked category's POIs (selectedSet = the
-    // whole checklist), which is exactly what should show as markers/heat for a full-area scan —
-    // no special-casing needed here for that.
-    poiMarkers = competitors.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#C0392B', fillColor: '#C0392B', fillOpacity: 0.7, weight: 1 })
-      .bindTooltip(escapeHTML(p.name || 'Unnamed') + (selected.length > 1 ? ' — ' + escapeHTML(labelFor(p.category)) : '')).addTo(map));
-    if (competitors.length > 0 && typeof L.heatLayer === 'function') {
-      // max=3 treats "3 competitors overlapping in one spot" as fully saturated — calibrated for this
-      // tool's scale (single digits to a few dozen points), not the thousands Leaflet.heat's default
-      // assumes. See the 2026-09-18 note in MARKET_RADAR_SETUP_AND_GLOSSARY.md.
-      heatLayer = L.heatLayer(competitors.map((p) => [p.lat, p.lng, 1]), {
-        radius: 35,
-        blur: 25,
-        max: 3,
-        gradient: { 0.15: '#1F6F5C', 0.5: '#E8A33D', 1: '#C0392B' },
-      });
-      if (document.getElementById('mr-heat-toggle').checked) heatLayer.addTo(map);
+  function exportCsv(what) {
+    const stamp = TOWNS[S.town].label.toLowerCase() + '-' + S.catchment;
+    if (what === 'biz') return download('market-radar-businesses-' + stamp + '.csv', ['name', 'types', 'sources', 'lat', 'lng', 'metres_from_pin'], bizRows().map((p) => [p.name, p.cats.map(labelOf).join('; '), p.sources.join('+'), p.lat, p.lng, Math.round(p.dist)]));
+    if (S.tab === 'list') return download('market-radar-checklist-' + stamp + '.csv', ['business_type', 'group', 'need', 'found', 'per_km2', 'nearest_m', 'read'], E.checklist(S.an).map((r) => [r.label, E.GROUPS[r.group], r.needTier, r.count, r.density.toFixed(2), r.nearestM == null ? '' : Math.round(r.nearestM), r.read]));
+    const comp = S.mode === 'gap', rk = comp ? E.rankComplements(S.an) : E.rankOpportunities(S.an, null, true);
+    download('market-radar-' + (comp ? 'complements' : 'opportunities') + '-' + stamp + '.csv', ['rank', 'business_type', 'group', 'score_0_100', 'kind', 'found', 'per_km2', 'nearest_m', 'need', 'capital', 'evidence'],
+      rk.map((r, i) => [i + 1, r.label, E.GROUPS[r.group], pct(r.score), r.archetypes.map((a) => E.ARCH[a].label).join(' + '), r.count, r.density.toFixed(2), r.nearestM == null ? '' : Math.round(r.nearestM), r.needTier, r.capital, r.evidence.join(' | ')]));
+  }
+  function snapshot() {
+    const an = S.an, d = S.data, cov = an.coverage;
+    const base = { town: TOWNS[S.town].label, catchment: CATCHMENTS[S.catchment].label, areaKm2: an.areaKm2, confidence: cov.level, confidenceNote: cov.note, districtPopulation: d.demo.population, districtIncome: d.demo.income, catchmentIsReal: d.isReal };
+    const rows = (rk, comp) => rk.slice(0, 5).map((x) => ({ label: x.label, archetype: x.primary ? E.ARCH[x.primary].label : 'No strong signal', score: pct(x.score), evidence: (comp ? x.benefits.map((b) => 'Benefits ' + b.n + '× ' + labelOf(b.key)) : []).concat(x.evidence.slice(0, 3)) }));
+    if (S.mode === 'gap') return Object.assign({ kind: 'complement', top: rows(E.rankComplements(an), true), gaps: E.checklist(an).filter((c) => c.read === 'gap' && c.needTier === 'core').map((c) => c.label) }, base);
+    if (S.tab === 'idea') {
+      const keys = S.ticked.filter((k) => an.perCat[k]), ids = new Set(); d.pois.forEach((p) => { if (p.cats.some((c) => keys.includes(c))) ids.add(p.id); });
+      return Object.assign({ kind: 'idea', category: keys.map(labelOf).join(' + '), competitorCount: ids.size, breakdown: keys.map((k) => ({ label: labelOf(k), count: an.perCat[k].count })), opportunityScore: pct(E.ideaScore(keys, an, S.weights, { observedBusyness: S.onSite }).total), observedBusyness: S.onSite }, base);
     }
+    return Object.assign({ kind: 'opportunity', top: rows(E.rankOpportunities(an, null, true), false) }, base);
+  }
+  async function getInsight() {
+    if (!S.an || S.ai.busy) return;
+    S.ai = { text: '', via: '', busy: true, err: '' }; renderResults();
+    try {
+      const r = await postWorker({ mode: 'insight', snapshot: snapshot() }, 40000), j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+      S.ai = { text: j.text || 'No usable text came back — the numbers are unaffected.', via: j.via, busy: false, err: '' };
+    } catch (e) { S.ai = { text: '', via: '', busy: false, err: 'Couldn’t get a written read right now (' + (e.message || 'unknown error') + '). The numbers above are unaffected.' }; }
+    renderResults();
+  }
 
-    // ADDED, 2026-09-27 — see the header comment's 2026-09-27(b) note. A POI Overpass DID return,
-    // that matches one of the active categories, but that the point-in-polygon/radius test above
-    // excluded from `withinCatchment` — drawn as a distinct hollow marker so it's visually separate
-    // from a real, counted competitor. This never touches competitorCount, categoryCounts, the
-    // opportunity score, or the Gap checklist's counts — it's purely a diagnostic overlay for telling
-    // "found, just outside your shape" apart from "Overpass never found this at all" (which shows no
-    // marker of any colour here — only the base OpenStreetMap tile's own icon, if it draws one for
-    // that amenity/shop type, completely independent of anything this tool draws).
-    const outsideCatchmentPois = pois.filter((p) => selectedSet.has(p.category) && !catchment.containsPoint(p.lat, p.lng));
-    outsideMarkers = outsideCatchmentPois.map((p) => L.circleMarker([p.lat, p.lng], { radius: 6, color: '#8A8A8A', fillColor: '#ffffff', fillOpacity: 0.5, weight: 2, dashArray: '3,3' })
-      .bindTooltip(escapeHTML(p.name || 'Unnamed') + ' — ' + escapeHTML(labelFor(p.category)) + ' (found, outside this catchment)').addTo(map));
+  /* ================= place search (Nominatim: submit-only, throttled) ================= */
+  let lastFind = 0;
+  async function findPlace(q) {
+    q = q.trim(); if (!q) return;
+    if (Date.now() - lastFind < 1200) { setStatus('One moment — place search is rate-limited.'); return; }
+    lastFind = Date.now(); setStatus('Searching for “' + q + '”…');
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=my&bounded=1&viewbox=109.5,5.2,115.9,0.8&q=' + encodeURIComponent(q));
+      const j = await r.json();
+      if (!j.length) { setStatus('No match in Sarawak — try a street or landmark name, or click the map.', true); return; }
+      const lat = Number(j[0].lat), lng = Number(j[0].lon);
+      let best = S.town, bd = Infinity; Object.keys(TOWNS).forEach((k) => { const dd = E.geo.haversineM(lat, lng, TOWNS[k].lat, TOWNS[k].lng); if (dd < bd) { bd = dd; best = k; } });
+      if (bd > 40000) { setStatus('That is more than 40 km from Miri, Kuching, Sibu or Bintulu — pick a nearer place.', true); return; }
+      if (best !== S.town) { S.town = best; $('mr-town').value = best; resetResults(); }
+      if (map) map.setView([lat, lng], 16);
+      placePin(lat, lng, true); setStatus('Pin moved to ' + String(j[0].display_name).split(',').slice(0, 2).join(',') + '. Press Analyze this spot.');
+    } catch (e) { setStatus('Place search is unavailable right now — click the map instead.', true); }
+  }
 
-    // Anchors are informational only — never counted as competitors, never touch the opportunity score.
-    const anchorList = data.anchors || [];
-    anchorMarkers = anchorList.map((a) => L.marker([a.lat, a.lng], {
-      icon: L.divIcon({ className: 'mr-anchor-icon', html: '■', iconSize: [14, 14] }),
-    }).bindTooltip(escapeHTML(a.name || 'Unnamed') + ' — ' + escapeHTML((ANCHOR_TAGS[a.anchorType] || {}).label || a.anchorType)).addTo(map));
-
-    if (catchment.layer) map.fitBounds(catchment.layer.getBounds(), { padding: [20, 20] });
-
-    // Older Workers sent one trend for one category; newer ones send an object keyed by category.
-    const trends = data.wholesaleRetailTrends || (data.wholesaleRetailTrend ? { [selected[0]]: data.wholesaleRetailTrend } : {});
-    const demo = data.demographics || {};
-    const poisAvailable = !data.poisError;
-
-    if (currentMode === 'gap') {
-      // ADDED 2026-09-24 — see computeGapReads() for the gap/thin/oversupplied logic (a relative,
-      // in-catchment read, not an invented external "should have" benchmark) and
-      // MARKET_RADAR_SETUP_AND_GLOSSARY.md for the household-needs research behind the checklist.
-      // Anchors, the DOSM trend card, and rzBroadcast are Market-Analysis-specific display/plumbing
-      // that don't have an equivalent here yet — not shown in gap mode, flagged as KIV rather than
-      // forced into a shape that doesn't fit.
-      lastAnalysis = {
-        poisAvailable,
-        gapRows: poisAvailable ? computeGapReads(categoryCounts, selected, demo.population || 0) : [],
-        districtPopulation: demo.population || 0,
-        districtIncome: demo.medianIncome || 0,
-        demographicsNotes: demo.notes || [],
-        catchmentIsReal: catchment.isReal,
-        districtLabel: town.district,
-        categoryLabel: 'Household needs checklist',
-      };
-      renderGapResults(catchment, data);
-      document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below for a summary of what this checklist suggests.';
-      document.getElementById('mr-ai-insight').classList.add('is-empty');
-      if (data.poisError) {
-        setStatus(data.poisError, true);
-      } else {
-        const gapCount = lastAnalysis.gapRows.filter((r) => r.read === 'gap').length;
-        const overCount = lastAnalysis.gapRows.filter((r) => r.read === 'oversupplied').length;
-        setStatus(`Checked ${selected.length} business types in this catchment — ${gapCount} gap${gapCount === 1 ? '' : 's'}, ${overCount} oversupplied.`);
+  /* ================= events ================= */
+  // The on-site read is a per-spot observation. Forgetting it also gives back the 10% weight that picking it moved from "Low competition".
+  function releaseOnSite() {
+    if (S.onSiteMoved != null) { S.weights.lowCompetition += S.onSiteMoved; S.weights.competitorStrength = 0; S.onSiteMoved = null; }
+    S.onSite = null;
+  }
+  function resetResults() { releaseOnSite(); S.data = null; S.an = null; S.ai = { text: '', via: '', busy: false, err: '' }; S.focus = []; S.stale = false; S.expanded = {}; S.biz = { q: '', cat: '', src: '' }; renderAll(); }
+  function setMode(m) { S.mode = m; ensureTab(); S.focus = []; S.ai = { text: '', via: '', busy: false, err: '' }; renderToolbar(); renderResults(); drawMap(); }
+  function onAct(act, el) {
+    const key = el.dataset.key;
+    if (act === 'tab') { S.tab = el.dataset.tab; S.ai = { text: '', via: '', busy: false, err: '' }; renderResults(); if (S.tab === 'idea') drawMap(); return; }
+    if (act === 'exp') { S.expanded[(S.tab === 'comp' ? 'comp' : 'opp') + key] = !S.expanded[(S.tab === 'comp' ? 'comp' : 'opp') + key]; renderResults(); return; }
+    if (act === 'focus') { S.focus = S.focus.includes(key) ? [] : [key]; renderResults(); drawMap(); return; }
+    if (act === 'filter') { S.filter = el.dataset.f; renderResults(); return; }
+    if (act === 'gaponly') { S.gapOnly = !S.gapOnly; renderResults(); return; }
+    if (act === 'weights') { S.weightsOpen = !S.weightsOpen; renderResults(); return; }
+    if (act === 'assump') { S.showAssump = !S.showAssump; renderResults(); return; }
+    if (act === 'csv') { exportCsv(el.dataset.what); return; }
+    if (act === 'ai') { getInsight(); return; }
+    if (act === 'vadd') { const det = $('mr-vdetail').value.trim(); if (!det) { $('mr-vdetail').focus(); return; } S.vacancies.push({ floor: $('mr-vfloor').value, detail: det }); renderResults(); return; }
+    if (act === 'vdel') { S.vacancies.splice(Number(el.dataset.i), 1); renderResults(); }
+  }
+  function init() {
+    $('mr-town').innerHTML = Object.entries(TOWNS).map(([k, t]) => '<option value="' + k + '">' + esc(t.label) + '</option>').join('');
+    $('mr-catchment').innerHTML = Object.entries(CATCHMENTS).map(([k, c]) => '<option value="' + k + '">' + esc(c.label) + '</option>').join('');
+    $('mr-town').value = S.town; $('mr-catchment').value = S.catchment;
+    $('mr-ver').textContent = 'v' + VERSION; $('mr-ver').title = 'Page v' + VERSION + ' · engine v' + E.VERSION + ' · the Worker version appears in Area snapshot → Where the data came from, after an analysis';
+    initMap();
+    $('mr-mode').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b) setMode(b.dataset.mode); });
+    $('mr-town').addEventListener('change', (e) => { S.town = e.target.value; const T = TOWNS[S.town]; if (map) map.setView([T.lat, T.lng], 14); placePin(T.lat, T.lng, false); resetResults(); setStatus(''); });
+    $('mr-catchment').addEventListener('change', (e) => { S.catchment = e.target.value; if (S.an) { S.stale = true; renderResults(); } });
+    $('mr-analyze').addEventListener('click', analyze);
+    $('mr-print').addEventListener('click', () => window.print());
+    $('mr-find-form').addEventListener('submit', (e) => { e.preventDefault(); findPlace($('mr-find').value); });
+    $('mr-layers').addEventListener('change', (e) => { const k = e.target.dataset.layer; if (k) { S.layers[k] = e.target.checked; drawMap(); } });
+    $('mr-custom').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      if (b.dataset.act === 'copen') { S.customOpen = !S.customOpen; renderCustom(); return; }
+      if (b.dataset.act === 'cdel') { S.custom.splice(Number(b.dataset.i), 1); if (S.an) S.stale = true; renderCustom(); renderResults(); return; }
+      if (b.dataset.act === 'cadd') {
+        const k = $('mr-ck').value.trim(), v = $('mr-cv').value.trim();
+        if (!CUSTOM_RE.test(k) || !CUSTOM_RE.test(v)) { setStatus('Custom OSM tags need a key and a value using only letters, numbers, _ : and - (up to 40 characters).', true); return; }
+        if (S.custom.length >= MAX_CUSTOM) { setStatus('Up to ' + MAX_CUSTOM + ' custom types — remove one first.', true); return; }
+        S.custom.push({ key: 'custom' + (++S.customN), k, v }); if (S.an) S.stale = true; setStatus(''); renderCustom(); renderResults();
       }
-      return; // gap mode's rendering is fully handled above; skip the analysis-mode block below
-    }
-
-    lastAnalysis = {
-      competitorCount: competitors.length,
-      competitorBreakdown,
-      categoryCount: selected.length,
-      selectedCategories: selected.slice(),
-      diversityIndex: computeDiversityIndex(categoryCounts),
-      districtPopulation: demo.population || 0,
-      districtIncome: demo.medianIncome || 0,
-      demographicsNotes: demo.notes || [],
-      catchmentAreaKm2: catchment.areaKm2,
-      catchmentIsReal: catchment.isReal,
-      districtLabel: town.district,
-      categoryLabel: selected.map(labelFor).join(' + '),
-      competitorRatingSample,
-      anchorCount: anchorList.length,
-      trends,
-      // False when the Worker's Overpass call failed entirely (see poisError in the Worker).
-      // "0 competitors" and "we couldn't check" must never look the same on screen — the first
-      // is a real, useful finding; the second is a data outage that would otherwise read as a
-      // suspiciously perfect opportunity score.
-      poisAvailable,
-    };
-
-    const countEl = document.getElementById('mr-competitor-count');
-    const breakdownEl = document.getElementById('mr-competitor-breakdown');
-    if (lastAnalysis.poisAvailable) {
-      const meta = data.meta || {};
-      const sourceParts = [catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback];
-      if (meta.poiSource) sourceParts.push('OSM via ' + meta.poiSource);
-      if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
-      countEl.innerHTML = `${lastAnalysis.competitorCount}${provenanceHTML(sourceParts.join(' · '))}`;
-      breakdownEl.textContent = selected.length > 1 ? competitorBreakdown.map((b) => `${b.count} ${b.label}`).join(' · ') : '';
-      document.getElementById('mr-diversity-value').textContent = Math.round(lastAnalysis.diversityIndex * 100) + '% mixed';
-    } else {
-      countEl.innerHTML = `Unavailable${provenanceHTML('Overpass error — see status message below')}`;
-      breakdownEl.textContent = '';
-      document.getElementById('mr-diversity-value').innerHTML = `Unavailable${provenanceHTML('Overpass error — see status message below')}`;
-    }
-    // When a DOSM figure is missing, the Worker says exactly why (HTTP status, empty result, rate limit) — show it.
-    const demoNote = (prefix) => lastAnalysis.demographicsNotes.filter((n) => n.indexOf(prefix) === 0).join('; ');
-    // v1.5.1: the note now shows even when a number IS present, not just on "Not available" — needed
-    // because a non-zero population can now come from the Worker's pinned fallback table (see
-    // DISTRICT_POPULATION_FALLBACK_2023 in market-radar-proxy-worker.js) rather than a live query, and
-    // that's exactly the kind of thing this page's own provenance-tag principle says should be shown,
-    // not silently hidden behind a plain-looking number.
-    document.getElementById('mr-population-value').innerHTML = lastAnalysis.districtPopulation
-      ? escapeHTML(lastAnalysis.districtPopulation.toLocaleString('en-MY')) + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '')
-      : 'Not available' + (demoNote('Population') ? provenanceHTML(demoNote('Population')) : '');
-    document.getElementById('mr-income-value').innerHTML = lastAnalysis.districtIncome
-      ? escapeHTML('RM' + Math.round(lastAnalysis.districtIncome).toLocaleString('en-MY') + '/mo')
-      : 'Not available' + (demoNote('Income') ? provenanceHTML(demoNote('Income')) : '');
-
-    renderStrengthCard();
-
-    const anchorCounts = {};
-    anchorList.forEach((a) => { anchorCounts[a.anchorType] = (anchorCounts[a.anchorType] || 0) + 1; });
-    const anchorSummary = Object.entries(anchorCounts).map(([k, n]) => `${n} ${(ANCHOR_TAGS[k] || {}).label || k}`).join(', ');
-    document.getElementById('mr-anchor-value').textContent = anchorList.length ? anchorList.length : 'None found';
-    document.getElementById('mr-anchor-provenance').textContent = anchorList.length ? ('Official — OSM: ' + anchorSummary) : 'Official — OSM (none of the tracked types found nearby)';
-
-    renderTrendCard(trends, selected, labelFor, town);
-
-    setPanelHidden('mr-result-cards', false);
-    setPanelHidden('mr-field-note-panel', false);
-    setPanelHidden('mr-vacancy-panel', false);
-    setPanelHidden('mr-weights-panel', false);
-    updateWeightTotalDisplay();
-    renderScore();
-
-    document.getElementById('mr-ai-insight').textContent = 'Click "Get a plain-English read" below for a summary of what these numbers suggest.';
-    document.getElementById('mr-ai-insight').classList.add('is-empty');
-
-    if (data.poisError) {
-      setStatus(data.poisError, true);
-    } else {
-      const n = lastAnalysis.competitorCount;
-      setStatus(selected.length > 1
-        ? `Found ${n} competitor${n === 1 ? '' : 's'} across ${selected.length} business types (${competitorBreakdown.map((b) => `${b.count} ${b.label}`).join(', ')}) in this catchment.`
-        : `Found ${n} matching ${lastAnalysis.categoryLabel} competitor${n === 1 ? '' : 's'} in this catchment.`);
-    }
-
-    // Broadcasts if costing-sync.js is loaded and a listener exists — Interactive Costing Analysis and
-    // Margin Analysis don't read a 'market-radar' source yet (see the KIV list), so this currently
-    // reaches no one, but the shape is ready. `category` stays a single joined string for that reason.
-    // Market Gap mode doesn't broadcast (see the early return above) — there's no single opportunity
-    // score or category to send in this same shape; revisit if a receiving side is ever built for it.
-    if (typeof rzBroadcast === 'function') {
-      rzBroadcast({ source: 'market-radar', category: lastAnalysis.categoryLabel, categories: selected.slice(), district: lastAnalysis.districtLabel, competitorCount: lastAnalysis.competitorCount, opportunityScore: computeOpportunityScore(scoreInputs(), currentWeights()).total });
-    }
-  } catch (err) {
-    setStatus(err.message || 'Something went wrong. Try again.', true);
-  } finally {
-    stopProgress();
-    btn.disabled = false;
+    });
+    const res = $('mr-results');
+    res.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b) onAct(b.dataset.act, b); });
+    res.addEventListener('keydown', (e) => {
+      if (!e.target.matches('[role=tab]') || (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft')) return;
+      const tabs = TABS[S.mode].map((t) => t[0]), i = tabs.indexOf(S.tab), n = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+      S.tab = n; renderResults(); const t = $('mr-tab-' + n); if (t) t.focus();
+    });
+    res.addEventListener('change', (e) => {
+      const t = e.target;
+      if (t.dataset.pick) { const k = t.dataset.pick; S.ticked = t.checked ? S.ticked.concat(k).slice(0, MAX_TICKED) : S.ticked.filter((x) => x !== k); renderResults(); drawMap(); }
+      else if (t.id === 'mr-onsite') {
+        if (t.value) {
+          S.onSite = Number(t.value);
+          if (S.weights.competitorStrength === 0) { const mv = Math.min(0.10, S.weights.lowCompetition); S.weights.lowCompetition -= mv; S.weights.competitorStrength = 0.10; S.onSiteMoved = mv; }
+        } else releaseOnSite();
+        renderResults();
+      }
+      else if (t.dataset.w) { S.onSiteMoved = null; S.weights[t.dataset.w] = Math.max(0, Math.min(1, parseFloat(t.value) || 0)); renderResults(); }
+      else if (t.id === 'mr-bcat') { S.biz.cat = t.value; $('mr-bbody').innerHTML = bizBody(); }
+      else if (t.id === 'mr-bsrc') { S.biz.src = t.value; $('mr-bbody').innerHTML = bizBody(); }
+    });
+    res.addEventListener('input', (e) => { if (e.target.id === 'mr-bq') { S.biz.q = e.target.value; $('mr-bbody').innerHTML = bizBody(); } });
+    window.addEventListener('beforeprint', () => { if (S.an) { S.printAll = true; renderResults(); } });
+    window.addEventListener('afterprint', () => { if (S.printAll) { S.printAll = false; renderResults(); } });
+    renderAll();
   }
-}
-function provenanceHTML(text) { return `<span class="mr-provenance">${escapeHTML(text)}</span>`; }
-
-// Renders the Market Gap checklist table from lastAnalysis.gapRows (see computeGapReads()).
-// catchment/data are passed in rather than re-read from lastAnalysis since the provenance line
-// needs catchment.isReal and data.meta, which aren't part of the gap-mode lastAnalysis shape.
-function renderGapResults(catchment, data) {
-  const rows = lastAnalysis.gapRows;
-  const body = document.getElementById('mr-gap-table-body');
-  if (!lastAnalysis.poisAvailable) {
-    body.innerHTML = '<tr><td colspan="4">Unavailable — see the status message below.</td></tr>';
-  } else {
-    const READ_LABELS = { gap: 'Gap', thin: 'Thin', adequate: 'Adequate', oversupplied: 'Oversupplied' };
-    body.innerHTML = rows.map((r) => {
-      // "N per ≈X" reads as a plain, static ratio (this district's whole population ÷ how many of
-      // this type are in THIS catchment), never a rate — see the 2026-09-25 fix note in
-      // MARKET_RADAR_SETUP_AND_GLOSSARY.md for why the wording and locale-pinned formatting matter.
-      const reach = r.perShop ? '1 per ≈' + r.perShop.toLocaleString('en-MY') : '—';
-      return `<tr><td>${escapeHTML(r.label)}</td><td>${r.count}</td><td>${reach}</td>`
-        + `<td><span class="mr-gap-read is-${r.read}">${READ_LABELS[r.read]}</span></td></tr>`;
-    }).join('');
-  }
-  const meta = data.meta || {};
-  const sourceParts = [catchment.isReal ? PROVENANCE.isochroneReal : PROVENANCE.isochroneFallback];
-  if (meta.poiSource) sourceParts.push('OSM via ' + meta.poiSource);
-  if (meta.workerVersion) sourceParts.push('Worker v' + meta.workerVersion);
-  document.getElementById('mr-gap-provenance').textContent = 'Estimated — ' + sourceParts.join(' · ')
-    + (lastAnalysis.districtPopulation ? ' · "Reach" = this district\u2019s whole DOSM population \u00f7 how many of that type are in this catchment \u2014 a rough district-wide availability ratio, not a monthly, daily, or catchment-only figure' : '');
-  setPanelHidden('mr-gap-results', false);
-}
-
-/* ================= PLAIN-ENGLISH READ (narration only — Gemini first, Workers AI backstop on the Worker side) ================= */
-
-async function getInsight() {
-  if (!lastAnalysis) return;
-  const box = document.getElementById('mr-ai-insight');
-  box.textContent = 'Writing a plain-English read…';
-  box.classList.remove('is-empty');
-  try {
-    let data;
-    if (currentMode === 'gap') {
-      // ADDED 2026-09-24 — a distinct snapshot shape (kind:'gap') rather than forcing the checklist
-      // into the single-category shape below; see gapInsightPrompt() in
-      // market-radar-proxy-worker.js for the matching narration prompt. Same hard rules apply:
-      // narrate only, never invent a number, never tell the person to open or not open something.
-      data = await fetchAnalysis({
-        mode: 'insight',
-        snapshot: {
-          kind: 'gap',
-          town: TOWNS[wizardAnswers.town].label,
-          rows: lastAnalysis.gapRows.map((r) => ({ label: r.label, count: r.count, read: r.read })),
-          districtPopulation: lastAnalysis.districtPopulation,
-          catchmentIsReal: lastAnalysis.catchmentIsReal,
-        },
-      });
-    } else {
-      const score = computeOpportunityScore(scoreInputs(), currentWeights());
-      data = await fetchAnalysis({
-        mode: 'insight',
-        snapshot: {
-          town: TOWNS[wizardAnswers.town].label,
-          category: lastAnalysis.categoryLabel,
-          competitorCount: lastAnalysis.competitorCount,
-          breakdown: lastAnalysis.competitorBreakdown.map((b) => ({ label: b.label, count: b.count })),
-          diversityIndex: lastAnalysis.diversityIndex,
-          districtPopulation: lastAnalysis.districtPopulation,
-          districtIncome: lastAnalysis.districtIncome,
-          opportunityScore: Math.round(score.total * 100),
-          catchmentIsReal: lastAnalysis.catchmentIsReal,
-          observedBusyness: getObservedBusyness(),
-        },
-      });
-    }
-    box.textContent = (data.text || 'No usable text came back that time — the numbers above are unaffected.')
-      + (data.text && data.via && data.via !== 'Gemini' ? ' (Written by ' + data.via + ' — Gemini was unavailable.)' : '');
-    box.classList.remove('is-empty');
-  } catch (err) {
-    box.textContent = 'Couldn’t get a written read right now (' + (err.message || 'unknown error') + '). The numbers above are unaffected.';
-    box.classList.add('is-empty');
-  }
-}
-
-/* ================= INIT ================= */
-
-let rzInitialized = false;
-
-function init() {
-  if (rzInitialized) return;
-  rzInitialized = true;
-
-  renderCategoryOptions();
-
-  // The six weight boxes are filled from SCORE_WEIGHTS_DEFAULT (the HTML value= attributes are only a fallback),
-  // so the constant documented in the settings sheet is the one place to change a starting weight.
-  Object.keys(SCORE_WEIGHTS_DEFAULT).forEach((key) => { if (document.getElementById('mr-weight-' + key)) setWeightInput(key, SCORE_WEIGHTS_DEFAULT[key]); });
-
-  const catchmentSelect = document.getElementById('mr-catchment-select');
-  catchmentSelect.innerHTML = Object.entries(CATCHMENT_MODES).map(([value, m]) => `<option value="${value}">${escapeHTML(m.label)}</option>`).join('');
-
-  // ADDED 2026-09-24: the page now opens on mode-select (see market-radar.html), not the wizard —
-  // chooseMode() below renders the wizard's first step itself once a mode is actually picked, so
-  // there's nothing to pre-render here.
-  document.getElementById('mr-mode-analysis-btn').addEventListener('click', () => chooseMode('analysis'));
-  document.getElementById('mr-mode-gap-btn').addEventListener('click', () => chooseMode('gap'));
-  document.getElementById('wizard-back').addEventListener('click', goBack);
-  document.getElementById('mr-edit-answers').addEventListener('click', editAnswers);
-  document.getElementById('mr-save-pdf').addEventListener('click', () => window.print());
-  document.getElementById('mr-analyze-btn').addEventListener('click', analyzeSpot);
-  document.getElementById('mr-get-insight').addEventListener('click', getInsight);
-  document.getElementById('mr-gap-custom-add').addEventListener('click', addGapCustomItem);
-
-  ['lowCompetition', 'population', 'income', 'diversity', 'momentum', 'competitorStrength'].forEach((key) => {
-    document.getElementById('mr-weight-' + key).addEventListener('input', onWeightEditedByHand);
-  });
-
-  const observedEl = document.getElementById('mr-observed-busyness');
-  if (observedEl) observedEl.addEventListener('change', onObservedChange);
-
-  document.getElementById('mr-vacancy-add').addEventListener('click', () => {
-    const detailEl = document.getElementById('mr-vacancy-detail');
-    const detail = detailEl.value.trim();
-    if (!detail) { detailEl.focus(); return; }
-    vacantUnits.push({ floor: document.getElementById('mr-vacancy-floor').value, detail });
-    detailEl.value = '';
-    renderVacancyList();
-  });
-
-  document.getElementById('mr-heat-toggle').addEventListener('change', (e) => {
-    if (!heatLayer) return;
-    if (e.target.checked) { heatLayer.addTo(map); } else { map.removeLayer(heatLayer); }
-  });
-}
-
-document.addEventListener('DOMContentLoaded', init);
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+  window.__MR = { S, analyze, setMode }; // test hook only
+})();

@@ -1,15 +1,12 @@
 <!DOCTYPE html>
-<!-- Market Radar page v1.6.2 (2026-09-27) — aria-label added to 4 fields that only had a placeholder
-     (mr-vacancy-floor, mr-vacancy-detail, mr-gap-custom-key, mr-gap-custom-value — a DevTools "no
-     label associated with a form field" report), plus one new map-legend entry for the outside-
-     catchment diagnostic markers added in market-radar.js this round. No other markup changes —
-     pairs with market-radar.js v1.6.2 and market-radar-proxy-worker.js v1.6.0 (unchanged) -->
+<!-- Market Radar page v1.7.0 (2026-10-15). Single-screen app: all results render into #mr-results from one state object (no hidden panels).
+     Pairs with market-radar.js v1.7.0, market-radar-engine.js v1.7.0, market-radar-proxy-worker.js v1.7.0. Details: MARKET_RADAR_HANDOFF.md -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reysourcez Enterprise — Market Radar</title>
-  <meta name="description" content="Drop a pin anywhere in Miri, Kuching, Sibu or Bintulu and see real competitor density, catchment reach, and an editable opportunity score — free, official Malaysian open data, nothing scraped.">
+  <meta name="description" content="Drop a pin in Miri, Kuching, Sibu or Bintulu and see which business is the best opportunity there, or what would complete the area — from open data, with the evidence shown.">
 
   <link rel="icon" href="favicon.ico" sizes="32x32">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -19,138 +16,124 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
-
   <link rel="stylesheet" href="styles.css?v=16">
-
-  <!-- Two deliberate exceptions to this site's usual zero-dependency
-       rule, both free, both loaded as plain <script>/<link> tags with
-       no build step and no npm — see market-radar.js's header comment
-       for why an actual interactive street map isn't something that
-       can reasonably be hand-rolled in SVG the way this site's other
-       charts are. Pin these version numbers; don't switch to an
-       unpinned "@latest" URL, since that can silently break the page
-       on a future release. -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 
-  <!-- Page-specific styles only — everything reusable (buttons, tables,
-       result cards, wizard, tooltips) comes from styles.css as-is, per
-       AI_BUILD_BRIEF.md. New here: the map container and legend, the
-       provenance tags, the weight-editor row, and the pin-coordinate
-       readout. -->
   <style>
-    #mr-map { height: 480px; width: 100%; border-radius: 10px; border: 1px solid var(--line); z-index: 1; }
-    /* Leaflet needs an explicit height on its container or it renders
-       as a blank 0px strip — the single most common integration bug
-       with this library, so calling it out here rather than leaving
-       someone to discover it the hard way. */
+    /* Page-only styles. Every site variable has a fallback so the page still works if styles.css changes. */
+    .mr-hide { display: none !important; }              /* the ONLY hiding mechanism: author CSS beats the [hidden] attribute */
+    .mr-app { --c-line: var(--line, #d5dcd8); --c-acc: var(--accent, #1F6F5C); --c-acc-d: var(--accent-dark, #14564a); --c-soft: var(--accent-soft, #e8f2ee); --c-mut: var(--muted, #5c6d64); --c-txt: var(--text, #1c2b25); --c-sur: var(--surface, #fff); --c-pap: var(--paper, #f6f8f6); }
+    .mr-ver { font-family: "IBM Plex Mono", monospace; font-size: .45em; font-weight: 500; color: var(--muted, #5c6d64); vertical-align: middle; margin-left: 8px; cursor: help; }
 
-    .mr-map-wrap { margin-bottom: 16px; }
-    .mr-map-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 4px 0; font-size: 0.82rem; color: var(--muted); }
-    .mr-map-legend span { display: flex; align-items: center; gap: 6px; }
-    .mr-legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-    .mr-legend-line { width: 16px; height: 0; border-top: 2px dashed var(--muted); display: inline-block; }
+    .mr-toolbar { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px 16px; align-items: end; margin-bottom: 10px; }
+    .mr-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .mr-field label, .mr-lbl { font-size: .82rem; font-weight: 600; color: var(--c-txt); }
+    .mr-hint { font-weight: 400; color: var(--c-mut); }
+    .mr-field select, .mr-field input[type=search], .mr-field input[type=text], .mr-inline input { padding: 9px 10px; border: 1px solid var(--c-line); border-radius: 8px; font: inherit; font-size: .92rem; background: var(--c-sur); color: var(--c-txt); min-width: 0; width: 100%; }
+    .mr-row { display: flex; gap: 8px; }
+    .mr-seg { display: flex; border: 1px solid var(--c-line); border-radius: 10px; overflow: hidden; background: var(--c-sur); }
+    .mr-seg-btn { flex: 1; padding: 8px 12px; border: 0; background: transparent; font: inherit; font-size: .92rem; font-weight: 600; text-align: left; cursor: pointer; line-height: 1.2; color: var(--c-txt); }
+    .mr-seg-btn small { display: block; font-size: .72rem; font-weight: 500; color: var(--c-mut); }
+    .mr-seg-btn + .mr-seg-btn { border-left: 1px solid var(--c-line); }
+    .mr-seg-btn.is-on { background: var(--c-acc); color: #fff; }
+    .mr-seg-btn.is-on small { color: #e3f1ec; }
+    .mr-go { flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .mr-quota { font-size: .78rem; color: var(--c-mut); }
+    .mr-field select:focus-visible, .mr-field input:focus-visible, .mr-seg-btn:focus-visible, .mr-tab:focus-visible, .mr-link:focus-visible, .mr-inline input:focus-visible { outline: 3px solid var(--c-acc); outline-offset: 1px; }
 
-    .mr-pin-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 0.88rem; color: var(--muted); }
-    .mr-pin-row strong { color: var(--text); font-family: "IBM Plex Mono", monospace; font-weight: 600; }
-    .mr-pin-hint { font-size: 0.82rem; color: var(--muted); margin: 0 0 12px; }
+    .mr-custom { margin: 0 0 8px; font-size: .88rem; }
+    .mr-link { background: none; border: 0; padding: 2px 0; font: inherit; color: var(--c-acc-d); text-decoration: underline; cursor: pointer; }
+    .mr-inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+    .mr-inline input { width: 150px; }
+    .mr-tagchip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--c-line); border-radius: 999px; background: var(--c-pap); font-size: .8rem; }
+    .mr-tagchip button { border: 0; background: none; cursor: pointer; color: var(--c-mut); font-size: .9rem; padding: 0 6px; }
+    .mr-status { min-height: 1.4em; font-size: .9rem; color: var(--c-mut); margin: 6px 0 10px; }
+    .mr-status.is-error { color: #B3321F; font-weight: 600; }
 
-    .mr-controls-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 16px; }
-    .mr-controls-row > div { display: flex; flex-direction: column; gap: 6px; }
-    .mr-controls-row label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
-    .mr-controls-row select, .mr-controls-row input[type="text"] {
-      padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px;
-      font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text);
-    }
-    .mr-controls-row select:focus-visible, .mr-controls-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    /* v1.5.0 — business-type checkbox group (replaces the old dropdown) */
-    .mr-category-fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 12px; margin: 0 0 16px; background: var(--surface); min-width: 0; }
-    .mr-category-fieldset legend { font-size: 0.85rem; font-weight: 600; color: var(--text); padding: 0 6px; }
-    .mr-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 8px; margin-top: 4px; }
-    .mr-cat-option { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); font-size: 0.9rem; cursor: pointer; }
-    .mr-cat-option:hover { border-color: var(--accent); }
-    .mr-cat-option.is-checked { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-    .mr-cat-option.is-disabled { opacity: 0.45; cursor: not-allowed; }
-    .mr-cat-option:focus-within { outline: 3px solid var(--accent); outline-offset: 1px; }
-    .mr-cat-option input { width: 16px; height: 16px; accent-color: var(--accent); flex: 0 0 auto; }
-    .mr-category-count { margin: 8px 2px 0; font-size: 0.82rem; color: var(--muted); }
-    #mr-custom-tag-row { display: none; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 10px; }
-    #mr-custom-tag-row.is-visible { display: flex; }
-    #mr-custom-tag-row > div { display: flex; flex-direction: column; gap: 6px; }
-    #mr-custom-tag-row label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
-    #mr-custom-tag-row input { width: 140px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 4px; font-family: var(--font-body); font-size: 0.92rem; background: var(--surface); color: var(--text); }
-    #mr-custom-tag-row input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    .mr-inline-notice { margin: 10px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--accent-soft); font-size: 0.85rem; color: var(--text); }
-    .mr-trend-line { display: block; font-size: 1rem; line-height: 1.4; }
+    .mr-layout { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+    @media (min-width: 1000px) { .mr-layout { grid-template-columns: minmax(360px, 5fr) minmax(0, 6fr); } .mr-map-col { position: sticky; top: 12px; align-self: start; } }
+    #mr-map { height: clamp(300px, 54vh, 580px); width: 100%; border-radius: 12px; border: 1px solid var(--c-line); z-index: 1; }
+    .mr-layers { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 2px 2px; font-size: .8rem; color: var(--c-mut); }
+    .mr-layers label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+    .mr-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+    .mr-pinrow { font-size: .82rem; color: var(--c-mut); padding: 6px 2px; }
+    .mr-pinrow strong { font-family: "IBM Plex Mono", monospace; color: var(--c-txt); }
 
-    /* Provenance tags — every stat on the page carries one of these so
-       an "Official" district figure never reads with the same
-       confidence as an "Estimated" OpenStreetMap count. Deliberately
-       plain text, not a colored badge — the point is to be read, not
-       to decorate. */
-    .mr-provenance { display: block; font-size: 0.7rem; color: var(--muted); font-weight: 500; margin-top: 2px; text-transform: none; }
+    .mr-results { min-width: 0; }
+    .mr-empty { border: 2px dashed var(--c-line); border-radius: 14px; padding: 22px 20px; background: var(--c-pap); }
+    .mr-empty h3 { margin: 0 0 8px; font-family: var(--font-display, Georgia, serif); }
+    .mr-empty ol { margin: 8px 0 0 20px; padding: 0; line-height: 1.7; }
+    .mr-tabs { display: flex; gap: 2px; overflow-x: auto; border-bottom: 1px solid var(--c-line); margin-bottom: 14px; }
+    .mr-tab { padding: 9px 14px; border: 0; background: none; font: inherit; font-size: .92rem; font-weight: 600; color: var(--c-mut); border-bottom: 3px solid transparent; cursor: pointer; white-space: nowrap; }
+    .mr-tab[aria-selected="true"] { color: var(--c-acc-d); border-bottom-color: var(--c-acc); }
+    .mr-note { border-radius: 10px; padding: 10px 12px; font-size: .85rem; line-height: 1.5; background: var(--c-soft); margin: 0 0 12px; }
+    .mr-note.warn { background: #fff3d9; }
+    .mr-note.bad { background: #fde6e1; }
+    .mr-h { font-family: var(--font-display, Georgia, serif); font-size: 1.05rem; margin: 16px 0 8px; }
+    .mr-sub { font-size: .84rem; color: var(--c-mut); margin: 0 0 12px; line-height: 1.5; }
 
-    .mr-weights-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    .mr-weights-table th, .mr-weights-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
-    .mr-weights-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; }
-    .mr-weights-table input { width: 70px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font-family: "IBM Plex Mono", monospace; text-align: right; }
-    .mr-weights-table input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
-    #mr-weight-total { font-weight: 700; }
-    #mr-weight-total.is-off { color: #C0392B; }
-    .mr-field-note { background: var(--paper); border-radius: 8px; padding: 16px; margin: 0 0 16px; }
-    .mr-field-note label { display: block; margin-bottom: 8px; }
-    .mr-field-note select { width: 100%; max-width: 320px; }
-    .mr-field-note .structure-note { margin: 10px 0 0; }
-    .mr-vacancy-inputs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .mr-vacancy-inputs select { flex: 0 0 auto; }
-    .mr-vacancy-inputs input[type="text"] { flex: 1 1 260px; }
-    .mr-vacancy-list { list-style: none; margin: 10px 0 0; padding: 0; }
-    .mr-vacancy-list li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; background: var(--surface); border-radius: 6px; margin-bottom: 6px; font-size: 0.9rem; }
-    .mr-vacancy-list button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.85rem; padding: 0; }
-    .mr-vacancy-list button:hover { color: var(--accent); }
-    .mr-anchor-icon { color: #2A5DB0; font-size: 14px; line-height: 14px; text-shadow: 0 0 2px #fff, 0 0 2px #fff; }
+    .mr-card { border: 1px solid var(--c-line); border-radius: 12px; padding: 12px 14px; background: var(--c-sur); margin-bottom: 10px; }
+    .mr-card.is-top { border: 2px solid var(--c-acc); }
+    .mr-card.is-focus { box-shadow: 0 0 0 3px var(--c-soft); }
+    .mr-card-h { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .mr-rank { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--c-acc); color: #fff; font-weight: 700; font-size: .85rem; display: flex; align-items: center; justify-content: center; }
+    .mr-title { font-weight: 700; font-size: 1rem; }
+    .mr-grp { font-size: .74rem; color: var(--c-mut); }
+    .mr-score { margin-left: auto; text-align: right; min-width: 74px; font-family: var(--font-display, Georgia, serif); font-weight: 700; font-size: 1.25rem; color: var(--c-acc-d); line-height: 1; }
+    .mr-score small { display: block; font-family: var(--font-body, sans-serif); font-size: .66rem; font-weight: 500; color: var(--c-mut); }
+    .mr-meter { height: 7px; background: #e6ece8; border-radius: 6px; overflow: hidden; margin: 8px 0 6px; }
+    .mr-meter > i { display: block; height: 100%; background: var(--c-acc); }
+    .mr-why { margin: 6px 0 0; font-size: .88rem; line-height: 1.5; }
+    .mr-acts { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 8px; font-size: .84rem; }
+    .mr-ev { margin: 8px 0 0 18px; padding: 0; font-size: .84rem; line-height: 1.55; }
+    .mr-ev.verify { color: var(--c-mut); }
+    .mr-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+    .mr-chip { display: inline-flex; align-items: center; padding: 2px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700; border: 1px solid transparent; white-space: nowrap; }
+    .mr-chip.pioneer { background: #e0f3ec; color: #115243; border-color: #a5d5c5; }
+    .mr-chip.thin { background: #fff0cf; color: #6d4a00; border-color: #efd18a; }
+    .mr-chip.complementary { background: #e2edfb; color: #1b4a85; border-color: #b0cdf0; }
+    .mr-chip.niche { background: #efe5fa; color: #55308a; border-color: #cfb8ec; }
+    .mr-chip.emerging { background: #e6f5d8; color: #2f5d0f; border-color: #bfe0a3; }
+    .mr-chip.proven { background: #e9edf0; color: #38474f; border-color: #c4ced4; }
+    .mr-chip.unverified { background: #fff; color: #5b5b5b; border: 1px dashed #9a9a9a; }
+    .mr-chip.saturated { background: #fbe3df; color: #8a2417; border-color: #efb4ab; }
+    .mr-chip.gap { background: #fbe3df; color: #8a2417; border-color: #efb4ab; }
+    .mr-chip.healthy { background: #e9edf0; color: #38474f; border-color: #c4ced4; }
+    .mr-chip.crowded { background: #f3dcd8; color: #6f1d12; border-color: #e3a89f; }
+    .mr-chip.cap { background: #fff; color: #5b5b5b; border-color: #c9d2cd; font-weight: 600; }
+    .mr-filter { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 12px; }
+    .mr-fbtn { border: 1px solid var(--c-line); background: var(--c-sur); border-radius: 999px; padding: 4px 11px; font: inherit; font-size: .8rem; cursor: pointer; color: var(--c-txt); }
+    .mr-fbtn[aria-pressed="true"] { background: var(--c-acc); border-color: var(--c-acc); color: #fff; }
 
-    .mr-score-banner {
-      display: flex; align-items: center; gap: 18px; flex-wrap: wrap; border: 3px solid var(--accent);
-      border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; background: var(--accent-soft);
-    }
-    .mr-score-number { font-family: var(--font-display); font-size: 2.4rem; font-weight: 700; color: var(--accent-dark); line-height: 1; }
-    .mr-score-text { display: flex; flex-direction: column; gap: 2px; }
-    .mr-score-text strong { font-family: var(--font-display); font-size: 1.2rem; }
-    .mr-score-text small { font-size: 0.78rem; color: var(--muted); }
-
-    .mr-ai-box { border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; background: var(--surface); font-size: 0.92rem; line-height: 1.55; margin-top: 10px; }
-    .mr-ai-box.is-empty { color: var(--muted); font-style: italic; }
-
-    .mr-status { min-height: 1.4em; font-size: 0.9rem; color: var(--muted); margin-top: 10px; }
-    .mr-status.is-error { color: #C0392B; font-weight: 600; }
-
-    /* Mode select — the two entry buttons, added when the page grew a second analysis type */
-    .mr-mode-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 6px; }
-    .mr-mode-card {
-      display: flex; flex-direction: column; gap: 8px; text-align: left; padding: 20px;
-      border: 1px solid var(--line); border-radius: 12px; background: var(--surface); cursor: pointer;
-      font-family: var(--font-body); color: var(--text);
-    }
-    .mr-mode-card:hover, .mr-mode-card:focus-visible { border-color: var(--accent); outline: none; }
-    .mr-mode-card strong { font-family: var(--font-display); font-size: 1.15rem; }
-    .mr-mode-card span { font-size: 0.9rem; color: var(--muted); line-height: 1.4; }
-
-    /* Market Gap results table */
-    .mr-gap-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
-    .mr-gap-table th, .mr-gap-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); font-size: 0.9rem; }
-    .mr-gap-table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); font-weight: 600; }
-    .mr-gap-read { font-weight: 600; }
-    .mr-gap-read.is-gap { color: #C0392B; }
-    .mr-gap-read.is-thin { color: #B8860B; }
-    .mr-gap-read.is-oversupplied { color: var(--accent-dark); }
-    .mr-gap-read.is-adequate { color: var(--muted); font-weight: 500; }
-
-    @media (max-width: 800px) {
-      #mr-map { height: 360px; }
-      .mr-controls-row { flex-direction: column; align-items: stretch; }
-    }
+    .mr-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .mr-kpi { border: 1px solid var(--c-line); border-radius: 10px; padding: 10px 12px; background: var(--c-sur); }
+    .mr-kpi b { display: block; font-family: var(--font-display, Georgia, serif); font-size: 1.2rem; line-height: 1.2; }
+    .mr-kpi span { display: block; font-size: .74rem; color: var(--c-mut); margin-top: 2px; }
+    .mr-prov { display: block; font-size: .68rem; color: var(--c-mut); margin-top: 3px; }
+    .mr-table-wrap { overflow-x: auto; }
+    .mr-table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+    .mr-table th, .mr-table td { text-align: left; padding: 7px 9px; border-bottom: 1px solid var(--c-line); vertical-align: top; }
+    .mr-table th { font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--c-mut); }
+    .mr-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; margin: 6px 0 12px; }
+    .mr-pick { display: flex; gap: 8px; align-items: center; padding: 6px 9px; border: 1px solid var(--c-line); border-radius: 8px; background: var(--c-pap); font-size: .84rem; cursor: pointer; }
+    .mr-pick.is-on { border-color: var(--c-acc); background: var(--c-soft); font-weight: 600; }
+    .mr-banner { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 3px solid var(--c-acc); background: var(--c-soft); border-radius: 12px; padding: 12px 16px; margin: 0 0 12px; }
+    .mr-banner .mr-big { font-family: var(--font-display, Georgia, serif); font-size: 2.2rem; font-weight: 700; color: var(--c-acc-d); line-height: 1; }
+    .mr-wts td input { width: 72px; text-align: right; padding: 5px 7px; border: 1px solid var(--c-line); border-radius: 6px; font-family: "IBM Plex Mono", monospace; }
+    .mr-ai { border: 1px solid var(--c-line); border-radius: 10px; padding: 12px 14px; background: var(--c-sur); font-size: .92rem; line-height: 1.55; margin-top: 8px; }
+    .mr-ai.is-empty { color: var(--c-mut); font-style: italic; }
+    .mr-foot { font-size: .74rem; color: var(--c-mut); margin: 18px 0 0; line-height: 1.55; }
+    .mr-foot a { color: inherit; }
+    .mr-anchor { background: none; border: 0; }
+    .mr-spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--c-line); border-top-color: var(--c-acc); border-radius: 50%; animation: mrspin 0.9s linear infinite; vertical-align: -2px; margin-right: 8px; }
+    @keyframes mrspin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .mr-spin { animation: none; } }
     @media print {
-      #mr-map { border: none; }
+      .no-print { display: none !important; }
+      .mr-layout { display: block; }
+      .mr-map-col { position: static; margin-bottom: 14px; }
+      #mr-map { height: 300px; border: 0; }
+      .mr-card, .mr-kpi, .mr-table tr { break-inside: avoid; }
     }
   </style>
 </head>
@@ -184,209 +167,55 @@
 
     <section class="calc-intro">
       <div class="wrap">
-        <span class="eyebrow">Free tool &middot; official &amp; open data only &middot; nothing scraped</span>
-        <h1>Market Radar</h1>
-        <p class="lead">Drop a pin on a candidate spot, pick what you're thinking of opening, and see who's already there, how many people you'd actually reach, and an editable opportunity score — built entirely from OpenStreetMap and Malaysia's own open data API, never scraped from Google Maps, CTOS, or Mudah.</p>
+        <span class="eyebrow">Free tool &middot; open data &middot; evidence shown for every result</span>
+        <h1>Market Radar <small class="mr-ver" id="mr-ver" title="Page, engine and Worker versions are shown in the browser console">v1.7.0</small></h1>
+        <p class="lead">Drop a pin on a candidate spot. <strong>Market Analysis</strong> ranks which business is the best opportunity there — first-mover, complementary, niche, emerging — and <strong>Market Gap</strong> shows what would best complete the area. Built from OpenStreetMap, an optional Overture Maps cross-check and Malaysia's open data; never scraped.</p>
       </div>
     </section>
 
-    <!-- ============ MODE SELECT ============ -->
-    <section class="ica-panel" id="mr-mode-select">
+    <section class="ica-panel mr-app" id="mr-app">
       <div class="wrap">
-        <p class="structure-note">Pick what you want to do first — each opens its own short wizard using the same map, and only one is open at a time.</p>
-        <div class="mr-mode-grid">
-          <button type="button" id="mr-mode-analysis-btn" class="mr-mode-card">
-            <strong>Market Analysis</strong>
-            <span>Check ONE business idea: competitor count, reach, and an opportunity score for a specific type you're weighing.</span>
-          </button>
-          <button type="button" id="mr-mode-gap-btn" class="mr-mode-card">
-            <strong>Market Gap</strong>
-            <span>Scan a household-needs checklist at once: what's missing, thin, or already oversupplied near a spot.</span>
-          </button>
-        </div>
-      </div>
-    </section>
 
-    <!-- ============ WIZARD ============ -->
-    <section class="ica-panel" id="wizard" hidden>
-      <div class="wrap">
-        <div class="wizard-card" id="wizard-question"><!-- populated by JS --></div>
-        <button type="button" id="wizard-back" class="btn btn-secondary" hidden>Back</button>
-      </div>
-    </section>
-
-    <!-- ============ ANALYSIS ============ -->
-    <section class="ica-panel" id="mr-analysis" hidden>
-      <div class="wrap">
-        <div class="analysis-top-bar no-print">
-          <button type="button" id="mr-edit-answers" class="link-btn">&larr; Edit answers</button>
-          <button type="button" id="mr-save-pdf" class="btn btn-secondary">Save as PDF</button>
-        </div>
-
-        <p class="structure-note">Scouting <strong id="mr-town-label">Miri</strong>. Click anywhere on the map below to move the pin to an exact spot — a specific shoplot, not just the town centre.</p>
-
-        <fieldset class="mr-category-fieldset no-print" id="mr-category-group">
-          <legend>What are you thinking of opening? <span class="toggle-hint">— tick the types you're weighing (a food business can span several)</span></legend>
-          <div class="mr-category-grid" id="mr-category-options"><!-- populated by JS from CATEGORY_TAGS --></div>
-          <p class="mr-category-count" id="mr-category-count" aria-live="polite"></p>
-          <div id="mr-custom-tag-row">
-            <div>
-              <label for="mr-custom-key">OSM key</label>
-              <input type="text" id="mr-custom-key" placeholder="e.g. shop" maxlength="40" autocomplete="off">
+        <div class="mr-toolbar no-print">
+          <div class="mr-field">
+            <span class="mr-lbl" id="mr-mode-lbl">What do you want to know?</span>
+            <div class="mr-seg" role="radiogroup" aria-labelledby="mr-mode-lbl" id="mr-mode">
+              <button type="button" role="radio" class="mr-seg-btn is-on" aria-checked="true" data-mode="analysis">Market Analysis<small>Find my best opportunity</small></button>
+              <button type="button" role="radio" class="mr-seg-btn" aria-checked="false" data-mode="gap">Market Gap<small>What would complete this area</small></button>
             </div>
-            <div>
-              <label for="mr-custom-value">OSM value</label>
-              <input type="text" id="mr-custom-value" placeholder="e.g. bicycle" maxlength="40" autocomplete="off">
-            </div>
-            <span class="toggle-hint">letters, numbers, _ : - only</span>
           </div>
-        </fieldset>
-
-        <fieldset class="mr-category-fieldset no-print" id="mr-gap-intro" hidden>
-          <legend>Household-needs checklist <span class="toggle-hint">— every category below is checked at once, no ticking needed</span></legend>
-          <p class="structure-note" style="margin:0 0 10px;">Checks the same business types as Market Analysis (now including pharmacy and petrol station), plus anything you add below. See <span class="toggle-hint">"Why these types?"</span> in the plain-English read for how this list was put together.</p>
-          <div class="mr-vacancy-inputs">
-            <input type="text" id="mr-gap-custom-key" placeholder="OSM key, e.g. shop" maxlength="40" autocomplete="off" aria-label="OSM key">
-            <input type="text" id="mr-gap-custom-value" placeholder="OSM value, e.g. optician" maxlength="40" autocomplete="off" aria-label="OSM value">
-            <button type="button" class="btn" id="mr-gap-custom-add">Add to checklist</button>
+          <div class="mr-field"><label for="mr-town">Town</label><select id="mr-town"></select></div>
+          <div class="mr-field"><label for="mr-catchment">Area around the pin</label><select id="mr-catchment"></select></div>
+          <form class="mr-field" id="mr-find-form" role="search">
+            <label for="mr-find">Find a place <span class="mr-hint">(optional)</span></label>
+            <div class="mr-row"><input id="mr-find" type="search" placeholder="e.g. Miri Boulevard" autocomplete="off" maxlength="80"><button type="submit" class="btn">Find</button></div>
+          </form>
+          <div class="mr-field mr-go">
+            <button type="button" id="mr-analyze" class="btn btn-primary">Analyze this spot</button>
+            <button type="button" id="mr-print" class="btn btn-secondary">Save as PDF</button>
+            <span class="mr-quota" id="mr-quota"></span>
           </div>
-          <p class="toggle-hint" style="margin:4px 0 0;">letters, numbers, _ : - only — e.g. shop=optician, office=insurance, shop=pet</p>
-          <ul class="mr-vacancy-list" id="mr-gap-custom-list"></ul>
-        </fieldset>
-
-        <div class="mr-controls-row no-print">
-          <div>
-            <label for="mr-catchment-select">Catchment</label>
-            <select id="mr-catchment-select"><!-- populated by JS from CATCHMENT_MODES --></select>
-          </div>
-          <button type="button" id="mr-analyze-btn" class="btn btn-primary">Analyze this spot</button>
         </div>
 
-        <div class="mr-pin-row">
-          <span>Pin: <strong id="mr-pin-coords">—</strong></span>
-        </div>
+        <div class="mr-custom no-print" id="mr-custom"></div>
         <p class="mr-status" id="mr-status" role="status" aria-live="polite"></p>
 
-        <div class="mr-map-wrap">
-          <div id="mr-map"></div>
-          <div class="mr-map-legend">
-            <span><i class="mr-legend-dot" style="background:#C0392B;"></i>Competitor</span>
-            <span><i class="mr-legend-dot" style="background:#fff; border:2px dashed #8A8A8A;"></i>Found by OSM, outside this catchment</span>
-            <span><i class="mr-legend-line" style="border-top-style:solid; border-color:var(--accent);"></i>Real catchment (isochrone)</span>
-            <span><i class="mr-legend-line"></i>Estimated catchment (radius fallback)</span>
-            <label><input type="checkbox" id="mr-heat-toggle" checked> Density heat map <span class="toggle-hint">(teal = a competitor nearby, red = 3+ overlapping in one spot)</span></label>
+        <div class="mr-layout">
+          <div class="mr-map-col">
+            <div id="mr-map" role="application" aria-label="Map. Click to move the pin to a candidate spot."></div>
+            <div class="mr-layers no-print" id="mr-layers"></div>
+            <div class="mr-pinrow">Pin: <strong id="mr-pin">—</strong> &middot; click the map or drag the pin to test an exact shoplot.</div>
+          </div>
+          <div class="mr-results-col">
+            <div class="mr-results" id="mr-results" aria-live="polite"></div>
           </div>
         </div>
 
-        <div class="mr-score-banner" id="mr-score-banner" hidden>
-          <div class="mr-score-number" id="mr-score-number">—</div>
-          <div class="mr-score-text">
-            <strong id="mr-score-verdict">Analyze a spot to see this</strong>
-            <small>Opportunity score</small>
-            <span class="mr-provenance">Calculated — your own weights below</span>
-          </div>
-        </div>
-
-        <div class="ica-results" id="mr-gap-results" hidden>
-          <p class="structure-note" style="margin-top:0;">Each row is a business type checked against everything found in this catchment. <strong>Gap</strong> = none found. <strong>Thin</strong> = well below the mix of everything else here. <strong>Oversupplied</strong> = well above it. This is a read of THIS spot's own mix, not a comparison to an outside "should have" number — see the note below the table. <strong>Reach</strong> is the district's whole population divided by how many of that type are here — a rough "how many people share one" figure, not a monthly or daily number. If a business type you can see nearby shows as a Gap, check the map above for a hollow grey marker at that spot — it means OSM has the place, just outside the shape actually being counted.</p>
-          <table class="mr-gap-table">
-            <thead><tr><th>Business type</th><th>Found</th><th>Reach</th><th>Read</th></tr></thead>
-            <tbody id="mr-gap-table-body"><!-- populated by JS --></tbody>
-          </table>
-          <p class="structure-note" id="mr-gap-provenance"></p>
-        </div>
-
-        <div class="ica-results" id="mr-result-cards" hidden>
-          <div class="result-card">
-            <span class="result-label">Competitors in catchment<span class="tooltip-icon" data-tooltip="Every business type you ticked above, added together, inside the real catchment shape (or the radius fallback), not just a raw radius search. With more than one type ticked, the line underneath splits the total by type, and the score treats 12 competitors PER TYPE as fully saturated.">?</span></span>
-            <span class="result-value" id="mr-competitor-count">—</span>
-            <span class="mr-provenance" id="mr-competitor-breakdown"></span>
-            <span class="mr-provenance">Estimated — OpenStreetMap</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Category mix nearby<span class="tooltip-icon" data-tooltip="How mixed the surrounding businesses are, not just your one category — a healthily diverse area scores higher than one already flooded with a single type.">?</span></span>
-            <span class="result-value" id="mr-diversity-value">—</span>
-            <span class="mr-provenance">Estimated — OpenStreetMap</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">District population<span class="tooltip-icon" data-tooltip="The whole district's population from DOSM, then scaled down by how much of the district your catchment shape actually covers — assumes people are spread evenly across the district, which is a simplification.">?</span></span>
-            <span class="result-value" id="mr-population-value">—</span>
-            <span class="mr-provenance">Official — DOSM</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Median household income<span class="tooltip-icon" data-tooltip="District-level, from DOSM's Household Income & Expenditure Survey — gives a sense of local spending power, not a per-household lookup.">?</span></span>
-            <span class="result-value" id="mr-income-value">—</span>
-            <span class="mr-provenance">Official — DOSM</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Competitor strength<span class="tooltip-icon" data-tooltip="How strong the competition looks. Your own on-site read (the dropdown just below these cards) wins when set; otherwise this uses Google rating + review count for competitors matched to a Google Maps listing within about 75m, which needs the optional Google Places key (a paid service). Picking an on-site read automatically counts it in the score at 10%, taken from Low competition — change it in the weights panel.">?</span></span>
-            <span class="result-value" id="mr-popularity-value">—</span>
-            <span class="mr-provenance" id="mr-popularity-provenance">Estimated — Google Places (optional)</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">Nearby institutions<span class="tooltip-icon" data-tooltip="Schools, universities, hospitals/clinics, malls, government offices, places of worship, and transport terminals within the catchment — shown on the map as blue squares. These are foot-traffic anchors, not competitors: they never count toward the competitor total and never affect the opportunity score above. Doesn't include large private employers/offices — OSM doesn't reliably tag those.">?</span></span>
-            <span class="result-value" id="mr-anchor-value">—</span>
-            <span class="mr-provenance" id="mr-anchor-provenance">Official — OSM</span>
-          </div>
-          <div class="result-card">
-            <span class="result-label">National retail trend<span class="tooltip-icon" data-tooltip="DOSM's Wholesale & Retail Trade Index, year-on-year growth for the category's MSIC group. Two important limits: this is Malaysia-WIDE (not town or state-specific), and it only covers 4 of the 13 categories here — minimart, bakery, hardware, and fashion — since the index tracks MSIC Section G (wholesale/retail) only, not the food & beverage or services sections the other categories fall under.">?</span></span>
-            <span class="result-value" id="mr-trend-value">—</span>
-            <span class="mr-provenance" id="mr-trend-provenance">Official — DOSM</span>
-          </div>
-        </div>
-
-        <div class="mr-field-note" id="mr-field-note-panel" hidden>
-          <label for="mr-observed-busyness" style="font-weight:600;">On-site read: how busy does the competition actually look right now? <span class="toggle-hint">(optional)</span></label>
-          <select id="mr-observed-busyness">
-            <option value="">Not noted — leave out of the score</option>
-            <option value="1">Very quiet</option>
-            <option value="2">Quiet</option>
-            <option value="3">Moderate</option>
-            <option value="4">Busy</option>
-            <option value="5">Packed — queue out the door</option>
-          </select>
-          <p class="mr-inline-notice" id="mr-observed-notice" role="status" hidden></p>
-          <p class="structure-note">The moment you pick a read, it counts in the score at 10% (taken from "Low competition" — change it or switch it off under Opportunity score weights). It beats the Google-ratings card when both are present — a fresh look in person outranks an aggregate rating. Nothing here is saved; it resets when you close this tab.</p>
-        </div>
-
-        <div class="mr-field-note" id="mr-vacancy-panel" hidden>
-          <label style="font-weight:600;">Vacant units you've spotted nearby <span class="toggle-hint">(optional — for your own notes and the PDF export)</span></label>
-          <div class="mr-vacancy-inputs">
-            <select id="mr-vacancy-floor" aria-label="Floor">
-              <option>Ground floor</option>
-              <option>1st floor</option>
-              <option>2nd floor</option>
-              <option>3rd floor</option>
-              <option>Other / whole shoplot</option>
-            </select>
-            <input type="text" id="mr-vacancy-detail" placeholder="e.g. ~600 sqft, asking RM1,800/mo, agent 012-xxx" maxlength="140" aria-label="Vacancy notes">
-            <button type="button" class="btn" id="mr-vacancy-add">Add</button>
-          </div>
-          <ul class="mr-vacancy-list" id="mr-vacancy-list"></ul>
-          <p class="structure-note">No official live source exists for this in Malaysia — JPPH/NAPIC only publish past sale transactions (paid, ad-hoc requests), and property portals don't offer an API, only scrapers, which this site avoids on the same grounds as everything else here. This is a plain notepad: what you jot down stays on the page and in your printed PDF, and resets when you close the tab — nothing is looked up or verified automatically.</p>
-        </div>
-
-        <details class="fw-collapsible" id="mr-weights-panel" hidden>
-          <summary class="cr-collapsible-summary" style="cursor:pointer; list-style:none; padding:8px 0;"><h3 style="display:inline;">Opportunity score weights <span class="toggle-hint">— edit and the score above updates live</span></h3></summary>
-          <table class="mr-weights-table">
-            <thead><tr><th>Signal</th><th>Weight</th></tr></thead>
-            <tbody>
-              <tr><td>Low competition (fewer competitors = higher)</td><td><input type="number" id="mr-weight-lowCompetition" min="0" max="1" step="0.05" value="0.35"></td></tr>
-              <tr><td>Population reached</td><td><input type="number" id="mr-weight-population" min="0" max="1" step="0.05" value="0.25"></td></tr>
-              <tr><td>Household income band</td><td><input type="number" id="mr-weight-income" min="0" max="1" step="0.05" value="0.15"></td></tr>
-              <tr><td>Category diversity nearby</td><td><input type="number" id="mr-weight-diversity" min="0" max="1" step="0.05" value="0.15"></td></tr>
-              <tr><td>Momentum <span class="toggle-hint">(neutral until snapshot history exists)</span></td><td><input type="number" id="mr-weight-momentum" min="0" max="1" step="0.05" value="0.10"></td></tr>
-              <tr><td>Competitor strength <span class="toggle-hint">(your on-site read above, or Google ratings if configured — set to 10% automatically when you pick an on-site read)</span></td><td><input type="number" id="mr-weight-competitorStrength" min="0" max="1" step="0.05" value="0"></td></tr>
-            </tbody>
-          </table>
-          <p class="structure-note">Weights should add up to 1.00 — current total: <span id="mr-weight-total">1.00</span></p>
-        </details>
-
-        <div class="mr-ai-box is-empty no-print" id="mr-ai-insight">Click "Get a plain-English read" below once you've analyzed a spot.</div>
-        <div class="calc-actions no-print">
-          <button type="button" id="mr-get-insight" class="btn btn-secondary">Get a plain-English read</button>
-        </div>
-        <p class="structure-note" style="margin-top:20px;">Every number above is tagged where it came from. "Official" is government open data (DOSM); "Estimated" is crowd-sourced map data or a modelled travel-time shape; the AI read only ever describes the numbers already on this page — it never invents a business or a figure of its own.</p>
+        <p class="mr-foot">
+          Business locations &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL).
+          Optional cross-check layer: <a href="https://docs.overturemaps.org/attribution/" target="_blank" rel="noopener">Overture Maps Foundation</a> places (several open-data providers, incl. Meta, Microsoft and Foursquare; licences CDLA-Permissive-2.0, Apache-2.0 and CC0-1.0 depending on the source). Downloads that combine both sources contain OpenStreetMap data (ODbL): keep both credits if you share them.
+          District figures: DOSM via data.gov.my. Travel-time areas: OpenRouteService. Place search: Nominatim. Crowding thresholds and business-type relationships are labelled assumptions — see "How this is scored".
+        </p>
       </div>
     </section>
 
@@ -402,8 +231,8 @@
   <script src="nav-config.js?v=1" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-  <script src="costing-sync.js?v=4" defer></script>
   <script src="nav-dropdown.js?v=1" defer></script>
-  <script src="market-radar.js?v=20260927a" defer></script>
+  <script src="market-radar-engine.js?v=20261015a" defer></script>
+  <script src="market-radar.js?v=20261015a" defer></script>
 </body>
 </html>
