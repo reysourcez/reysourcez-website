@@ -42,7 +42,7 @@ const RZ_NAV_PAGES = [
   { href: 'form-scanner.html', label: 'Form Creator' },
   { href: 'qr-creator.html', label: 'QR Creator' },
   { href: 'iso-ms-architect.html', label: 'ISO Management System' },
-   { href: 'ScanToDoc_v0.3.html', label: 'Scan to Document' },
+   { href: 'ScanToDoc_v0.4.html', label: 'Scan to Document' },
     // Add a new tool here — one line, this file only.
 ];
 
